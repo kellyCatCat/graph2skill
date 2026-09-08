@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "root": ".",
+  "skills": [
+    {
+      "name": "common",
+      "doc": "common.md",
+      "role": "common",
+      "graph": "graphs/common.json"
+    },
+    {
+      "name": "bgp",
+      "doc": "SKILL-bgp.md",
+      "graph": "graphs/bgp.json",
+      "includes": [
+        "common"
+      ],
+      "statistics": "statistics/bgp-neighbor-abnormal-stats.json"
+    }
+  ]
+}

@@ -20,12 +20,12 @@ pip install -e '.[yaml]'  # 可选：支持 YAML 格式的图文件
 
 ```bash
 # 用仓库自带的两份示例图生成技能
-graph2skill build examples/ -o out/isis-skill --graph-id ISIS_ALL
+graph2skill build examples/isis/ -o out/isis-skill --graph-id ISIS_ALL
 
 # 只看图长什么样，不生成文件
-graph2skill stats examples/
-graph2skill validate examples/ --json
-graph2skill inspect examples/ --node-id cause:isis:isis-75700908-1
+graph2skill stats examples/isis/
+graph2skill validate examples/isis/ --json
+graph2skill inspect examples/isis/ --node-id cause:isis:isis-75700908-1
 ```
 
 生成结果：
@@ -95,7 +95,7 @@ for issue in bundle.errors():
 - 只有 `nodes[].id` 是必需的，其余字段全部可选；未知字段不会丢失，会渲染在「其他字段」里。
 - `type` 缺失时回退到 `data.nodeType`；`source` 会自动并入 `sources`。
 - `parameterExamples` 支持 `[{"command": ...}]`、字符串数组两种写法。
-- 加载器容忍**尾逗号、`//` 与 `/* */` 注释、BOM**（示例里的 `examples/isis_cot_cases.jsonc` 就是这种脏数据），装了 PyYAML 还能读 YAML。
+- 加载器容忍**尾逗号、`//` 与 `/* */` 注释、BOM**（示例里的 `examples/isis/isis_cot_cases.jsonc` 就是这种脏数据），装了 PyYAML 还能读 YAML。
 
 多图合并规则：
 

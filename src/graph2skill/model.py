@@ -199,16 +199,20 @@ class Node:
         """Fields of ``data`` that no typed accessor already surfaces."""
         return {k: v for k, v in sorted(self.data.items()) if k not in _KNOWN_NODE_DATA_KEYS}
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "name": self.name,
-            "source": self.source,
-            "sources": list(self.sources),
-            "data": self.data,
-            "graphIds": list(self.graph_ids),
-        }
+    def to_dict(self, internal: bool = True) -> Dict[str, Any]:
+        """Serialise the node; *internal* keeps graph2skill bookkeeping fields."""
+        payload: Dict[str, Any] = {"id": self.id, "type": self.type}
+        if self.name:
+            payload["name"] = self.name
+        if self.source:
+            payload["source"] = self.source
+        if self.sources:
+            payload["sources"] = list(self.sources)
+        if self.data:
+            payload["data"] = self.data
+        if internal and self.graph_ids:
+            payload["graphIds"] = list(self.graph_ids)
+        return payload
 
 
 @dataclass
@@ -255,17 +259,17 @@ class Relation:
         """Guard/label carried by the edge, if the pipeline emitted one."""
         return first_str(self.data, ("condition", "guard", "when", "label", "description"))
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "from": self.from_id,
-            "to": self.to_id,
-            "source": self.source,
-            "sources": list(self.sources),
-            "data": self.data,
-            "graphIds": list(self.graph_ids),
-        }
+    def to_dict(self, internal: bool = True) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"id": self.id, "type": self.type, "from": self.from_id, "to": self.to_id}
+        if self.source:
+            payload["source"] = self.source
+        if self.sources:
+            payload["sources"] = list(self.sources)
+        if self.data:
+            payload["data"] = self.data
+        if internal and self.graph_ids:
+            payload["graphIds"] = list(self.graph_ids)
+        return payload
 
 
 @dataclass
@@ -292,14 +296,15 @@ class DecisionTree:
             graph_ids=[graph_id] if graph_id else [],
         )
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "treeId": self.tree_id,
-            "entryNodeId": self.entry_node_id,
-            "nodeIds": list(self.node_ids),
-            "relationIds": list(self.relation_ids),
-            "sources": list(self.sources),
-        }
+    def to_dict(self, internal: bool = True) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"treeId": self.tree_id, "entryNodeId": self.entry_node_id}
+        if self.node_ids:
+            payload["nodeIds"] = list(self.node_ids)
+        if self.relation_ids:
+            payload["relationIds"] = list(self.relation_ids)
+        if self.sources:
+            payload["sources"] = list(self.sources)
+        return payload
 
 
 @dataclass
@@ -360,17 +365,24 @@ class Graph:
             graph.decision_trees[tree.tree_id] = tree
         return graph
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "schemaVersion": self.schema_version,
-            "graphId": self.graph_id,
-            "domain": self.domain,
-            "sources": list(self.sources),
-            "entryNodeIds": list(self.entry_node_ids),
-            "nodes": [node.to_dict() for node in self.nodes.values()],
-            "relations": [relation.to_dict() for relation in self.relations.values()],
-            "decisionTrees": [tree.to_dict() for tree in self.decision_trees.values()],
-        }
+    def to_dict(self, internal: bool = True) -> Dict[str, Any]:
+        """Serialise the whole graph.
+
+        ``internal=False`` writes a clean document meant to be kept in version
+        control next to a skill: empty fields and bookkeeping are omitted.
+        """
+        payload: Dict[str, Any] = {"schemaVersion": self.schema_version, "graphId": self.graph_id}
+        if self.domain:
+            payload["domain"] = self.domain
+        if self.sources:
+            payload["sources"] = list(self.sources)
+        if self.entry_node_ids:
+            payload["entryNodeIds"] = list(self.entry_node_ids)
+        payload["nodes"] = [node.to_dict(internal) for node in self.nodes.values()]
+        payload["relations"] = [relation.to_dict(internal) for relation in self.relations.values()]
+        if self.decision_trees or internal:
+            payload["decisionTrees"] = [tree.to_dict(internal) for tree in self.decision_trees.values()]
+        return payload
 
 
 def merge_nodes(left: Node, right: Node) -> Node:

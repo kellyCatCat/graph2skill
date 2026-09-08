@@ -14,6 +14,7 @@ from graph2skill.bundle import SkillBundle, SkillOptions
 from graph2skill.loader import GraphLoadError
 from graph2skill.ontology import EN, ZH, node_type_label
 from graph2skill.skill import build_bundle, write_skill
+from graph2skill.skillset import SkillSet, SkillSetError
 
 EXIT_OK = 0
 EXIT_ISSUES = 1
@@ -250,6 +251,26 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--lang", choices=[ZH, EN], default=ZH, help=argparse.SUPPRESS)
     inspect.set_defaults(func=cmd_inspect)
 
+    merge = sub.add_parser("merge", help="把一个 JSON 子图融入已有 skill（手术式修改，不重生成）")
+    merge.add_argument("inputs", nargs="*", help="要融入的图文件；留空表示只用技能自己的子图重新同步")
+    merge.add_argument("--into", required=True, help="目标技能名（如 bgp）或它的文档路径（如 skills/SKILL-bgp.md）")
+    merge.add_argument("-s", "--set", default=None, help="技能集清单路径，默认在目标目录里找 skillset.json")
+    merge.add_argument("--dry-run", action="store_true", help="只打印差异，不写文件")
+    merge.add_argument("--diff", action="store_true", help="写文件的同时打印差异")
+    merge.add_argument("--no-graph-update", action="store_true", help="不回写技能配对的 JSON 子图")
+    merge.add_argument("--update-stats", action="store_true", help="同步更新清单里声明的统计文件")
+    merge.set_defaults(func=cmd_merge)
+
+    skillset = sub.add_parser("skillset", help="管理技能集清单（skill ↔ JSON 子图的对应关系）")
+    skillset_sub = skillset.add_subparsers(dest="skillset_command", required=True)
+    init = skillset_sub.add_parser("init", help="扫描目录，推断并写出 skillset.json")
+    init.add_argument("directory", help="包含 SKILL-*.md / common.md 的目录")
+    init.add_argument("-o", "--output", default=None, help="清单输出路径，默认 <directory>/skillset.json")
+    init.set_defaults(func=cmd_skillset_init)
+    status = skillset_sub.add_parser("status", help="列出技能集里每个技能的文档、子图与故障")
+    status.add_argument("-s", "--set", default=None, help="清单路径，默认当前目录的 skillset.json")
+    status.set_defaults(func=cmd_skillset_status)
+
     return parser
 
 
@@ -264,6 +285,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     except FileExistsError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
+    except SkillSetError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -271,3 +295,117 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# ---------------------------------------------------------------------------
+# skill set commands
+# ---------------------------------------------------------------------------
+
+def _resolve_skillset(manifest: Optional[str], into: Optional[str]) -> "SkillSet":
+    """Load the manifest, or infer one from the directory being worked on."""
+    from graph2skill.skillset import DEFAULT_MANIFEST_NAME, SkillSet
+
+    if manifest:
+        return SkillSet.load(Path(manifest))
+    root = Path.cwd()
+    if into:
+        candidate = Path(into)
+        if candidate.is_file():
+            root = candidate.parent
+        elif candidate.is_dir():
+            root = candidate
+    if (root / DEFAULT_MANIFEST_NAME).is_file():
+        return SkillSet.load(root / DEFAULT_MANIFEST_NAME)
+    skillset = SkillSet.discover(root)
+    print(
+        f"note: {root/DEFAULT_MANIFEST_NAME} 不存在，已按目录结构推断技能集"
+        "（建议先运行 `graph2skill skillset init` 固化对应关系）",
+        file=sys.stderr,
+    )
+    return skillset
+
+
+def cmd_skillset_init(args: argparse.Namespace) -> int:
+    from graph2skill.skillset import SkillSet, missing_graphs
+
+    skillset = SkillSet.discover(Path(args.directory))
+    target = skillset.save(Path(args.output) if args.output else None)
+    print(f"manifest written to {target}")
+    for entry in skillset.skills:
+        includes = ", ".join(entry.includes) or "-"
+        print(f"  {entry.name:<12} doc={entry.doc:<20} graph={entry.graph or '(未找到)':<24} includes={includes}")
+    incomplete = missing_graphs(skillset)
+    if incomplete:
+        print(
+            "\n以下技能还没有配对的 JSON 子图，请在清单里补上 'graph' 字段后再执行 merge：",
+            file=sys.stderr,
+        )
+        for entry in incomplete:
+            print(f"  - {entry.name} ({entry.doc})", file=sys.stderr)
+        return EXIT_ISSUES
+    return EXIT_OK
+
+
+def cmd_skillset_status(args: argparse.Namespace) -> int:
+    from graph2skill.faultmodel import extract_faults
+    from graph2skill.integrate import build_common_index
+    from graph2skill.loader import load_graph
+
+    skillset = _resolve_skillset(args.set, None)
+    for entry in skillset.skills:
+        doc = skillset.doc_path(entry)
+        graph_path = skillset.root / entry.graph if entry.graph else None
+        line = f"{entry.name:<12} [{entry.role}] doc={entry.doc}"
+        if not doc.is_file():
+            line += "  (文档缺失)"
+        if graph_path and graph_path.is_file():
+            graph = load_graph(graph_path)
+            common, _ = build_common_index(skillset, entry)
+            faults = extract_faults(graph, common=common, reference_dir=entry.reference_dir)
+            line += f"  graph={entry.graph} nodes={len(graph.nodes)} relations={len(graph.relations)} faults={len(faults)}"
+            if entry.includes:
+                line += f"  includes={','.join(entry.includes)}"
+            print(line)
+            for fault in faults:
+                print(f"    - 故障{fault.fault_id or '?'} {fault.name}（{len(fault.causes)} 类根因）→ {fault.reference_file}")
+            continue
+        line += f"  graph={entry.graph or '(未配置)'}"
+        print(line)
+    return EXIT_OK
+
+
+def cmd_merge(args: argparse.Namespace) -> int:
+    from graph2skill.integrate import integrate
+
+    skillset = _resolve_skillset(args.set, args.into)
+    report = integrate(
+        skillset,
+        args.into,
+        args.inputs,
+        update_graph=not args.no_graph_update,
+        update_statistics=args.update_stats,
+    )
+    print(
+        f"skill '{report.skill}': 新增节点 {len(report.added_nodes)}、更新节点 {len(report.updated_nodes)}、"
+        f"新增关系 {len(report.added_relations)}"
+    )
+    for title in report.new_faults:
+        print(f"  + {title}")
+    for title in report.updated_faults:
+        print(f"  ~ {title}")
+    for node_id in report.common_owned:
+        print(f"  = {node_id}（归属公共技能，仅保留引用）")
+    for warning in report.warnings:
+        print(f"  ! {warning}", file=sys.stderr)
+
+    if not report.pending:
+        print("没有需要写入的变更。")
+        return EXIT_OK
+    if args.dry_run or args.diff:
+        print(report.diff())
+    if args.dry_run:
+        print(f"--dry-run：未写入任何文件（{len(report.pending)} 个文件待更新）")
+        return EXIT_OK
+    for path in report.apply():
+        print(f"written {path}")
+    return EXIT_OK

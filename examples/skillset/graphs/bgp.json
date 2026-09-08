@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "IPNET_BGP",
+  "domain": "BGP",
+  "sources": ["mp_ne40"],
+  "entryNodeIds": ["fault:bgp:10"],
+  "nodes": [
+    { "id": "fault:bgp:10", "type": "FAULT", "name": "BGP邻居状态异常", "sources": ["mp_ne40"],
+      "data": { "faultId": 10, "identifier": "bgp-neighbor-abnormal", "category": "路由协议类",
+                "referenceFile": "reference/fault-10-bgp-neighbor.md",
+                "description": "BGP 对等体无法建立、频繁振荡或状态非 Established。",
+                "parameterExamples": [{ "command": "display bgp peer" }] } },
+    { "id": "cause:bgp:peer-limit", "type": "CAUSE", "name": "BGP邻居数量超限", "sources": ["mp_ne40"],
+      "data": { "nameEn": "Number of BGP neighbors exceeds the limit", "trigger": "见reference决策树" } },
+    { "id": "cause:bgp:routing-failure", "type": "CAUSE", "name": "路由故障", "sources": ["mp_ne40"],
+      "data": { "nameEn": "Routing Failure", "trigger": "见reference决策树" } },
+    { "id": "cause:bgp:config", "type": "CAUSE", "name": "BGP配置异常", "sources": ["mp_ne40"],
+      "data": { "nameEn": "Abnormal BGP Configuration", "trigger": "见reference决策树" } },
+    { "id": "cause:bgp:alarm", "type": "CAUSE", "name": "告警", "sources": ["mp_ne40"],
+      "data": { "nameEn": "Alarm", "trigger": "见reference决策树" } }
+  ],
+  "relations": [
+    { "id": "br1", "type": "HAS_CAUSE", "from": "fault:bgp:10", "to": "cause:bgp:peer-limit" },
+    { "id": "br2", "type": "HAS_CAUSE", "from": "fault:bgp:10", "to": "cause:bgp:routing-failure" },
+    { "id": "br3", "type": "HAS_CAUSE", "from": "fault:bgp:10", "to": "cause:bgp:config" },
+    { "id": "br4", "type": "HAS_CAUSE", "from": "fault:bgp:10", "to": "cause:bgp:alarm" },
+    { "id": "br5", "type": "REFERENCES", "from": "cause:bgp:routing-failure", "to": "common:infra:ospf" }
+  ],
+  "decisionTrees": [
+    { "treeId": "tree:fault:bgp:10", "entryNodeId": "fault:bgp:10", "sources": ["mp_ne40"] }
+  ]
+}

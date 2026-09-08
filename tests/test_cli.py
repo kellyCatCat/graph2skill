@@ -4,7 +4,7 @@ from graph2skill.cli import main
 
 
 def test_build_command(tmp_path, examples_dir, capsys):
-    code = main(["build", str(examples_dir), "-o", str(tmp_path / "skill")])
+    code = main(["build", str(examples_dir / "isis"), "-o", str(tmp_path / "skill")])
     out = capsys.readouterr().out
     assert code == 0
     assert (tmp_path / "skill" / "SKILL.md").exists()
@@ -13,10 +13,10 @@ def test_build_command(tmp_path, examples_dir, capsys):
 
 def test_build_refuses_existing_output_without_force(tmp_path, examples_dir, capsys):
     target = tmp_path / "skill"
-    assert main(["build", str(examples_dir), "-o", str(target)]) == 0
-    assert main(["build", str(examples_dir), "-o", str(target)]) == 2
+    assert main(["build", str(examples_dir / "isis"), "-o", str(target)]) == 0
+    assert main(["build", str(examples_dir / "isis"), "-o", str(target)]) == 2
     assert "--force" in capsys.readouterr().err
-    assert main(["build", str(examples_dir), "-o", str(target), "--force"]) == 0
+    assert main(["build", str(examples_dir / "isis"), "-o", str(target), "--force"]) == 0
 
 
 def test_build_strict_fails_on_errors(tmp_path, data_dir, capsys):
@@ -39,7 +39,7 @@ def test_validate_clean_graph(data_dir, capsys):
 
 
 def test_stats_json(examples_dir, capsys):
-    assert main(["stats", str(examples_dir), "--json"]) == 0
+    assert main(["stats", str(examples_dir / "isis"), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["domain"] == "ISIS"
     assert payload["nodes"] == 17
@@ -47,19 +47,19 @@ def test_stats_json(examples_dir, capsys):
 
 
 def test_stats_text(examples_dir, capsys):
-    assert main(["stats", str(examples_dir), "--lang", "en"]) == 0
+    assert main(["stats", str(examples_dir / "isis"), "--lang", "en"]) == 0
     assert "node types" in capsys.readouterr().out
 
 
 def test_inspect_known_node(examples_dir, capsys):
-    assert main(["inspect", str(examples_dir), "--node-id", "cause:isis:isis-75700908-1"]) == 0
+    assert main(["inspect", str(examples_dir / "isis"), "--node-id", "cause:isis:isis-75700908-1"]) == 0
     out = capsys.readouterr().out
     assert "outgoing:" in out
     assert "playbook: references/playbooks/" in out
 
 
 def test_inspect_falls_back_to_search(examples_dir, capsys):
-    assert main(["inspect", str(examples_dir), "--node-id", "LDP"]) == 0
+    assert main(["inspect", str(examples_dir / "isis"), "--node-id", "LDP"]) == 0
     assert "candidate(s)" in capsys.readouterr().err
 
 
@@ -69,7 +69,97 @@ def test_missing_input_is_a_usage_error(tmp_path, capsys):
 
 
 def test_language_switch_produces_english_skill(tmp_path, examples_dir):
-    main(["build", str(examples_dir), "-o", str(tmp_path / "en"), "--lang", "en", "--name", "isis-en"])
+    main(["build", str(examples_dir / "isis"), "-o", str(tmp_path / "en"), "--lang", "en", "--name", "isis-en"])
     text = (tmp_path / "en" / "SKILL.md").read_text(encoding="utf-8")
     assert "name: isis-en" in text
     assert "When to use" in text
+
+
+# --- skill set / merge commands ------------------------------------------------
+
+def test_skillset_init_writes_a_manifest(house_dir, capsys):
+    (house_dir / "skillset.json").unlink()
+    assert main(["skillset", "init", str(house_dir)]) == 0
+    out = capsys.readouterr().out
+    assert "manifest written" in out
+    payload = json.loads((house_dir / "skillset.json").read_text(encoding="utf-8"))
+    assert [entry["name"] for entry in payload["skills"]] == ["common", "bgp"]
+
+
+def test_skillset_init_flags_skills_without_a_graph(house_dir, capsys):
+    (house_dir / "graphs" / "bgp.json").unlink()
+    assert main(["skillset", "init", str(house_dir)]) == 1
+    assert "还没有配对的 JSON 子图" in capsys.readouterr().err
+
+
+def test_skillset_status_lists_faults(house_dir, capsys):
+    assert main(["skillset", "status", "-s", str(house_dir / "skillset.json")]) == 0
+    out = capsys.readouterr().out
+    assert "故障10 BGP邻居状态异常（4 类根因）" in out
+    assert "includes=common" in out
+
+
+def test_merge_dry_run_writes_nothing(house_dir, examples_dir, capsys):
+    before = (house_dir / "SKILL-bgp.md").read_text(encoding="utf-8")
+    code = main(
+        [
+            "merge",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--into",
+            "bgp",
+            "-s",
+            str(house_dir / "skillset.json"),
+            "--dry-run",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "--dry-run" in out
+    assert "+### 2.2 故障序号11：BGP路由震荡" in out
+    assert (house_dir / "SKILL-bgp.md").read_text(encoding="utf-8") == before
+
+
+def test_merge_applies_and_reports(house_dir, examples_dir, capsys):
+    code = main(
+        [
+            "merge",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--into",
+            str(house_dir / "SKILL-bgp.md"),
+        ]
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "+ 故障序号11：BGP路由震荡" in out
+    assert "~ 故障序号10：BGP邻居状态异常" in out
+    assert "### 2.2 故障序号11：BGP路由震荡" in (house_dir / "SKILL-bgp.md").read_text(encoding="utf-8")
+
+
+def test_merge_without_a_manifest_infers_the_skill_set(house_dir, examples_dir, capsys):
+    (house_dir / "skillset.json").unlink()
+    code = main(
+        [
+            "merge",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--into",
+            str(house_dir / "SKILL-bgp.md"),
+        ]
+    )
+    err = capsys.readouterr().err
+    assert code == 0
+    assert "已按目录结构推断技能集" in err
+
+
+def test_merge_unknown_skill_is_a_usage_error(house_dir, examples_dir, capsys):
+    code = main(
+        [
+            "merge",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--into",
+            "ospf",
+            "-s",
+            str(house_dir / "skillset.json"),
+        ]
+    )
+    assert code == 2
+    assert "unknown skill" in capsys.readouterr().err

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "IPNET_COMMON",
+  "domain": "IP网络",
+  "sources": ["mp_common"],
+  "entryNodeIds": ["theme:common:infra"],
+  "nodes": [
+    { "id": "theme:common:infra", "type": "THEME", "name": "共享基础设施故障", "sources": ["mp_common"],
+      "data": { "description": "所有场景技能共用的底层故障章节。" } },
+    { "id": "common:infra:port-down", "type": "FAULT", "name": "物理端口故障", "sources": ["mp_common"],
+      "data": { "section": "3.1", "description": "接口物理层 DOWN、光口无光、端口被 shutdown。",
+                "parameterExamples": [{ "command": "display interface brief" }] } },
+    { "id": "common:infra:device-offline", "type": "FAULT", "name": "设备离线故障", "sources": ["mp_common"],
+      "data": { "section": "3.2" } },
+    { "id": "common:infra:optical-module", "type": "FAULT", "name": "光模块故障", "sources": ["mp_common"],
+      "data": { "section": "3.4" } },
+    { "id": "common:infra:optical-power", "type": "FAULT", "name": "光功率故障", "sources": ["mp_common"],
+      "data": { "section": "3.5" } },
+    { "id": "common:infra:link-fault", "type": "FAULT", "name": "链路故障", "sources": ["mp_common"],
+      "data": { "section": "3.6", "description": "链路误码、单通、中间传输设备异常。" } },
+    { "id": "common:infra:ospf", "type": "FAULT", "name": "OSPF状态异常", "sources": ["mp_common"],
+      "data": { "section": "3.8" } },
+    { "id": "common:infra:bfd", "type": "FAULT", "name": "BFD会话异常", "sources": ["mp_common"],
+      "data": { "section": "3.11" } },
+    { "id": "common:infra:ldp", "type": "FAULT", "name": "LDP故障", "sources": ["mp_common"],
+      "data": { "section": "3.25", "description": "LDP 会话无法建立或异常中断。" } },
+    { "id": "common:infra:mpls", "type": "FAULT", "name": "MPLS故障", "sources": ["mp_common"],
+      "data": { "section": "3.26" } }
+  ],
+  "relations": [
+    { "id": "cr1", "type": "HAS_SCENARIO", "from": "theme:common:infra", "to": "common:infra:port-down" },
+    { "id": "cr2", "type": "HAS_SCENARIO", "from": "theme:common:infra", "to": "common:infra:link-fault" },
+    { "id": "cr3", "type": "HAS_SCENARIO", "from": "theme:common:infra", "to": "common:infra:ospf" },
+    { "id": "cr4", "type": "HAS_SCENARIO", "from": "theme:common:infra", "to": "common:infra:ldp" }
+  ]
+}

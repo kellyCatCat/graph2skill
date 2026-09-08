@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "IPNET_BGP_FLAP",
+  "domain": "BGP",
+  "sources": ["ipr_cot"],
+  "entryNodeIds": ["fault:bgp:11"],
+  "nodes": [
+    { "id": "fault:bgp:11", "type": "FAULT", "name": "BGP路由震荡", "sources": ["ipr_cot"],
+      "data": { "faultId": 11, "identifier": "bgp-route-flap", "category": "路由协议类",
+                "description": "BGP 路由反复撤销与重通告，导致业务间歇中断。",
+                "parameterExamples": [{ "command": "display bgp routing-table flap-info" }],
+                "provenance": [{ "sourcePath": "cot_BGP路由震荡_IPRAN故障场景.md", "locator": "document-root",
+                                 "excerpt": "现场表现为业务间歇丢包，BGP 路由表频繁刷新。" }] } },
+    { "id": "cause:bgp:link-flap", "type": "CAUSE", "name": "承载链路震荡", "sources": ["ipr_cot"],
+      "data": { "nameEn": "Carrier Link Flapping", "trigger": "接口频繁 UP/DOWN",
+                "parameterExamples": [{ "command": "display interface GigabitEthernet0/1/0" }] } },
+    { "id": "cause:bgp:route-dampening", "type": "CAUSE", "name": "路由衰减配置不当", "sources": ["ipr_cot"],
+      "data": { "nameEn": "Improper Route Dampening", "trigger": "dampening 参数与现网不匹配" } },
+    { "id": "cause:bgp:ldp-flap", "type": "CAUSE", "name": "LDP会话震荡引发标签重分配", "sources": ["ipr_cot"],
+      "data": { "nameEn": "LDP Session Flapping", "trigger": "LDP 会话反复 Up/Down" } },
+    { "id": "check:bgp:flap-info", "type": "CHECK", "name": "查看路由震荡统计", "sources": ["ipr_cot"],
+      "data": { "parameterExamples": [{ "command": "display bgp routing-table flap-info" },
+                                       { "command": "display bgp peer verbose" }] } },
+    { "id": "action:bgp:dampening", "type": "ACTION", "name": "调整路由衰减参数", "sources": ["ipr_cot"],
+      "data": { "parameterExamples": [{ "command": "dampening 15 750 2000 60" }] } },
+    { "id": "cause:bgp:mtu", "type": "CAUSE", "name": "路径MTU不一致导致会话重建", "sources": ["ipr_cot"],
+      "data": { "nameEn": "Path MTU Mismatch", "trigger": "大报文丢弃、会话周期性重建" } }
+  ],
+  "relations": [
+    { "id": "fr1", "type": "HAS_CAUSE", "from": "fault:bgp:11", "to": "cause:bgp:link-flap" },
+    { "id": "fr2", "type": "HAS_CAUSE", "from": "fault:bgp:11", "to": "cause:bgp:route-dampening" },
+    { "id": "fr3", "type": "HAS_CAUSE", "from": "fault:bgp:11", "to": "cause:bgp:ldp-flap" },
+    { "id": "fr4", "type": "HAS_CHECK", "from": "fault:bgp:11", "to": "check:bgp:flap-info" },
+    { "id": "fr5", "type": "HAS_ACTION", "from": "cause:bgp:route-dampening", "to": "action:bgp:dampening" },
+    { "id": "fr6", "type": "REFERENCES", "from": "cause:bgp:link-flap", "to": "common:infra:link-fault" },
+    { "id": "fr7", "type": "REFERENCES", "from": "cause:bgp:ldp-flap", "to": "common:infra:ldp" },
+    { "id": "fr8", "type": "HAS_CAUSE", "from": "fault:bgp:10", "to": "cause:bgp:mtu" }
+  ],
+  "decisionTrees": [
+    { "treeId": "tree:fault:bgp:11", "entryNodeId": "fault:bgp:11", "sources": ["ipr_cot"] }
+  ]
+}
