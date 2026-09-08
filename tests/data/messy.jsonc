@@ -1,0 +1,18 @@
+// hand edited export
+{
+  "graphId": "MESSY", /* no schemaVersion on purpose */
+  "domain": "DEMO",
+  "entryNodeIds": ["scenario:demo:1", "scenario:demo:missing",],
+  "nodes": [
+    { "id": "scenario:demo:1", "type": "SCENARIO", "name": "示例场景（别名）", "sources": ["doc_b"],
+      "data": { "observations": ["另一个来源的现象"], },
+    },
+    { "id": "case:demo:1", "type": "CASE", "name": "示例案例", "sources": ["doc_b"], "data": {} },
+    { "type": "CAUSE", "name": "缺少 id 的节点" },
+  ],
+  "relations": [
+    { "id": "r1", "type": "HAS_CAUSE", "from": "scenario:demo:1", "to": "cause:demo:1" },
+    { "id": "r2", "type": "HAS_CASE", "from": "cause:demo:1", "to": "case:demo:1" },
+    { "id": "r3", "type": "HAS_CASE", "from": "cause:demo:1", "to": "node:does-not-exist" },
+  ],
+}

@@ -1,0 +1,109 @@
+// 第二份图：来自 COT 案例抽取管线（ipr_cot）。
+// 故意保留尾逗号和注释，用来演示 graph2skill 的容错加载。
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "ISIS_COT_CASES",
+  "domain": "ISIS",
+  "sources": ["ipr_cot"],
+  "entryNodeIds": [
+    "scenario:isis:isis-21d0538f",
+  ],
+  "nodes": [
+    {
+      "id": "scenario:isis:IS-IS-1",
+      "type": "SCENARIO",
+      /* 同一个场景在 COT 侧的叫法不同：合并时会记录冲突并保留别名 */
+      "name": "IS-IS 邻居建立失败（现场工单口径）",
+      "source": "ipr_cot",
+      "sources": ["ipr_cot"],
+      "data": {
+        "observations": ["现场反馈基站退服，排查发现 IPRAN 环上 IS-IS 邻居未建立"],
+        "sourceVersion": "ipr-cot-2026-09",
+      },
+    },
+    {
+      "id": "scenario:isis:isis-21d0538f",
+      "type": "SCENARIO",
+      "name": "IPRAN 故障场景-路由协议故障-ISIS 网络类型不匹配",
+      "source": "ipr_cot",
+      "sources": ["ipr_cot"],
+      "data": {
+        "description": "IPRAN 现网案例场景：ISIS 网络类型不匹配导致邻居无法建立、业务中断。",
+        "nodeType": "Scenario",
+        "executionClass": "EXECUTABLE",
+        "scenarioId": "scenario:isis:isis-21d0538f",
+        "sourceVersion": "ipr-cot-2026-09",
+      },
+    },
+    {
+      "id": "case:isis:isis-21d0538f-1",
+      "type": "CASE",
+      "name": "IPRAN故障场景-路由协议故障-ISIS网络类型不匹配-张沄嵩",
+      "source": "ipr_cot",
+      "data": {
+        "description": "COT 案例：IPRAN故障场景-路由协议故障-ISIS网络类型不匹配-张沄嵩",
+        "executionClass": "EXECUTABLE",
+        "nodeType": "Case",
+        "observations": [
+          "IPRAN故障场景-路由协议故障-ISIS网络类型不匹配-张沄嵩",
+        ],
+        "parameterExamples": [
+          { "command": "BGP local router ID : 1.1.1.1" },
+          { "command": "Peer V AS MsgRcvd MsgSent OutQ Up/Down State PrefRcv" },
+          { "command": "Summary Count : 1" },
+          { "command": "Preference: 0 Cost: 0" },
+          { "command": "TunnelID: 0x0 Flags: D" },
+        ],
+        "provenance": [
+          {
+            "anchor": "sha256:5a1d437bb8647bdc5c659d6a61f9c1b613eb72561a935ccb7e119eb712cb41b6",
+            "excerpt": "IPRAN故障场景-路由协议故障-ISIS网络类型不匹配-张沄嵩",
+            "locator": "document-root",
+            "sourcePath": "cot_IPRAN故障场景-路由协议故障-ISIS网络类型不匹配-张沄嵩_IPRAN故障场景.md",
+          },
+        ],
+        "scenarioId": "scenario:isis:isis-21d0538f",
+        "sourceVersion": "ipr-cot-2026-09",
+      },
+      "sources": ["ipr_cot"],
+    },
+    {
+      "id": "case:isis:ldp-loop-1",
+      "type": "CASE",
+      "name": "IS-IS 路由互引导致 IS-IS 和 LDP 联动场景路由成环",
+      "source": "ipr_cot",
+      "sources": ["ipr_cot", "mp_ne40"],
+      "data": {
+        "description": "DeviceA 故障恢复后，LDP 会话与 IS-IS 路由互相等待，业务长时间不恢复。",
+        "nodeType": "Case",
+        "parameterExamples": [
+          { "command": "display mpls ldp session" },
+          { "command": "display isis route" },
+        ],
+        "provenance": [
+          {
+            "anchor": "sha256:c05ff60b0bee4e9ed9da995a753ee05752d646475d09608fbef121e345bcedcf",
+            "excerpt": "IS-IS 和 LDP 互相依赖，IS-IS 路由无法优选 DeviceA，LDP 会话无法 Up。",
+            "locator": "故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环 / 故障分析",
+            "sourcePath": "故障处理：IP路由/IS-IS故障案例/故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环.md",
+          },
+        ],
+      },
+    },
+  ],
+  "relations": [
+    { "id": "rel_c01", "type": "HAS_CASE", "from": "scenario:isis:isis-21d0538f", "to": "case:isis:isis-21d0538f-1", "source": "ipr_cot", "sources": ["ipr_cot"], "data": { "edgeType": "HAS_CASE" } },
+    { "id": "rel_c02", "type": "HAS_CASE", "from": "cause:isis:network-type-mismatch", "to": "case:isis:isis-21d0538f-1", "source": "ipr_cot", "sources": ["ipr_cot"], "data": { "edgeType": "HAS_CASE", "condition": "现网同类案例" } },
+    { "id": "rel_c03", "type": "HAS_CASE", "from": "cause:isis:isis-75700908-1", "to": "case:isis:ldp-loop-1", "source": "ipr_cot", "sources": ["ipr_cot"], "data": { "edgeType": "HAS_CASE" } },
+    { "id": "rel_c04", "type": "HAS_SCENARIO", "from": "theme:isis", "to": "scenario:isis:isis-21d0538f", "source": "ipr_cot", "sources": ["ipr_cot"], "data": { "edgeType": "HAS_SCENARIO" } },
+  ],
+  "decisionTrees": [
+    {
+      "treeId": "tree:scenario:isis:isis-21d0538f",
+      "entryNodeId": "scenario:isis:isis-21d0538f",
+      "nodeIds": ["scenario:isis:isis-21d0538f", "case:isis:isis-21d0538f-1"],
+      "relationIds": ["rel_c01"],
+      "sources": ["ipr_cot"],
+    },
+  ],
+}

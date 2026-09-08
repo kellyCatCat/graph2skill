@@ -1,0 +1,324 @@
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "ISIS_ALL",
+  "domain": "ISIS",
+  "sources": ["mp_ne40"],
+  "entryNodeIds": [
+    "scenario:isis:IS-IS-1",
+    "scenario:isis:IS-IS-2"
+  ],
+  "nodes": [
+    {
+      "id": "theme:isis",
+      "type": "THEME",
+      "name": "IS-IS 协议故障处理",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "NE40 系列路由器 IS-IS 协议相关故障的处理主题，覆盖邻居建立、路由选路与联动场景。",
+        "nodeType": "Theme",
+        "sourceVersion": "mp-ne40-v8"
+      }
+    },
+    {
+      "id": "scenario:isis:IS-IS-1",
+      "type": "SCENARIO",
+      "name": "IS-IS 邻居无法建立",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "两台直连设备之间 IS-IS 邻居长期处于 Init/Down，display isis peer 看不到对端。",
+        "nodeType": "Scenario",
+        "executionClass": "EXECUTABLE",
+        "observations": [
+          "display isis peer 无表项或状态非 Up",
+          "接口物理状态 Up，但 IS-IS 邻居不建立",
+          "日志中出现 ISIS/4/PEER_DOWN 告警"
+        ],
+        "parameterExamples": [
+          { "command": "display isis peer" },
+          { "command": "display isis interface verbose" }
+        ],
+        "provenance": [
+          {
+            "anchor": "sha256:9f2c1b0d4f7e5a6c8d1e2f3a4b5c6d7e8f90112233445566778899aabbccddee",
+            "excerpt": "IS-IS 邻居无法建立时，首先确认接口是否使能 IS-IS，以及两端的网络类型、Level、区域地址是否一致。",
+            "locator": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立",
+            "sourcePath": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立.md"
+          }
+        ]
+      }
+    },
+    {
+      "id": "scenario:isis:IS-IS-2",
+      "type": "SCENARIO",
+      "name": "IS-IS 路由选路异常或成环",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "IS-IS 邻居正常，但路由未按预期收敛，出现次优选路、路由震荡或转发成环。",
+        "nodeType": "Scenario",
+        "executionClass": "EXECUTABLE",
+        "observations": [
+          "业务流量走了非预期路径",
+          "tracert 出现往返跳变",
+          "IS-IS 与 LDP 联动场景下 LSP 无法建立"
+        ],
+        "parameterExamples": [
+          { "command": "display isis route" },
+          { "command": "display isis lsdb verbose" }
+        ],
+        "provenance": [
+          {
+            "anchor": "sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809",
+            "excerpt": "路由成环通常由路由互引或 Cost 设置不合理引起，需要结合 LSDB 与路由引入策略分析。",
+            "locator": "故障处理：IP路由/IS-IS故障案例/路由成环",
+            "sourcePath": "故障处理：IP路由/IS-IS故障案例/故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环.md"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cause:isis:network-type-mismatch",
+      "type": "CAUSE",
+      "name": "两端接口网络类型不匹配（P2P 与 Broadcast）",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "一端接口配置 isis circuit-type p2p，另一端保持默认 broadcast，Hello 报文类型不一致导致邻居无法建立。",
+        "nodeType": "Cause",
+        "executionClass": "EXECUTABLE",
+        "observations": ["一端 display isis interface 显示 P2P，另一端显示 Broadcast-DIS"],
+        "provenance": [
+          {
+            "anchor": "sha256:2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a",
+            "excerpt": "接口网络类型不一致时，两端发送的 Hello 报文类型不同，邻居关系无法建立。",
+            "locator": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立 / 常见原因",
+            "sourcePath": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立.md"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cause:isis:level-area-mismatch",
+      "type": "CAUSE",
+      "name": "Level 或区域地址不一致",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "Level-1 邻居要求区域地址相同；Level-1 与 Level-2 接口之间不会建立邻居。",
+        "nodeType": "Cause",
+        "provenance": [
+          {
+            "anchor": "sha256:3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b",
+            "excerpt": "Level-1 邻居必须属于同一区域，区域地址不同将无法建立邻接关系。",
+            "locator": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立 / 常见原因",
+            "sourcePath": "故障处理：IP路由/IS-IS故障处理/IS-IS邻居无法建立.md"
+          }
+        ]
+      }
+    },
+    {
+      "id": "cause:isis:mtu-mismatch",
+      "type": "CAUSE",
+      "name": "接口 MTU 不一致导致 LSP 交互失败",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "两端 MTU 不一致时，大报文 LSP 无法正常收发，邻居可能在 Init 与 Up 之间反复切换。",
+        "nodeType": "Cause"
+      }
+    },
+    {
+      "id": "cause:isis:isis-75700908-1",
+      "type": "CAUSE",
+      "name": "IS-IS 与 LDP 互相依赖导致会话无法 Up",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "路由引入不合理时，链路 Cost 被置为 16777214，IS-IS 不优选该路径，而 LDP 会话 Up 又依赖该路由，形成互锁。",
+        "nodeType": "Cause",
+        "executionClass": "EXECUTABLE",
+        "observations": [
+          "display mpls ldp session 显示会话处于 Non-existent",
+          "display isis route 中目的地址的 Cost 为 16777214"
+        ],
+        "parameterExamples": [
+          { "command": "display mpls ldp session" },
+          { "command": "display isis route | include 16777214" }
+        ],
+        "provenance": [
+          {
+            "anchor": "sha256:c05ff60b0bee4e9ed9da995a753ee05752d646475d09608fbef121e345bcedcf",
+            "excerpt": "故障分析：由于 DeviceB 和 DeviceC 的路由引入不合理，导致 DeviceA 设备故障恢复时，由于 LDP 会话未 Up，DeviceB 到 DeviceA 的链路 Cost 值为 16777214，而 LDP 会话 Up 依赖 IS-IS 路由优选 DeviceA，因此 LDP 会话无法 Up，造成 IS-IS 和 LDP 互相依赖。",
+            "locator": "故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环 / 网络环境",
+            "sourcePath": "故障处理：IP路由/IS-IS故障案例/故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环.md"
+          }
+        ]
+      }
+    },
+    {
+      "id": "check:isis:peer-status",
+      "type": "CHECK",
+      "name": "确认 IS-IS 邻居状态与接口使能情况",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "先确认两端接口都已在 IS-IS 进程下使能，再看邻居表项与 Level。",
+        "nodeType": "Check",
+        "executionClass": "EXECUTABLE",
+        "parameterExamples": [
+          { "command": "display isis peer" },
+          { "command": "display isis interface verbose" },
+          { "command": "display current-configuration interface GigabitEthernet0/1/0" }
+        ]
+      }
+    },
+    {
+      "id": "check:isis:interface-type",
+      "type": "CHECK",
+      "name": "比对两端接口网络类型与 Level",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "在两端分别执行，确认 Type 字段一致（同为 P2P 或同为 Broadcast），且 Level 匹配。",
+        "nodeType": "Check",
+        "executionClass": "EXECUTABLE",
+        "parameterExamples": [
+          { "command": "display isis interface verbose" },
+          { "command": "Interface Id IPV4.State IPV6.State MTU Type DIS" }
+        ]
+      }
+    },
+    {
+      "id": "check:isis:cost",
+      "type": "CHECK",
+      "name": "检查链路 Cost 与路由引入策略",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "description": "重点关注是否存在 16777214 这类最大开销，以及互引路由是否被再次引入回本协议。",
+        "nodeType": "Check",
+        "executionClass": "EXECUTABLE",
+        "parameterExamples": [
+          { "command": "display isis route" },
+          { "command": "display current-configuration configuration isis" },
+          { "command": "Preference: 0 Cost: 0" }
+        ]
+      }
+    },
+    {
+      "id": "check:isis:ldp-session",
+      "type": "CHECK",
+      "name": "检查 LDP 会话与 IS-IS 联动配置",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "nodeType": "Check",
+        "description": "确认是否配置了 LDP 与 IGP 联动（ldp sync），以及 hold-max-cost 定时器是否合理。",
+        "parameterExamples": [
+          { "command": "display mpls ldp session" },
+          { "command": "display current-configuration | include ldp" }
+        ]
+      }
+    },
+    {
+      "id": "action:isis:align-network-type",
+      "type": "ACTION",
+      "name": "统一两端接口网络类型",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "nodeType": "Action",
+        "description": "在需要修改的一端接口视图下执行 isis circuit-type p2p（或取消该配置恢复为 broadcast），使两端类型一致。",
+        "parameterExamples": [
+          { "command": "interface GigabitEthernet0/1/0" },
+          { "command": "isis circuit-type p2p" },
+          { "command": "undo isis circuit-type" }
+        ]
+      }
+    },
+    {
+      "id": "action:isis:fix-route-import",
+      "type": "ACTION",
+      "name": "修正路由互引并解除 IS-IS/LDP 互锁",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "nodeType": "Action",
+        "description": "调整路由引入策略，避免把本协议路由再次引入回来；必要时配置 ldp sync 的 hold-max-cost 时间以打破互锁。",
+        "parameterExamples": [
+          { "command": "isis 1" },
+          { "command": "undo import-route ospf 1 level-2" },
+          { "command": "mpls ldp sync hold-max-cost 120" }
+        ]
+      }
+    },
+    {
+      "id": "relation:isis:isis-75700908-1-next1",
+      "type": "RELATION",
+      "name": "IS-IS 与 LDP 联动机制说明",
+      "source": "mp_ne40",
+      "sources": ["mp_ne40"],
+      "data": {
+        "nodeType": "Relation",
+        "description": "LDP 与 IGP 联动时，IGP 会在 LDP 会话未 Up 期间把链路 Cost 置为最大值，等待 LDP 收敛后再恢复。",
+        "provenance": [
+          {
+            "anchor": "sha256:5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c",
+            "excerpt": "LDP 与 IGP 联动特性通过将链路开销置为最大值，避免 LSP 未建立时流量切换到该链路。",
+            "locator": "特性描述：MPLS/LDP 与 IGP 联动",
+            "sourcePath": "特性描述：MPLS/LDP与IGP联动.md"
+          }
+        ]
+      }
+    }
+  ],
+  "relations": [
+    { "id": "rel_300", "type": "HAS_SCENARIO", "from": "theme:isis", "to": "scenario:isis:IS-IS-1", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_SCENARIO" } },
+    { "id": "rel_301", "type": "HAS_SCENARIO", "from": "theme:isis", "to": "scenario:isis:IS-IS-2", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_SCENARIO" } },
+    { "id": "rel_310", "type": "HAS_CHECK", "from": "scenario:isis:IS-IS-1", "to": "check:isis:peer-status", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CHECK", "condition": "先做基础确认" } },
+    { "id": "rel_311", "type": "HAS_CAUSE", "from": "scenario:isis:IS-IS-1", "to": "cause:isis:network-type-mismatch", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CAUSE", "condition": "两端 display isis interface 的 Type 不一致" } },
+    { "id": "rel_312", "type": "HAS_CAUSE", "from": "scenario:isis:IS-IS-1", "to": "cause:isis:level-area-mismatch", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CAUSE", "condition": "两端 Level 或区域地址不同" } },
+    { "id": "rel_313", "type": "HAS_CAUSE", "from": "scenario:isis:IS-IS-1", "to": "cause:isis:mtu-mismatch", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CAUSE", "condition": "邻居在 Init/Up 之间反复切换" } },
+    { "id": "rel_320", "type": "HAS_CHECK", "from": "cause:isis:network-type-mismatch", "to": "check:isis:interface-type", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CHECK" } },
+    { "id": "rel_321", "type": "HAS_ACTION", "from": "check:isis:interface-type", "to": "action:isis:align-network-type", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_ACTION", "condition": "确认两端类型不一致后执行" } },
+    { "id": "rel_330", "type": "HAS_CAUSE", "from": "scenario:isis:IS-IS-2", "to": "cause:isis:isis-75700908-1", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CAUSE", "condition": "存在 IS-IS 与 LDP 联动配置" } },
+    { "id": "rel_331", "type": "HAS_CHECK", "from": "scenario:isis:IS-IS-2", "to": "check:isis:cost", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CHECK" } },
+    { "id": "rel_001", "type": "HAS_RELATION", "from": "cause:isis:isis-75700908-1", "to": "relation:isis:isis-75700908-1-next1", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_RELATION", "provenance": [ { "anchor": "sha256:c05ff60b0bee4e9ed9da995a753ee05752d646475d09608fbef121e345bcedcf", "excerpt": "IS-IS 和 LDP 互相依赖，IS-IS 路由无法优选 DeviceA，LDP 会话无法 Up。", "locator": "故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环 / 网络环境", "sourcePath": "故障处理：IP路由/IS-IS故障案例/故障案例：IS-IS路由互引导致IS-IS和LDP联动场景路由成环.md" } ] } },
+    { "id": "rel_332", "type": "HAS_CHECK", "from": "cause:isis:isis-75700908-1", "to": "check:isis:ldp-session", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_CHECK" } },
+    { "id": "rel_333", "type": "HAS_ACTION", "from": "check:isis:ldp-session", "to": "action:isis:fix-route-import", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_ACTION", "condition": "确认存在路由互引后执行" } },
+    { "id": "rel_334", "type": "HAS_ACTION", "from": "check:isis:cost", "to": "action:isis:fix-route-import", "source": "mp_ne40", "sources": ["mp_ne40"], "data": { "edgeType": "HAS_ACTION" } }
+  ],
+  "decisionTrees": [
+    {
+      "treeId": "tree:scenario:isis:IS-IS-1",
+      "entryNodeId": "scenario:isis:IS-IS-1",
+      "nodeIds": [
+        "scenario:isis:IS-IS-1",
+        "check:isis:peer-status",
+        "cause:isis:network-type-mismatch",
+        "cause:isis:level-area-mismatch",
+        "cause:isis:mtu-mismatch",
+        "check:isis:interface-type",
+        "action:isis:align-network-type"
+      ],
+      "relationIds": ["rel_310", "rel_311", "rel_312", "rel_313", "rel_320", "rel_321"],
+      "sources": ["mp_ne40"]
+    },
+    {
+      "treeId": "tree:scenario:isis:IS-IS-2",
+      "entryNodeId": "scenario:isis:IS-IS-2",
+      "nodeIds": [
+        "scenario:isis:IS-IS-2",
+        "cause:isis:isis-75700908-1",
+        "check:isis:cost",
+        "check:isis:ldp-session",
+        "relation:isis:isis-75700908-1-next1",
+        "action:isis:fix-route-import"
+      ],
+      "relationIds": ["rel_330", "rel_331", "rel_332", "rel_333", "rel_334", "rel_001"],
+      "sources": ["mp_ne40"]
+    }
+  ]
+}

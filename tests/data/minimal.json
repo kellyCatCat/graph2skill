@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "cograg.domain-decision-subgraph.v1",
+  "graphId": "MINI",
+  "domain": "DEMO",
+  "entryNodeIds": ["scenario:demo:1"],
+  "nodes": [
+    { "id": "scenario:demo:1", "type": "SCENARIO", "name": "示例场景", "sources": ["doc_a"],
+      "data": { "description": "一个最小场景", "parameterExamples": [{ "command": "show demo" }] } },
+    { "id": "cause:demo:1", "type": "CAUSE", "name": "示例原因", "sources": ["doc_a"],
+      "data": { "provenance": [{ "sourcePath": "a.md", "locator": "sec-1", "excerpt": "原因说明" }] } }
+  ],
+  "relations": [
+    { "id": "r1", "type": "HAS_CAUSE", "from": "scenario:demo:1", "to": "cause:demo:1" }
+  ],
+  "decisionTrees": [
+    { "treeId": "tree:demo:1", "entryNodeId": "scenario:demo:1", "nodeIds": ["scenario:demo:1", "cause:demo:1"], "relationIds": ["r1"] }
+  ]
+}

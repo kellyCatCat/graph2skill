@@ -1,0 +1,16 @@
+{
+  "graphId": "CYCLE",
+  "domain": "DEMO",
+  "entryNodeIds": ["a"],
+  "nodes": [
+    { "id": "a", "type": "SCENARIO", "name": "A" },
+    { "id": "b", "type": "CAUSE", "name": "B" },
+    { "id": "c", "type": "CHECK", "name": "C" },
+    { "id": "lonely", "type": "NOTE", "name": "孤立节点" }
+  ],
+  "relations": [
+    { "id": "e1", "type": "HAS_CAUSE", "from": "a", "to": "b" },
+    { "id": "e2", "type": "HAS_CHECK", "from": "b", "to": "c" },
+    { "id": "e3", "type": "NEXT", "from": "c", "to": "a" }
+  ]
+}
