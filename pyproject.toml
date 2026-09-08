@@ -10,12 +10,14 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "graph2skill contributors" }]
-keywords = ["knowledge-graph", "skill", "decision-tree", "troubleshooting"]
+keywords = ["knowledge-graph", "skill", "decision-tree", "troubleshooting", "llm"]
 dependencies = []
 
 [project.optional-dependencies]
 yaml = ["PyYAML>=6.0"]
-dev = ["pytest>=7.0", "PyYAML>=6.0"]
+llm = ["requests>=2.28"]            # 自建 OpenAI 兼容端点（默认通道）
+anthropic = ["anthropic>=0.40"]     # Claude API 通道
+dev = ["pytest>=7.0", "PyYAML>=6.0", "requests>=2.28"]
 
 [project.scripts]
 graph2skill = "graph2skill.cli:main"
@@ -27,7 +29,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-graph2skill = ["resources/*.py"]
+graph2skill = ["resources/*.py", "resources/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

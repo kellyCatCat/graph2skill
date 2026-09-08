@@ -15,7 +15,7 @@ import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from graph2skill.faultmodel import CauseView, CommonRef, FaultView
-from graph2skill.mdsection import MarkdownDoc, Table, split_row
+from graph2skill.mdsection import MarkdownDoc, Table
 from graph2skill.model import Node
 from graph2skill.util import escape_table_cell, one_line, truncate
 

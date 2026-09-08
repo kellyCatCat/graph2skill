@@ -163,3 +163,114 @@ def test_merge_unknown_skill_is_a_usage_error(house_dir, examples_dir, capsys):
     )
     assert code == 2
     assert "unknown skill" in capsys.readouterr().err
+
+
+# --- steps / lint / models -----------------------------------------------------
+
+def test_steps_writes_one_file_per_fault(tmp_path, examples_dir, capsys):
+    code = main(
+        [
+            "steps",
+            str(examples_dir / "skillset" / "graphs" / "bgp.json"),
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "-d",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    names = sorted(path.name for path in tmp_path.glob("*.md"))
+    assert names == ["bgp-neighbor-abnormal.md", "bgp-route-flap.md"]
+    assert "0 个错误" in capsys.readouterr().out
+
+
+def test_steps_can_select_one_fault(tmp_path, examples_dir):
+    main(
+        [
+            "steps",
+            str(examples_dir / "skillset" / "graphs" / "bgp.json"),
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--fault",
+            "11",
+            "-o",
+            str(tmp_path / "flap.md"),
+        ]
+    )
+    text = (tmp_path / "flap.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nname: bgp-route-flap")
+    assert "# 根因对照表" in text
+
+
+def test_steps_unknown_fault_is_reported(tmp_path, examples_dir, capsys):
+    code = main(["steps", str(examples_dir / "skillset" / "graphs" / "bgp.json"), "--fault", "99", "-d", str(tmp_path)])
+    assert code == 1
+    assert "没有找到可生成的故障" in capsys.readouterr().err
+
+
+def test_steps_prompt_only_writes_the_prompt(tmp_path, examples_dir, capsys):
+    target = tmp_path / "prompt.txt"
+    code = main(
+        ["steps", str(examples_dir / "incoming" / "bgp-route-flap.json"), "--fault", "11", "--prompt-only", str(target)]
+    )
+    assert code == 0
+    text = target.read_text(encoding="utf-8")
+    assert "===== SYSTEM =====" in text and "<证据包>" in text
+    assert not list(tmp_path.glob("*.md"))
+
+
+def test_steps_from_response_lints_an_external_answer(tmp_path, examples_dir, capsys):
+    response = tmp_path / "answer.md"
+    response.write_text("这不是一份合规的 skill", encoding="utf-8")
+    code = main(
+        [
+            "steps",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--fault",
+            "11",
+            "--from-response",
+            str(response),
+            "-o",
+            str(tmp_path / "out.md"),
+            "--strict",
+        ]
+    )
+    assert code == 1
+    assert "front-matter-missing" in capsys.readouterr().err
+
+
+def test_lint_command_reports_errors(tmp_path, examples_dir, capsys):
+    target = tmp_path / "skill.md"
+    main(["steps", str(examples_dir / "incoming" / "bgp-route-flap.json"), "--fault", "11", "-o", str(target)])
+    assert main(["lint", str(target)]) == 0
+    broken = tmp_path / "broken.md"
+    broken.write_text(target.read_text(encoding="utf-8").replace("# 根因对照表", "# 根因表"), encoding="utf-8")
+    assert main(["lint", str(broken)]) == 1
+    assert "sections" in capsys.readouterr().out
+
+
+def test_lint_with_a_graph_flags_invented_commands(tmp_path, examples_dir, capsys):
+    target = tmp_path / "skill.md"
+    main(["steps", str(examples_dir / "incoming" / "bgp-route-flap.json"), "--fault", "11", "-o", str(target)])
+    tampered = target.read_text(encoding="utf-8").replace(
+        "`display interface GigabitEthernet0/1/0`", "`display interface brief all`"
+    )
+    target.write_text(tampered, encoding="utf-8")
+    code = main(["lint", str(target), "--graph", str(examples_dir / "incoming" / "bgp-route-flap.json")])
+    assert code == 1
+    assert "command-not-in-source" in capsys.readouterr().out
+
+
+def test_models_command_reports_missing_configuration(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("QWEN38_BASE_URL", raising=False)
+    assert main(["models", "--env", str(tmp_path / "absent.env")]) == 0
+    out = capsys.readouterr().out
+    assert "qwen3.8-27b" in out
+    assert "QWEN38_BASE_URL" in out
+
+
+def test_models_command_shows_resolved_configuration(tmp_path, capsys):
+    env = tmp_path / ".env"
+    env.write_text("QWEN38_BASE_URL=http://model.internal:8000/v1\nQWEN38_API_KEY=sk-abcdefghijklmnop\n", encoding="utf-8")
+    assert main(["models", "--model", "qwen3.8-27b", "--env", str(env)]) == 0
+    out = capsys.readouterr().out
+    assert "http://model.internal:8000/v1/chat/completions" in out
+    assert "sk-abcdefghijklmnop" not in out  # masked

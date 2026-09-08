@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
@@ -14,6 +15,7 @@ from graph2skill.bundle import SkillBundle, SkillOptions
 from graph2skill.loader import GraphLoadError
 from graph2skill.ontology import EN, ZH, node_type_label
 from graph2skill.skill import build_bundle, write_skill
+from graph2skill.llm import LLMError
 from graph2skill.skillset import SkillSet, SkillSetError
 
 EXIT_OK = 0
@@ -271,6 +273,42 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("-s", "--set", default=None, help="清单路径，默认当前目录的 skillset.json")
     status.set_defaults(func=cmd_skillset_status)
 
+    steps = sub.add_parser("steps", help="按模板规范生成排查型 skill（可调用大模型）")
+    steps.add_argument("inputs", nargs="+", help="图文件或目录")
+    steps.add_argument("--fault", default=None, help="只生成指定故障（故障序号 / 标识 / 节点 id）")
+    steps.add_argument("-o", "--output", default=None, help="输出文件（只在单个故障时使用）")
+    steps.add_argument("-d", "--directory", default=None, help="输出目录，文件名取 front matter 的 name")
+    steps.add_argument("--common", default=None, help="公共技能的子图，其中的节点只保留引用")
+    steps.add_argument("--common-doc", default=None, help="公共技能文档，用于解析章节号")
+    steps.add_argument("--graph-id", default=None, help=argparse.SUPPRESS)
+    steps.add_argument("--domain", default=None, help=argparse.SUPPRESS)
+    steps.add_argument("--no-recursive", action="store_true", help=argparse.SUPPRESS)
+    steps.add_argument("--llm", action="store_true", help="调用大模型改写初稿（默认只用程序生成）")
+    steps.add_argument("--provider", choices=["openai", "anthropic"], default="openai",
+                       help="openai=自建 OpenAI 兼容端点（读 .env，默认）；anthropic=Claude API")
+    steps.add_argument("--model", default=None, help="模型名，默认 qwen3.8-27b（见 MODEL_PROFILES）")
+    steps.add_argument("--base-url", default=None, help="直接指定模型地址，优先于 .env")
+    steps.add_argument("--env", default=None, help=".env 路径，默认当前目录（也可用 GRAPH2SKILL_ENV）")
+    steps.add_argument("--max-tokens", type=int, default=None, help="覆盖该模型的输出预算")
+    steps.add_argument("--timeout", type=int, default=None, help="单次请求超时秒数，默认 300")
+    steps.add_argument("--max-repairs", type=int, default=2, help="校验不过时回灌重生成的最大轮数")
+    steps.add_argument("--prompt-only", default=None, help="只把提示词写到文件，不调用模型")
+    steps.add_argument("--from-response", default=None, help="读取别处生成的模型回复并校验落盘")
+    steps.add_argument("--strict", action="store_true", help="有校验错误时退出码为 1")
+    steps.set_defaults(func=cmd_steps)
+
+    lint_parser = sub.add_parser("lint", help="按模板规范校验 skill 文档")
+    lint_parser.add_argument("files", nargs="+", help="要校验的 .md 文件")
+    lint_parser.add_argument("--graph", nargs="*", default=None, help="配对的子图，用于校验命令是否为自行生成")
+    lint_parser.set_defaults(func=cmd_lint)
+
+    models = sub.add_parser("models", help="查看 .env 解析出的模型配置，--probe 可探测链路")
+    models.add_argument("--model", default=None, help="只看某个模型")
+    models.add_argument("--env", default=None, help=".env 路径")
+    models.add_argument("--base-url", default=None, help="临时指定地址")
+    models.add_argument("--probe", action="store_true", help="向模型发一个最小请求，确认链路真的通")
+    models.set_defaults(func=cmd_models)
+
     return parser
 
 
@@ -283,6 +321,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
     except FileExistsError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
+    except LLMError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_USAGE
     except SkillSetError as exc:
@@ -408,4 +449,155 @@ def cmd_merge(args: argparse.Namespace) -> int:
         return EXIT_OK
     for path in report.apply():
         print(f"written {path}")
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
+# 模板 skill：生成 / 校验 / 模型链路
+# ---------------------------------------------------------------------------
+
+def _load_common_index(args: argparse.Namespace):
+    from graph2skill.faultmodel import CommonIndex
+    from graph2skill.loader import load_graph
+    from graph2skill.mdsection import MarkdownDoc
+
+    if not getattr(args, "common", None):
+        return None
+    graph = load_graph(args.common)
+    sections = ()
+    if getattr(args, "common_doc", None) and Path(args.common_doc).is_file():
+        sections = MarkdownDoc(Path(args.common_doc).read_text(encoding="utf-8")).sections()
+    doc_name = Path(args.common_doc).name if getattr(args, "common_doc", None) else "common.md"
+    return CommonIndex.build(graph, doc_name, sections)
+
+
+def cmd_steps(args: argparse.Namespace) -> int:
+    from graph2skill.llm import GenerationResult, LLMError, build_prompt, build_system_prompt, generate, make_client
+    from graph2skill.loader import load_graphs
+    from graph2skill.merge import merge_graphs
+    from graph2skill.stepskill import contexts_for_graph, lint
+
+    graphs = load_graphs(args.inputs, recursive=not args.no_recursive)
+    merged, _ = merge_graphs(graphs, graph_id=args.graph_id, domain=args.domain)
+    pairs = contexts_for_graph(merged, common=_load_common_index(args), fault_id=args.fault)
+    if not pairs:
+        print(f"没有找到可生成的故障（--fault {args.fault!r}）" if args.fault else "图里没有可生成的故障节点", file=sys.stderr)
+        return EXIT_ISSUES
+
+    if args.prompt_only:
+        target = Path(args.prompt_only)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        blocks = []
+        for _, context in pairs:
+            blocks.append(f"===== SYSTEM =====\n{build_system_prompt()}\n\n===== USER =====\n{build_prompt(context)}")
+        target.write_text("\n\n".join(blocks), encoding="utf-8")
+        print(f"提示词已写入 {target}（{len(pairs)} 个故障），可粘贴到任意模型对话里")
+        return EXIT_OK
+
+    client = None
+    if args.llm:
+        try:
+            client = make_client(
+                provider=args.provider,
+                model=args.model,
+                api_url=args.base_url,
+                env_file=args.env,
+                max_tokens=args.max_tokens,
+                timeout=args.timeout,
+            )
+        except LLMError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_USAGE
+
+    exit_code = EXIT_OK
+    for fault, context in pairs:
+        if args.from_response:
+            text = Path(args.from_response).read_text(encoding="utf-8")
+            result = GenerationResult(text=text, issues=lint(text, context.allowed_commands), used_llm=True)
+        else:
+            try:
+                result = generate(
+                    context,
+                    client,
+                    max_repairs=args.max_repairs,
+                    on_round=lambda index, issues: print(
+                        f"  第 {index} 轮：{len([i for i in issues if i.severity == 'error'])} 个错误、"
+                        f"{len([i for i in issues if i.severity == 'warning'])} 个告警",
+                        file=sys.stderr,
+                    ),
+                )
+            except LLMError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return EXIT_USAGE
+
+        target = Path(args.output) if args.output else Path(args.directory or ".") / f"{context.name}.md"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(result.text, encoding="utf-8")
+        source = "模型生成" if result.used_llm and not result.fell_back else ("回退到程序初稿" if result.fell_back else "程序生成")
+        print(
+            f"{target}  ← 故障{fault.fault_id or '?'} {fault.name}（{source}，"
+            f"{len(result.errors)} 个错误、{len(result.issues) - len(result.errors)} 个告警）"
+        )
+        for note in result.notes:
+            print(f"  ! {note}", file=sys.stderr)
+        for issue in result.issues:
+            print(f"  {issue.format()}", file=sys.stderr)
+        if result.errors:
+            exit_code = EXIT_ISSUES
+    return EXIT_ISSUES if (args.strict and exit_code != EXIT_OK) else EXIT_OK if not args.strict else exit_code
+
+
+def cmd_lint(args: argparse.Namespace) -> int:
+    from graph2skill.loader import load_graphs
+    from graph2skill.merge import merge_graphs
+    from graph2skill.stepskill import command_inventory, lint
+
+    allowed = None
+    if args.graph:
+        graphs = load_graphs(args.graph)
+        merged, _ = merge_graphs(graphs)
+        allowed = command_inventory(merged)
+        print(f"命令白名单：{len(allowed)} 条（来自 {len(graphs)} 份子图）", file=sys.stderr)
+
+    failed = False
+    for path in args.files:
+        text = Path(path).read_text(encoding="utf-8")
+        issues = lint(text, allowed)
+        errors = [issue for issue in issues if issue.severity == "error"]
+        print(f"{path}: {len(errors)} 个错误、{len(issues) - len(errors)} 个告警")
+        for issue in issues:
+            print(f"  {issue.format()}")
+        failed = failed or bool(errors)
+    return EXIT_ISSUES if failed else EXIT_OK
+
+
+def cmd_models(args: argparse.Namespace) -> int:
+    from graph2skill.llm import (
+        MODEL_PROFILES,
+        LLMError,
+        env_path,
+        mask_secret,
+        probe,
+        resolve_model,
+    )
+
+    path = args.env or env_path()
+    print("=" * 72)
+    print(f"模型接入配置（.env: {'已读取 ' + str(path) if Path(path).is_file() else '不存在 ' + str(path)}）")
+    print("=" * 72)
+    names = [args.model] if args.model else list(MODEL_PROFILES)
+    for name in names:
+        try:
+            config = resolve_model(name, args.base_url, args.env)
+        except LLMError as exc:
+            print(f"\n● {name}\n    [FAIL] {exc}")
+            continue
+        print(f"\n● {name}{'' if config.registered else '（未登记，按默认档处理）'}")
+        print(f"    地址      : {config.api_url}")
+        print(f"    密钥      : {mask_secret(config.api_key)}")
+        print(f"    max_tokens: {config.max_tokens}")
+        print(f"    思考      : {'会思考（不发关思考的字段，预算已留给推理）' if config.thinking else '关'}")
+        if args.probe:
+            print(f"    探测      : {probe(config)}")
+    print(f"\nNO_PROXY: {os.environ.get('NO_PROXY', '（空）')}")
     return EXIT_OK

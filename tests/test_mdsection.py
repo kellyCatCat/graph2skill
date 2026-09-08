@@ -1,6 +1,4 @@
-import pytest
-
-from graph2skill.mdsection import MarkdownDoc, Table, split_row, upsert_rows
+from graph2skill.mdsection import MarkdownDoc, split_row, upsert_rows
 
 SAMPLE = """# Title
 

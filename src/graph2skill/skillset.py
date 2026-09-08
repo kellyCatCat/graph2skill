@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional
 
 MANIFEST_VERSION = 1
 DEFAULT_MANIFEST_NAME = "skillset.json"

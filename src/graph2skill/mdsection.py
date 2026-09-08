@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 NUMBER_RE = re.compile(r"^(\d+(?:\.\d+)*)[.、]?\s+(.*)$")

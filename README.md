@@ -1,17 +1,26 @@
 # graph2skill
 
-把一份或多份**领域决策子图**（`cograg.domain-decision-subgraph.v1`）编译成一份可直接使用的 **Skill**：
-`SKILL.md` + 分场景排查手册 + 节点/命令/来源索引 + 原图资产 + 查询脚本。
+把**领域决策子图**（`cograg.domain-decision-subgraph.v1`）变成 skill。三条链路：
+
+| 场景 | 命令 | 产物 |
+| --- | --- | --- |
+| 从零编译一份技能包 | `graph2skill build` | `SKILL.md` + 分场景排查手册 + 索引 + 原图 + 查询脚本 |
+| 把新子图**融入已有 skill** | `graph2skill merge` | 手术式改动现有 `SKILL-*.md` / `reference/`，其余字节不动 |
+| 按**模板规范**生成排查型 skill | `graph2skill steps` | 入参列表 / 前置检查 / 排查步骤 / 根因对照表 四段式文档，可调大模型改写，产物一律过校验 |
 
 ```
-多个 graph.json ──▶ 加载(容错) ──▶ 合并去重 ──▶ 校验+决策树展开 ──▶ 渲染 ──▶ skill/
+多个 graph.json ─▶ 加载(容错) ─▶ 合并去重 ─▶ 校验+决策树展开 ─┬─▶ build  技能包
+                                                          ├─▶ merge  改已有 skill
+                                                          └─▶ steps  模板 skill（→ LLM → lint → 回灌重试）
 ```
 
 ## 安装
 
 ```bash
-pip install -e .          # 需要 Python 3.9+，核心功能零依赖
-pip install -e '.[yaml]'  # 可选：支持 YAML 格式的图文件
+pip install -e .              # 需要 Python 3.9+，核心功能零依赖
+pip install -e '.[llm]'       # 调用自建 OpenAI 兼容端点（qwen 等）
+pip install -e '.[anthropic]' # 走 Claude API 通道
+pip install -e '.[yaml]'      # 支持 YAML 格式的图文件
 ```
 
 也可以不安装直接用：`PYTHONPATH=src python -m graph2skill ...`
@@ -54,6 +63,11 @@ out/isis-skill/
 | `graph2skill validate <输入...>` | 只做结构校验，有 error 时退出码为 1 |
 | `graph2skill stats <输入...>` | 打印规模、类型分布与各手册入口 |
 | `graph2skill inspect <输入...> --node-id X` | 查看单个节点及其上下游（也可传子串做搜索） |
+| `graph2skill merge <图...> --into <技能>` | 把子图融入已有 skill（`--dry-run` 只看差异） |
+| `graph2skill skillset init <目录>` / `status` | 生成 / 查看技能集清单 |
+| `graph2skill steps <图...> [-d 目录]` | 按模板规范生成排查型 skill（`--llm` 调模型） |
+| `graph2skill lint <文档...> [--graph 图...]` | 按模板规范校验 skill 文档 |
+| `graph2skill models [--probe]` | 查看 `.env` 解析出的模型配置 / 探测链路 |
 
 输入可以是文件，也可以是目录（默认递归查找 `.json/.jsonc/.yaml/.yml`）。常用参数：
 
@@ -87,6 +101,70 @@ for issue in bundle.errors():
 ```
 
 `render_files(bundle)` 返回「相对路径 → 文件内容」的字典，方便接入其他发布流程。
+
+## 把子图融入已有 skill
+
+已有的 skill 是人写的（`SKILL-bgp.md` 调用 `common.md`），里面的映射表、话术都是人的判断，
+**不能整篇重生成**。`merge` 只改新子图带来的那部分，其余字节保持不变，重复执行是幂等的：
+
+```bash
+# 一次性把「skill ↔ JSON 子图」的对应关系固化下来（会自动推断 includes、统计文件路径）
+graph2skill skillset init skills/
+
+# 把新子图融入 bgp 这篇技能；先看差异，确认后再写
+graph2skill merge new-subgraph.json --into bgp -s skills/skillset.json --dry-run
+graph2skill merge new-subgraph.json --into bgp -s skills/skillset.json
+```
+
+它会做四件事，详见 [docs/merge.md](docs/merge.md)：
+
+1. 把新子图并入该技能配对的 JSON，并回写（`--no-graph-update` 可关）；
+2. 新故障插入成 `### 2.N 故障序号M：xxx` 小节，已有故障的根因表追加行、`根因: N类` 同步更新；
+3. 「根因迭代到底层」表补上尚未覆盖的 `common.md` 章节跳转（已覆盖的章节不重复加行）；
+4. `reference/fault-*.md` 里新增的根因写进 `<!-- graph2skill:begin -->` 托管区，手写内容不动。
+
+**公共节点只留引用**：`common.md` 拥有的节点不会被复制进子技能，子技能里写成
+「底层下钻：见 common.md §3.6 链路故障」。
+
+## 按模板规范生成排查型 skill
+
+模板是四段式：`# 入参列表` → `# 前置检查` → `# 排查步骤` → `# 根因对照表`
+（完整规范见 [src/graph2skill/resources/step_skill_spec.md](src/graph2skill/resources/step_skill_spec.md)）。
+
+```bash
+graph2skill steps graphs/*.json -d out/skills/          # 程序生成，不调模型
+graph2skill steps graphs/*.json --fault 11 --llm        # 调模型改写，产物仍要过校验
+graph2skill lint out/skills/*.md --graph graphs/*.json  # 单独校验（含命令白名单）
+```
+
+硬规则由代码卡死，不依赖模型自觉——**最重要的一条是「只能用源数据里出现过的 CLI」**：
+渲染时只输出图里有的命令，校验时把文档里每条命令回比图的命令白名单，模型编出来的命令会被
+`command-not-in-source` 拦下。完整规则表见 [docs/step-skill.md](docs/step-skill.md)。
+
+## 调用大模型
+
+模型接入沿用 [skill_distill](https://github.com/kellyCatCat/skill_distill) 的约定：地址和密钥放在
+**不入库**的 `.env`，`MODEL_PROFILES` 按模型名登记前缀、是否开思考、输出预算。
+
+```bash
+cp .env.example .env      # 填入 QWEN38_BASE_URL / QWEN38_API_KEY
+graph2skill models        # 打印解析出的配置（密钥打码）
+graph2skill models --probe  # 再发一个最小请求，确认链路真的通
+```
+
+```bash
+# 默认通道：自建 OpenAI 兼容端点
+graph2skill steps graphs/bgp.json --fault 11 --llm -d out/
+graph2skill steps graphs/bgp.json --fault 11 --llm --model qwen3.6-27b --max-tokens 32768
+# Claude API 通道
+graph2skill steps graphs/bgp.json --fault 11 --llm --provider anthropic --model claude-opus-5
+# 不联网：把提示词导出去别处跑，再把回复喂回来校验
+graph2skill steps graphs/bgp.json --fault 11 --prompt-only prompt.txt
+graph2skill steps graphs/bgp.json --fault 11 --from-response answer.md -o out/skill.md
+```
+
+生成链路是「程序初稿 → 模型改写 → 校验 → 有错回灌重来（最多 `--max-repairs` 轮）→ 仍不过则回退初稿」，
+所以模型不可用或表现不佳时，产出的仍是一份合规文档。详见 [docs/llm.md](docs/llm.md)。
 
 ## 输入格式
 
@@ -133,6 +211,11 @@ pytest -q          # 覆盖容错加载、合并冲突、决策树遍历、渲�
 | `ontology.py` | 节点/关系类型词表（中英标签、排序、角色）——新增领域词汇改这里 |
 | `render.py` | 全部 Markdown 渲染 |
 | `bundle.py` / `skill.py` | 选项与产物落盘 |
+| `mdsection.py` | 保字节的 Markdown 编辑（分节、GFM 表格、托管区块） |
+| `skillset.py` | 技能集清单：skill ↔ 子图 ↔ includes |
+| `faultmodel.py` / `houserender.py` / `integrate.py` | 故障模型抽取、house style 渲染、融入编排 |
+| `stepskill.py` | 模板 skill 的抽取、渲染与校验器 |
+| `llm.py` | 模型接入（.env / OpenAI 兼容 / Claude）与生成-校验-回灌循环 |
 | `cli.py` | 命令行入口 |
 
 扩展提示：新增节点类型只需在 `ontology.py` 的 `_NODE_TYPES` 里加一行（`order` 决定它在决策路径里的先后，`role` 决定语义分组）；未登记的类型也能正常渲染，只是用原始类型名。

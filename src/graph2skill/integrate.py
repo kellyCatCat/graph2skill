@@ -17,12 +17,11 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from graph2skill.analyze import GraphIndex
 from graph2skill.faultmodel import CommonIndex, CommonRef, FaultView, extract_faults
 from graph2skill.houserender import (
-    CAUSE_TABLE_HEADER,
     cause_rows,
     common_ref_rows,
     existing_cause_names,
@@ -34,9 +33,8 @@ from graph2skill.houserender import (
 from graph2skill.loader import load_graph, load_graphs
 from graph2skill.mdsection import MarkdownDoc, Section, Table, upsert_rows
 from graph2skill.merge import MergeReport, merge_graphs
-from graph2skill.model import Graph, Node
+from graph2skill.model import Graph
 from graph2skill.skillset import SkillEntry, SkillSet, SkillSetError
-from graph2skill.util import one_line
 
 REFERENCE_POINTER_RE = re.compile(r"详见[：:]\s*([^\s，,。]+\.md)")
 FAULT_TITLE_RE = re.compile(r"故障序号\s*(\d+)")
