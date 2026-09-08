@@ -274,3 +274,22 @@ def test_models_command_shows_resolved_configuration(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "http://model.internal:8000/v1/chat/completions" in out
     assert "sk-abcdefghijklmnop" not in out  # masked
+
+
+def test_no_install_launcher_runs(examples_dir):
+    """run_graph2skill.py 必须能在未安装包的情况下跑起来。"""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    launcher = Path(__file__).resolve().parents[1] / "run_graph2skill.py"
+    env = {"PATH": "/usr/bin:/bin", "SYSTEMROOT": "C:\\Windows"}
+    proc = subprocess.run(
+        [sys.executable, str(launcher), "stats", str(examples_dir / "isis")],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd="/",
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "domain     : ISIS" in proc.stdout

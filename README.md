@@ -23,7 +23,30 @@ pip install -e '.[anthropic]' # 走 Claude API 通道
 pip install -e '.[yaml]'      # 支持 YAML 格式的图文件
 ```
 
-也可以不安装直接用：`PYTHONPATH=src python -m graph2skill ...`
+### 装不了包怎么办（离线 / 代理需要鉴权）
+
+核心功能零依赖，**不装也能跑**，仓库根目录有免安装入口：
+
+```bash
+python run_graph2skill.py --version
+python run_graph2skill.py skillset init D:\skills
+```
+
+从别的目录调用时写全路径即可：`python D:\...\graph2skill\run_graph2skill.py <命令>`。
+等价写法：`PYTHONPATH=src python -m graph2skill ...`。
+
+只有两处需要额外依赖：`steps --llm` 要 `requests`，`--provider anthropic` 要 `anthropic`；
+其余命令（`build` / `merge` / `skillset` / `steps` 程序生成 / `lint`）都不需要。
+
+pip 走代理时（`407 Proxy Authentication Required`）：
+
+```bash
+pip install --proxy http://用户名:密码@代理地址:端口 -e '.[llm]'
+# 或用内网镜像源
+pip install -i https://内网镜像/simple -e '.[llm]'
+# venv 里已有 setuptools 时，可跳过联网取构建依赖
+pip install -e . --no-build-isolation
+```
 
 ## 快速开始
 
