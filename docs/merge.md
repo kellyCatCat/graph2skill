@@ -24,9 +24,26 @@ skills/
 └── statistics/bgp-neighbor-abnormal-stats.json
 ```
 
-推断规则：`SKILL-*.md` / `common.md` 是文档；同名的 `graphs/<name>.json` 是配对子图；
-文档里「引用通用规范」表里出现的 `.md` 文件名 → `includes`；正文里的 `statistics/*.json` → 统计文件。
-推断不出子图的技能会被列出来，需要在清单里手工补 `graph` 字段。
+推断规则：`SKILL-*.md` / `common.md` 是文档；配对子图先按 `graphs/<name>.json` 精确找，找不到再按
+前缀找（`SKILL-isis.md` 会配上 `isis_all.json`；两个候选时不猜，留空）；文档里「引用通用规范」表里
+出现的 `.md` 文件名 → `includes`；正文里的 `statistics/*.json` → 统计文件。
+
+场景技能推断不出子图会被列出来并以退出码 1 提示，需要在清单里手工补 `graph`；
+**公共技能没有配对子图是允许的**——这时公共节点按 `common.md` 的章节标题匹配，只少了按节点 id 判定的能力。
+
+## 图里建议补的字段
+
+新故障小节的编号、标识、分类直接取自故障节点，缺了就只能推断（`faultId` 退化成节点 id 的尾数、
+`identifier` 退化成 id 转的 ASCII、分类写 `-`），需要人工改。合并前补上这三个字段最省事：
+
+```json
+{ "id": "scenario:isis:IS-IS-1", "type": "SCENARIO", "name": "IS-IS 邻居无法建立",
+  "data": { "faultId": 20, "identifier": "isis-neighbor-down", "category": "路由协议类",
+            "referenceFile": "reference/fault-20-isis-neighbor.md" } }
+```
+
+已经写进文档的故障不受影响：定位时依次按「故障序号」→「标识:」→ 名称匹配，
+名称能对上就会合并到已有小节，并沿用文档里已写的 reference 路径。
 
 清单字段：
 

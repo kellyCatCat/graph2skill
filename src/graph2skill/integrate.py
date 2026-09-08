@@ -252,10 +252,12 @@ def integrate(
             report.warnings.append(f"节点 {node_id} 归属 {common.by_id(node_id).doc}，未写入本技能，只保留引用")
 
     report.added_nodes = sorted(set(merged.nodes) - set(base_graph.nodes))
+    # internal=False: graph2skill's own bookkeeping (graphIds) must not count as a change
     report.updated_nodes = sorted(
         node_id
         for node_id, node in merged.nodes.items()
-        if node_id in base_graph.nodes and node.to_dict() != base_graph.nodes[node_id].to_dict()
+        if node_id in base_graph.nodes
+        and node.to_dict(internal=False) != base_graph.nodes[node_id].to_dict(internal=False)
     )
     report.added_relations = sorted(set(merged.relations) - set(base_graph.relations))
 

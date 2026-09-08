@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 MANIFEST_VERSION = 1
 DEFAULT_MANIFEST_NAME = "skillset.json"
@@ -214,13 +214,38 @@ class SkillSet:
 
 
 def _guess_graph(root: Path, name: str) -> str:
+    """Find the subgraph paired with a skill: exact names first, then one prefix match.
+
+    `SKILL-isis.md` is paired with `isis_all.json` this way; an ambiguous prefix
+    (two candidates) is left unresolved rather than guessed.
+    """
     for directory in GRAPH_DIR_CANDIDATES:
         for candidate in (f"{name}.json", f"graph-{name}.json", f"{name}-graph.json"):
             path = root / directory / candidate
             if path.is_file():
                 return str(path.relative_to(root)).replace("\\", "/")
+    for directory in GRAPH_DIR_CANDIDATES:
+        base = root / directory
+        if not base.is_dir():
+            continue
+        matches = sorted(
+            path
+            for path in base.glob("*.json")
+            if path.is_file() and path.stem.lower().startswith(name) and path.name != DEFAULT_MANIFEST_NAME
+        )
+        if len(matches) == 1:
+            return str(matches[0].relative_to(root)).replace("\\", "/")
     return ""
 
 
-def missing_graphs(skillset: SkillSet) -> List[SkillEntry]:
-    return [entry for entry in skillset.skills if not entry.graph or not (skillset.root / entry.graph).is_file()]
+def missing_graphs(skillset: SkillSet, roles: Optional[Sequence[str]] = ("scenario",)) -> List[SkillEntry]:
+    """Skills that cannot be merged into because their subgraph is missing.
+
+    Only scenario skills are blocking by default: a common skill without a graph
+    still works — its nodes are then matched by ``common.md`` section titles.
+    """
+    return [
+        entry
+        for entry in skillset.skills
+        if (roles is None or entry.role in roles) and (not entry.graph or not (skillset.root / entry.graph).is_file())
+    ]

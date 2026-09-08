@@ -218,3 +218,9 @@ def test_common_index_maps_nodes_to_sections(house_set):
     assert index.by_id("common:infra:link-fault").section == "3.6"
     assert index.by_name("OSPF状态异常").section == "3.8"
     assert index.by_name("自检清单").section == "3.31"  # from common.md headings alone
+
+
+def test_second_run_reports_no_node_changes(house_set, incoming_graph):
+    integrate(house_set, "bgp", [incoming_graph]).apply()
+    again = integrate(house_set, "bgp", [incoming_graph])
+    assert (again.added_nodes, again.updated_nodes, again.added_relations) == ([], [], [])

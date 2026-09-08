@@ -375,6 +375,11 @@ def cmd_skillset_init(args: argparse.Namespace) -> int:
     for entry in skillset.skills:
         includes = ", ".join(entry.includes) or "-"
         print(f"  {entry.name:<12} doc={entry.doc:<20} graph={entry.graph or '(未找到)':<24} includes={includes}")
+    for entry in missing_graphs(skillset, roles=("common",)):
+        print(
+            f"note: 公共技能 '{entry.name}' 没有配对子图，将按 {entry.doc} 的章节标题匹配公共节点",
+            file=sys.stderr,
+        )
     incomplete = missing_graphs(skillset)
     if incomplete:
         print(
