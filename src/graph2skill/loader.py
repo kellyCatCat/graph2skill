@@ -147,14 +147,54 @@ def _try_yaml(text: str):
     return None, "YAML document is not a mapping"
 
 
+def load_node_edge_dir(directory: os.PathLike | str) -> Graph:
+    """Load a directory that holds a ``node.json`` / ``edge.json`` pair."""
+    from graph2skill.nodeedge import find_pair, graph_from_records
+
+    base = Path(directory)
+    node_path, edge_path = find_pair(base)
+    if node_path is None and edge_path is None:
+        raise GraphLoadError(f"{base}: 目录里没有 node.json / edge.json")
+    nodes = _load_records(node_path) if node_path else []
+    edges = _load_records(edge_path) if edge_path else []
+    origins = ", ".join(str(path) for path in (node_path, edge_path) if path)
+    return graph_from_records(nodes, edges, graph_id=base.name, origin=origins)
+
+
+def _load_records(path: Path) -> list:
+    raw = parse_document(path.read_text(encoding="utf-8"), str(path))
+    if isinstance(raw, list):
+        return raw
+    for key in ("nodes", "edges", "records", "items", "data"):
+        value = raw.get(key) if isinstance(raw, dict) else None
+        if isinstance(value, list):
+            return value
+    raise GraphLoadError(f"{path}: 期望是一个数组（node/edge 列表）")
+
+
 def load_graph(path: os.PathLike | str) -> Graph:
-    """Load a single graph document."""
+    """Load a single graph document (either supported format)."""
     file_path = Path(path)
+    if file_path.is_dir():
+        return load_node_edge_dir(file_path)
     try:
         text = file_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise GraphLoadError(f"{file_path}: cannot read file: {exc}") from exc
     raw = parse_document(text, str(file_path), prefer_yaml=file_path.suffix.lower() in YAML_SUFFIXES)
+    if isinstance(raw, list):
+        from graph2skill.nodeedge import classify_records, graph_from_records
+
+        kind = classify_records(raw)
+        if not kind:
+            raise GraphLoadError(f"{file_path}: 数组里既不像节点也不像关系")
+        graph_id = file_path.parent.name if file_path.parent.name else file_path.stem
+        return graph_from_records(
+            raw if kind == "nodes" else [],
+            raw if kind == "edges" else [],
+            graph_id=graph_id,
+            origin=str(file_path),
+        )
     try:
         graph = Graph.from_raw(raw, origin=str(file_path))
     except ValueError as exc:
@@ -168,6 +208,11 @@ def expand_inputs(paths: Sequence[os.PathLike | str], recursive: bool = True) ->
     for raw_path in paths:
         path = Path(raw_path)
         if path.is_dir():
+            from graph2skill.nodeedge import find_pair
+
+            if any(find_pair(path)):
+                found.append(path)  # node/edge 目录整体算一份图
+                continue
             pattern = "**/*" if recursive else "*"
             children = [p for p in sorted(path.glob(pattern)) if p.is_file() and p.suffix.lower() in GRAPH_SUFFIXES]
             if not children:

@@ -258,14 +258,14 @@ def build_context(
                 title=f"检查是否为{cause.name}",
                 commands=commands,
                 reuse_note=reuse_note,
-                condition=cause.trigger,
+                condition=cause.raw_trigger,
                 cause=cause.name,
             )
         )
         causes.append(
             CauseRow(
                 name=cause.name,
-                symptom=one_line(cause.trigger),
+                symptom=one_line(cause.raw_trigger),
                 fix=_fix_text(cause),
                 verify=_verify_text(cause),
             )
@@ -291,7 +291,7 @@ def build_context(
                 evidence.append(location)
 
     return StepSkillContext(
-        name=name or slugify(fault.identifier or fault.node.id, fallback="fault-skill"),
+        name=name or default_skill_name(fault, graph.domain),
         description=description or _default_description(fault),
         fault_name=fault.name,
         params=params,
@@ -301,6 +301,25 @@ def build_context(
         allowed_commands=allowed,
         evidence=evidence,
     )
+
+
+GENERIC_NAME_PARTS = {"symptom", "fault", "cause", "scenario", "case", "node", "issue", "problem"}
+HASH_SUFFIX_RE = re.compile(r"[-_][0-9a-f]{8,}$", re.IGNORECASE)
+
+
+def default_skill_name(fault: FaultView, domain: str = "") -> str:
+    """技能名：优先用标识；退化时去掉哈希后缀，太笼统就冠上领域名。"""
+    if fault.identifier and not HASH_SUFFIX_RE.search(fault.identifier):
+        slug = slugify(fault.identifier, fallback="")
+        if slug:
+            return slug
+    base = HASH_SUFFIX_RE.sub("", fault.node.id.split(":")[-1])
+    slug = slugify(base, fallback="")
+    prefix = slugify(domain, fallback="")
+    if not slug or slug in GENERIC_NAME_PARTS:
+        parts = [part for part in (prefix, slug or "fault", str(fault.fault_id or "")) if part]
+        return "-".join(parts)
+    return f"{prefix}-{slug}" if prefix and slug in GENERIC_NAME_PARTS else slug
 
 
 def _default_description(fault: FaultView) -> str:

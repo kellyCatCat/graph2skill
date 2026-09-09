@@ -32,7 +32,25 @@ graph2skill steps graphs/*.json --common graphs/common.json --common-doc common.
 | 入参列表 | 故障节点 `data.parameters`（显式声明）+ 所有命令里的 `<...>` 占位符 |
 | 前置检查 | 挂在故障节点下的 CHECK 节点（命令 = `parameterExamples`，采集内容 = `observations`） |
 | 排查步骤 | 每个 CAUSE 一步；命令取该原因下的 CHECK，判据取 `data.trigger` |
-| 根因对照表 | CAUSE 的 `name` / `trigger` / 修复（`data.fix` 或其 ACTION 节点）/ `data.verify` |
+| 根因对照表 | CAUSE 的 `name` / 判据 / 修复（`data.fix` 或其 ACTION 节点）/ `data.verify` |
+
+判据（步骤的跳转条件、对照表的「现象」列）取值顺序：**边上的 `condition` → 节点的 `trigger`/`condition` → 空**。
+没有判据时不会用占位符糊上，对照表里写 `-`。
+
+## 结合已有的 skill 文档
+
+`--from-skill skills/SKILL-isis.md` 会把文档（含它引用的 `reference/fault-*.md`）里的事实并进来：
+
+| 从文档抽 | 用到模板哪里 |
+| --- | --- |
+| `标识:` | front matter 的 `name` |
+| `§1 触发条件` 正文 | description 的适用时机 |
+| 根因表的「触发特征」 | 现象列 / 步骤判据（图里没有时） |
+| 只写在文档里的根因 | 补成新的排查步骤 + 对照表行 |
+| reference 决策树里的命令 | 步骤的 CLI + **并入命令白名单** |
+| `底层下钻` / `§3` 跳转表 | 修复列的下钻说明 |
+
+匹配故障的口径和 `merge` 一致：故障序号 → 标识 → 名称；匹配不上会提示并只用图数据。
 
 显式声明入参的写法：
 

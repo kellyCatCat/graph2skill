@@ -293,3 +293,60 @@ def test_no_install_launcher_runs(examples_dir):
     )
     assert proc.returncode == 0, proc.stderr
     assert "domain     : ISIS" in proc.stdout
+
+
+def test_steps_from_skill_pulls_in_document_facts(tmp_path, examples_dir, capsys):
+    code = main(
+        [
+            "steps",
+            str(examples_dir / "skillset" / "graphs" / "bgp.json"),
+            "--fault", "10",
+            "--from-skill", str(examples_dir / "skillset" / "SKILL-bgp.md"),
+            "-o", str(tmp_path / "skill.md"),
+        ]
+    )
+    assert code == 0
+    err = capsys.readouterr().err
+    assert "命令白名单" in err
+    text = (tmp_path / "skill.md").read_text(encoding="utf-8")
+    assert text.startswith("---\nname: bgp-neighbor-abnormal")
+
+
+def test_steps_from_skill_without_a_match_is_reported(tmp_path, examples_dir, capsys):
+    code = main(
+        [
+            "steps",
+            str(examples_dir / "incoming" / "bgp-route-flap.json"),
+            "--fault", "11",
+            "--from-skill", str(examples_dir / "skillset" / "SKILL-bgp.md"),
+            "-o", str(tmp_path / "skill.md"),
+        ]
+    )
+    assert code == 0
+    assert "没有匹配到" in capsys.readouterr().err
+
+
+def test_steps_accepts_a_node_edge_directory(tmp_path, examples_dir, capsys):
+    code = main(["steps", str(examples_dir / "nodeedge"), "-d", str(tmp_path)])
+    assert code == 0
+    text = (tmp_path / "netengine40e-symptom-5.md").read_text(encoding="utf-8")
+    assert "display isis last-peer-change" in text
+    assert "邻居状态在 6 小时内有多次变化" in text
+
+
+def test_merge_accepts_a_node_edge_directory(house_dir, examples_dir, capsys):
+    code = main(
+        ["merge", str(examples_dir / "nodeedge"), "--into", "bgp", "-s", str(house_dir / "skillset.json")]
+    )
+    assert code == 0
+    assert "IGP邻居震荡" in (house_dir / "SKILL-bgp.md").read_text(encoding="utf-8")
+
+
+def test_stats_over_both_formats(examples_dir, capsys):
+    code = main(
+        ["stats", str(examples_dir / "nodeedge"), str(examples_dir / "isis" / "isis_ne40_manual.json"), "--json"]
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["nodes"] == 20
+    assert payload["relationTypes"]["DIAGNOSED_BY"] == 2

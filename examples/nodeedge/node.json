@@ -1,0 +1,308 @@
+[
+  {
+    "node_id": "symptom_9a1b2c3d4e5f60718293a4b5",
+    "node_type": "symptom",
+    "canonical_key": "{\"name\":\"igp邻居震荡\",\"type\":\"symptom\"}",
+    "name": "IGP邻居震荡",
+    "description": "IGP（IS-IS/OSPF）邻居在短时间内反复 Up/Down，业务间歇中断。",
+    "aliases": [
+      "协议震荡"
+    ],
+    "attrs": {
+      "granularity": "现象"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 通过查询命令行采集故障信息"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b010",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "【协议震荡】\nIGP邻居震荡",
+        "char_start": 0,
+        "char_end": 14,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_6200a0200219ac655d65efa4",
+    "node_type": "cause",
+    "canonical_key": "{\"name\":\"deviced上is-is1引入is-is2路由时未配置路由策略\",\"scope\":{\"vendor\":\"Huawei\"},\"type\":\"cause\"}",
+    "name": "DeviceD上IS-IS 1引入IS-IS 2路由时未配置路由策略",
+    "description": "IS-IS 1引入IS-IS 2路由\n时未配置路由策略。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "affected_object": "DeviceD的IS-IS 1进程",
+      "fault_mechanism": "IS-IS 1引入IS-IS 2路由\n时未配置路由策略。",
+      "granularity": "具体原因"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": null,
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "technote_specific_scope_required"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.4",
+        "title": "28.21.4 IS-IS协议分析互引路由场景分析"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.4"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1157,
+        "printed_page": 1117,
+        "section": "28.21.4",
+        "block_id": "p1157_b002",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "IS-IS 1引入IS-IS 2路由\n时未配置路由策略。",
+        "char_start": 0,
+        "char_end": 28,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": [
+      "verify_technote_product_and_version"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false
+    }
+  },
+  {
+    "node_id": "cause_cd35079a45fe83e324269e42",
+    "node_type": "cause",
+    "name": "链路质量劣化导致 Hello 报文丢失",
+    "description": "链路误码或单通，Hello 报文周期性丢失，邻居保持定时器超时。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "link",
+      "granularity": "具体原因"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "unreviewed",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 通过查询命令行采集故障信息"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b008",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "确认IGP邻居在6小时内是\n否存在变化",
+        "char_start": 0,
+        "char_end": 19,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": [
+      "semantic_review_pending"
+    ]
+  },
+  {
+    "node_id": "check_f7526cc0e3ce1f728ff868d4",
+    "node_type": "check",
+    "name": "确认IGP邻居在6小时内是否存在变化",
+    "description": "查询最近一次邻居状态变化时间，判断是否发生过震荡。",
+    "aliases": [],
+    "attrs": {
+      "command": [
+        "display isis last-peer-change",
+        "display ospf peer last-nbr-down"
+      ],
+      "granularity": "检查项"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 通过查询命令行采集故障信息"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b009",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "display isis last-peer-\nchange",
+        "char_start": 0,
+        "char_end": 30,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_2b7d1e9f04ac53681d2e7f30",
+    "node_type": "check",
+    "name": "display isis peer verbose",
+    "description": "查看 IS-IS 邻居详细状态与保持时间。",
+    "aliases": [],
+    "attrs": {
+      "granularity": "检查项"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 通过查询命令行采集故障信息"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b013",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "display isis peer verbose",
+        "char_start": 0,
+        "char_end": 25,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "solution_5c8e2a1706bd49f3e0a71b24",
+    "node_type": "solution",
+    "name": "在引入点配置路由策略过滤互引路由",
+    "description": "在 DeviceD 的 IS-IS 1 进程下对引入的 IS-IS 2 路由配置 route-policy 过滤。",
+    "aliases": [],
+    "attrs": {
+      "granularity": "解决方案"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1157,
+        "printed_page": 1117,
+        "section": "28.21.4",
+        "block_id": "p1157_b004",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "配置路由策略，过滤引入的路由。",
+        "char_start": 0,
+        "char_end": 15,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  }
+]

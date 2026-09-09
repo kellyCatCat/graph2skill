@@ -1,0 +1,286 @@
+[
+  {
+    "edge_id": "edge_1a2b3c4d5e6f708192a3b4c5",
+    "edge_type": "caused_by",
+    "source": "symptom_9a1b2c3d4e5f60718293a4b5",
+    "target": "cause_cd35079a45fe83e324269e42",
+    "condition": "邻居状态在 6 小时内有多次变化",
+    "condition_status": "conditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b010",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "【协议震荡】\nIGP邻居震荡",
+        "char_start": 0,
+        "char_end": 14,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_1a2b3c4d5e6f708192a3b4c5"
+    ]
+  },
+  {
+    "edge_id": "edge_2b3c4d5e6f708192a3b4c5d6",
+    "edge_type": "caused_by",
+    "source": "symptom_9a1b2c3d4e5f60718293a4b5",
+    "target": "cause_6200a0200219ac655d65efa4",
+    "condition": "存在 IS-IS 进程间路由互引",
+    "condition_status": "conditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1157,
+        "printed_page": 1117,
+        "section": "28.21.4",
+        "block_id": "p1157_b002",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "IS-IS 1引入IS-IS 2路由\n时未配置路由策略。",
+        "char_start": 0,
+        "char_end": 28,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_2b3c4d5e6f708192a3b4c5d6"
+    ]
+  },
+  {
+    "edge_id": "edge_4040f3d6274a98aea7c3cdd7",
+    "edge_type": "diagnosed_by",
+    "source": "cause_cd35079a45fe83e324269e42",
+    "target": "check_f7526cc0e3ce1f728ff868d4",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b009",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "display isis last-peer-\nchange",
+        "char_start": 0,
+        "char_end": 30,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      },
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b013",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "display isis peer verbose",
+        "char_start": 0,
+        "char_end": 25,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_4040f3d6274a98aea7c3cdd7"
+    ]
+  },
+  {
+    "edge_id": "edge_5151a4e7385b09bfb8d4deef",
+    "edge_type": "diagnosed_by",
+    "source": "cause_6200a0200219ac655d65efa4",
+    "target": "check_2b7d1e9f04ac53681d2e7f30",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1157,
+        "printed_page": 1117,
+        "section": "28.21.4",
+        "block_id": "p1157_b003",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "查看IS-IS邻居状态",
+        "char_start": 0,
+        "char_end": 11,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_5151a4e7385b09bfb8d4deef"
+    ]
+  },
+  {
+    "edge_id": "edge_6262b5f8496c1ac0c9e5eff0",
+    "edge_type": "resolved_by",
+    "source": "cause_6200a0200219ac655d65efa4",
+    "target": "solution_5c8e2a1706bd49f3e0a71b24",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1157,
+        "printed_page": 1117,
+        "section": "28.21.4",
+        "block_id": "p1157_b004",
+        "bbox": [
+          185.5,
+          223.9,
+          248.5,
+          248.8
+        ],
+        "quote": "配置路由策略，过滤引入的路由。",
+        "char_start": 0,
+        "char_end": 15,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_6262b5f8496c1ac0c9e5eff0"
+    ]
+  }
+]

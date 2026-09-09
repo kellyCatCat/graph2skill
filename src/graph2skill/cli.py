@@ -278,6 +278,8 @@ def build_parser() -> argparse.ArgumentParser:
     steps.add_argument("--fault", default=None, help="只生成指定故障（故障序号 / 标识 / 节点 id）")
     steps.add_argument("-o", "--output", default=None, help="输出文件（只在单个故障时使用）")
     steps.add_argument("-d", "--directory", default=None, help="输出目录，文件名取 front matter 的 name")
+    steps.add_argument("--from-skill", default=None,
+                       help="已有的 skill 文档（md），把它和它的 reference 决策树里的事实一并纳入")
     steps.add_argument("--common", default=None, help="公共技能的子图，其中的节点只保留引用")
     steps.add_argument("--common-doc", default=None, help="公共技能文档，用于解析章节号")
     steps.add_argument("--graph-id", default=None, help=argparse.SUPPRESS)
@@ -485,6 +487,19 @@ def cmd_steps(args: argparse.Namespace) -> int:
     graphs = load_graphs(args.inputs, recursive=not args.no_recursive)
     merged, _ = merge_graphs(graphs, graph_id=args.graph_id, domain=args.domain)
     pairs = contexts_for_graph(merged, common=_load_common_index(args), fault_id=args.fault)
+    if getattr(args, "from_skill", None):
+        from graph2skill.skillread import enrich_context, read_skill_doc
+
+        facts = read_skill_doc(args.from_skill)
+        for warning in facts.warnings:
+            print(f"  ! {warning}", file=sys.stderr)
+        for fault, context in pairs:
+            doc_fault = facts.match(fault.fault_id, fault.identifier, fault.name)
+            if doc_fault is None:
+                print(f"  ! {Path(args.from_skill).name} 里没有匹配到「{fault.name}」，本次只用图数据", file=sys.stderr)
+                continue
+            for note in enrich_context(context, facts, doc_fault):
+                print(f"  + {note}", file=sys.stderr)
     if not pairs:
         print(f"没有找到可生成的故障（--fault {args.fault!r}）" if args.fault else "图里没有可生成的故障节点", file=sys.stderr)
         return EXIT_ISSUES

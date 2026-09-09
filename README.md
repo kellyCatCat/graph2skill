@@ -158,7 +158,15 @@ graph2skill merge new-subgraph.json --into bgp -s skills/skillset.json
 graph2skill steps graphs/*.json -d out/skills/          # 程序生成，不调模型
 graph2skill steps graphs/*.json --fault 11 --llm        # 调模型改写，产物仍要过校验
 graph2skill lint out/skills/*.md --graph graphs/*.json  # 单独校验（含命令白名单）
+
+# 子图(json) + 已有 skill(md) 一起作为素材，生成新的模板 skill
+graph2skill steps graphs/isis.json 新子图.json --fault 20 \
+    --from-skill skills/SKILL-isis.md -d out/skills/
 ```
+
+`--from-skill` 会把已有 skill 文档里的事实一并纳入：英文标识、触发特征、
+**只写在 reference 决策树里的根因**、决策树里的命令（并入命令白名单）、
+以及「根因迭代到底层」表里的下钻去向。图和文档谁有算谁的，合起来才是完整一份。
 
 硬规则由代码卡死，不依赖模型自觉——**最重要的一条是「只能用源数据里出现过的 CLI」**：
 渲染时只输出图里有的命令，校验时把文档里每条命令回比图的命令白名单，模型编出来的命令会被
@@ -191,7 +199,18 @@ graph2skill steps graphs/bgp.json --fault 11 --from-response answer.md -o out/sk
 
 ## 输入格式
 
-完整字段说明见 [docs/schema.md](docs/schema.md)。要点：
+支持两种图格式，**可以混着传**：
+
+| 格式 | 形态 | 文档 |
+| --- | --- | --- |
+| `cograg.domain-decision-subgraph.v1` | 单个 JSON 对象，含 nodes/relations/decisionTrees | [docs/schema.md](docs/schema.md) |
+| 扁平 node/edge 导出 | 一个目录里的 `node.json` + `edge.json`（顶层是数组） | [docs/node-edge.md](docs/node-edge.md) |
+
+```bash
+python run_graph2skill.py steps 图目录/ 另一份.json --fault 5 -d out/
+```
+
+第一种格式的要点：
 
 - 只有 `nodes[].id` 是必需的，其余字段全部可选；未知字段不会丢失，会渲染在「其他字段」里。
 - `type` 缺失时回退到 `data.nodeType`；`source` 会自动并入 `sources`。

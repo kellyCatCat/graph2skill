@@ -87,6 +87,7 @@ class CauseView:
 
     node: Node
     ordinal: int = 0
+    edge_condition: str = ""  # 「故障 → 原因」这条边上的判据
     common_refs: List[CommonRef] = field(default_factory=list)
     checks: List[Node] = field(default_factory=list)
     actions: List[Node] = field(default_factory=list)
@@ -100,8 +101,14 @@ class CauseView:
         return first_str(self.node.data, ("nameEn", "englishName", "name_en", "englishIdentifier"))
 
     @property
+    def raw_trigger(self) -> str:
+        """真实存在的判据；没有就是空，不用占位符糊上。"""
+        return first_str(self.node.data, ("trigger", "triggerFeature", "condition")) or one_line(self.edge_condition)
+
+    @property
     def trigger(self) -> str:
-        return first_str(self.node.data, ("trigger", "triggerFeature", "condition")) or "见reference决策树"
+        # house style 的「触发特征」列留了这个约定俗成的默认值
+        return self.raw_trigger or "见reference决策树"
 
     def row(self) -> List[str]:
         return [str(self.ordinal), self.name, self.name_en, self.trigger]
@@ -194,7 +201,11 @@ def extract_faults(
             if target is None or target.id in common:
                 continue
             if target.type in CAUSE_TYPES:
-                cause = CauseView(node=target, common_refs=_collect_common_refs(index, target, common))
+                cause = CauseView(
+                    node=target,
+                    edge_condition=relation.condition,
+                    common_refs=_collect_common_refs(index, target, common),
+                )
                 for child_relation in index.successors(target.id):
                     child = index.node(child_relation.to_id)
                     if child is None or child.id in common:
