@@ -24,7 +24,9 @@ import sys
 from collections import Counter, deque
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-DEFAULT_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "subgraph.json")
+DEFAULT_DATA = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "reference", "subgraph.json"
+)
 
 VERDICT_EDGES = ("confirms", "supports", "excludes")
 

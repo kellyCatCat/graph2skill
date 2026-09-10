@@ -1,8 +1,8 @@
 # 输入数据字段字典
 
-`subkg2skill` 读取的是 IP-RAN 故障诊断知识图谱导出的两个 JSON 数组：`node.json` 与 `edge.json`。
+本技能读取的是 IP-RAN 故障诊断知识图谱导出的两个 JSON 数组：`node.json` 与 `edge.json`。
 本页只写工具依赖的部分——节点角色、关系方向、`attrs` 业务字段、`scope`、`condition`、来源定位与质量标记。
-校验（`subkg2skill validate`）只验证结构：ID 唯一、端点存在、端点类型组合合法；**结构合法不等于关系语义正确**。
+校验（`python3 scripts/build_skill.py validate`）只验证结构：ID 唯一、端点存在、端点类型组合合法；**结构合法不等于关系语义正确**。
 
 ## 1. 节点类型
 
@@ -17,7 +17,7 @@
 
 ## 2. 关系类型与允许的端点
 
-方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入 `references/coverage.md`。
+方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入产物的 `reference/coverage.md`。
 
 | edge_type | 允许的 source → target | 含义 |
 | --- | --- | --- |
@@ -139,7 +139,7 @@
 以下都能读：
 
 - 目录：自动识别 `node*.json` / `edge*.json`（也接受 `nodes` / `edges` 命名）；
-- 两个数组文件：`subkg2skill build node.json edge.json ...`；
+- 两个数组文件：`python3 scripts/build_skill.py build node.json edge.json ...`；
 - 整包对象：`{"nodes": [...], "edges": [...]}`；
 - 混合数组：带 `edge_type` 或同时带 `source`+`target` 的记录算作边；
 - `.jsonc`（`//`、`/* */`、尾逗号、BOM）与 `.jsonl` / `.ndjson`。

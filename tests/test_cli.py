@@ -18,9 +18,9 @@ def test_build_writes_a_usable_skill(tmp_path, example_dir, capsys):
     code, out = build(tmp_path, example_dir, "--name", "ipran-fault-diagnosis")
     assert code == 0
     assert (out / "SKILL.md").read_text(encoding="utf-8").startswith("---\n")
-    assert (out / "references" / "index.md").exists()
+    assert (out / "reference" / "index.md").exists()
     assert (out / "scripts" / "kg_query.py").exists()
-    assert len(list((out / "references" / "playbooks").glob("*.md"))) == 2
+    assert len(list((out / "reference").glob("fault-*.md"))) == 2
     assert "ipran-fault-diagnosis" in capsys.readouterr().out
 
 
@@ -55,7 +55,7 @@ def test_root_and_depth_narrow_the_subgraph(tmp_path, example_dir, capsys):
 def test_section_filter_selects_one_entry(tmp_path, example_dir):
     out = tmp_path / "skill"
     assert main(["build", str(example_dir), "--out", str(out), "--section", "4.3.3"]) == 0
-    assert len(list((out / "references" / "playbooks").glob("*.md"))) == 1
+    assert len(list((out / "reference").glob("fault-*.md"))) == 1
 
 
 def test_filters_that_match_nothing_are_an_error(tmp_path, example_dir, capsys):
@@ -72,13 +72,13 @@ def test_unknown_root_is_an_error(example_dir, capsys):
 def test_max_playbooks_limits_output(tmp_path, example_dir):
     out = tmp_path / "skill"
     assert main(["build", str(example_dir), "--out", str(out), "--max-playbooks", "1"]) == 0
-    assert len(list((out / "references" / "playbooks").glob("*.md"))) == 1
+    assert len(list((out / "reference").glob("fault-*.md"))) == 1
 
 
 def test_data_and_script_switches(tmp_path, example_dir):
     out = tmp_path / "skill"
     assert main(["build", str(example_dir), "--out", str(out), "--data", "none", "--no-script"]) == 0
-    assert not (out / "data").exists()
+    assert not (out / "reference" / "subgraph.json").exists()
     assert not (out / "scripts").exists()
 
 
@@ -93,7 +93,7 @@ def test_explicit_node_and_edge_files(tmp_path, example_dir):
         ]
     )
     assert code == 0
-    data = json.loads((out / "data" / "subgraph.json").read_text(encoding="utf-8"))
+    data = json.loads((out / "reference" / "subgraph.json").read_text(encoding="utf-8"))
     assert len(data["nodes"]) == 17
 
 
@@ -128,7 +128,7 @@ def test_non_strict_build_keeps_going_and_records_the_drop(tmp_path, write_bundl
     )
     out = tmp_path / "skill"
     assert main(["build", str(directory), "--out", str(out)]) == 0
-    coverage = (out / "references" / "coverage.md").read_text(encoding="utf-8")
+    coverage = (out / "reference" / "coverage.md").read_text(encoding="utf-8")
     assert "edge_dangling" in coverage
 
 

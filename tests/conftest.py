@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "subkg-to-skill" / "scripts"))
 
 from subkg2skill.graph import Graph  # noqa: E402
 from subkg2skill.loader import load  # noqa: E402

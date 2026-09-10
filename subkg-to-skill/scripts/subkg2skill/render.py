@@ -5,12 +5,11 @@ Layout (identical for Claude Code, opencode and anything else that reads a
 
     <skill>/
       SKILL.md                     entry document, kept short on purpose
-      INSTALL.md                   where to drop the directory per framework
-      references/index.md          symptom -> playbook routing table
-      references/reading-guide.md  how to read the bundled data honestly
-      references/coverage.md       what the build did and did not document
-      references/playbooks/*.md    one troubleshooting document per symptom
-      data/subgraph.json           the selected nodes and edges, verbatim
+      reference/index.md           symptom -> playbook routing table
+      reference/fault-*.md         one troubleshooting document per symptom
+      reference/reading-guide.md   how to read the bundled data honestly
+      reference/coverage.md        what the build did and did not document
+      reference/subgraph.json      the selected nodes and edges, verbatim
       scripts/kg_query.py          stdlib query tool over that JSON
 
 Progressive disclosure is the point: ``SKILL.md`` routes, the playbooks carry
@@ -81,16 +80,21 @@ class SkillPackage:
         return written
 
     def _prune_stale_playbooks(self, out_dir: Path, written: List[Path]) -> None:
-        """Drop playbooks left over from an earlier build of a different subgraph."""
-        playbooks = out_dir / "references" / "playbooks"
-        if not playbooks.is_dir():
+        """Drop playbooks left over from an earlier build of a different subgraph.
+
+        Only the generated ``fault-*.md`` / ``index-*.md`` names are touched, so
+        anything a human added under ``reference/`` survives a rebuild.
+        """
+        reference = out_dir / "reference"
+        if not reference.is_dir():
             return
         keep = {path.resolve() for path in written}
         removed = 0
-        for path in playbooks.glob("*.md"):
-            if path.resolve() not in keep:
-                path.unlink()
-                removed += 1
+        for pattern in ("fault-*.md", "index-*.md"):
+            for path in reference.glob(pattern):
+                if path.resolve() not in keep:
+                    path.unlink()
+                    removed += 1
         if removed:
             self.notes.append(f"清理了 {removed} 份上一次构建遗留的手册。")
 
@@ -110,11 +114,11 @@ def _ascii_hint(text: str, limit: int = 16) -> str:
 
 
 def playbook_filename(playbook: Playbook, taken: Dict[str, str]) -> str:
-    """Stable, greppable filename: optional ASCII hint plus a node-id stem."""
+    """Stable, greppable filename: ``fault-<名称ASCII片段>-<node_id 尾部>.md``."""
     node_id = playbook.node_id
-    stem = node_id if len(node_id) <= 28 else node_id[:28]
+    stem = node_id.split("_", 1)[-1][:12] or node_id[:12]
     hint = _ascii_hint(playbook.symptom.name)
-    base = f"{hint}-{stem}" if hint else stem
+    base = f"fault-{hint}-{stem}" if hint else f"fault-{stem}"
     candidate = f"{base}.md"
     suffix = 2
     while candidate in taken and taken[candidate] != node_id:
@@ -439,10 +443,10 @@ def render_index(playbooks: Sequence[Playbook], filenames: Dict[str, str]) -> Di
     if len(playbooks) <= INDEX_SHARD_LIMIT:
         lines = ["# 症状索引（排查手册路由表）", ""] + INDEX_INTRO + [""] + INDEX_TABLE_HEAD
         lines += [
-            _index_row(playbook, filenames[playbook.node_id], "playbooks/")
+            _index_row(playbook, filenames[playbook.node_id], "")
             for playbook in playbooks
         ]
-        return {"references/index.md": "\n".join(lines + [""])}
+        return {"reference/index.md": "\n".join(lines + [""])}
 
     grouped: Dict[str, List[Playbook]] = {}
     for playbook in playbooks:
@@ -452,7 +456,7 @@ def render_index(playbooks: Sequence[Playbook], filenames: Dict[str, str]) -> Di
     shards: List[Tuple[str, str, List[Playbook]]] = []
     if len(grouped) <= MAX_INDEX_GROUPS:
         for ordinal, group in enumerate(sorted(grouped), start=1):
-            shard = f"index/{ordinal:03d}-{_ascii_hint(group) or 'unit'}.md"
+            shard = f"index-{ordinal:03d}-{_ascii_hint(group) or 'unit'}.md"
             shards.append((group, shard, grouped[group]))
     else:
         # Too many diagnostic units to make a useful directory — chunk instead.
@@ -460,7 +464,7 @@ def render_index(playbooks: Sequence[Playbook], filenames: Dict[str, str]) -> Di
             chunk = list(playbooks[start : start + INDEX_SHARD_LIMIT])
             ordinal = start // INDEX_SHARD_LIMIT + 1
             label = f"分片 {ordinal}（{chunk[0].symptom.name} … {chunk[-1].symptom.name}）"
-            shards.append((label, f"index/part-{ordinal:03d}.md", chunk))
+            shards.append((label, f"index-{ordinal:03d}.md", chunk))
 
     files: Dict[str, str] = {}
     directory = [
@@ -484,11 +488,11 @@ def render_index(playbooks: Sequence[Playbook], filenames: Dict[str, str]) -> Di
         directory.append(f"| {group} | {len(members)} | {examples} | [{shard}]({shard}) |")
         shard_lines = [f"# 症状索引 · {group}", ""] + INDEX_INTRO + [""] + INDEX_TABLE_HEAD
         shard_lines += [
-            _index_row(playbook, filenames[playbook.node_id], "../playbooks/")
+            _index_row(playbook, filenames[playbook.node_id], "")
             for playbook in members
         ]
-        files[f"references/{shard}"] = "\n".join(shard_lines + [""])
-    files["references/index.md"] = "\n".join(directory + [""])
+        files[f"reference/{shard}"] = "\n".join(shard_lines + [""])
+    files["reference/index.md"] = "\n".join(directory + [""])
     return files
 
 
@@ -604,7 +608,7 @@ def render_coverage(graph: Graph, playbooks: Sequence[Playbook], report, options
     lines += ["", "## 未进入手册的节点", ""]
     if uncovered:
         lines.append(
-            "这些节点仍在 `data/subgraph.json` 中，可用 `scripts/kg_query.py` 查询；"
+            "这些节点仍在 `reference/subgraph.json` 中，可用 `scripts/kg_query.py` 查询；"
             "它们没有从任何症状出发被走到（通常是孤立节点或只被反向引用）。"
         )
         lines.append("")
@@ -678,9 +682,9 @@ def render_skill_md(graph: Graph, playbooks: Sequence[Playbook], options: BuildO
         "",
         "## 使用流程",
         "",
-        "1. **定位入口**：读 `references/index.md`（症状 → 手册路由表），按“触发说法”匹配用户描述。",
+        "1. **定位入口**：读 `reference/index.md`（症状 → 手册路由表），按“触发说法”匹配用户描述。",
         "   匹配不到就检索：`python3 scripts/kg_query.py search \"关键词\"`。",
-        "2. **只打开需要的那份手册**：`references/playbooks/<文件>.md`。不要一次读入全部手册。",
+        "2. **只打开需要的那份手册**：`reference/fault-<文件>.md`。不要一次读入全部手册。",
         "3. **先补齐信息**：手册第 0 节列出必须向用户确认的槽位（设备名、端口名、版本等）和适用范围；"
         "缺失就先问，不要替用户假设。",
         "4. **按证据推进**：对每个候选原因，执行“定位检查”，把现场结果对照“可能的观测结果与判读”，"
@@ -688,7 +692,7 @@ def render_skill_md(graph: Graph, playbooks: Sequence[Playbook], options: BuildO
         "5. **给出动作**：只使用手册中该原因下列出的修复动作；命令模板必须先绑定现场参数，"
         "涉及配置变更或业务影响的操作先向用户确认。",
         "6. **回查原文**：`python3 scripts/kg_query.py show <node_id>` 看完整字段与来源；"
-        "`neighbors` / `expand` 看邻接关系；全量数据在 `data/subgraph.json`。",
+        "`neighbors` / `expand` 看邻接关系；全量数据在 `reference/subgraph.json`。",
         "",
         "## 证据纪律（必须遵守）",
         "",
@@ -725,60 +729,15 @@ def render_skill_md(graph: Graph, playbooks: Sequence[Playbook], options: BuildO
         "",
         "| 文件 | 用途 |",
         "| --- | --- |",
-        "| `references/index.md` | 症状 → 手册路由表，先读这个 |",
-        "| `references/playbooks/*.md` | 每个症状一份排查手册 |",
-        "| `references/reading-guide.md` | 节点/关系语义、条件与操作符、质量标记的读法 |",
-        "| `references/coverage.md` | 构建报告：数据分布、丢弃项、未覆盖节点 |",
-        "| `data/subgraph.json` | 子图原始数据（节点/关系全字段） |",
+        "| `reference/index.md` | 症状 → 手册路由表，先读这个 |",
+        "| `reference/fault-*.md` | 每个症状一份排查手册 |",
+        "| `reference/reading-guide.md` | 节点/关系语义、条件与操作符、质量标记的读法 |",
+        "| `reference/coverage.md` | 构建报告：数据分布、丢弃项、未覆盖节点 |",
+        "| `reference/subgraph.json` | 子图原始数据（节点/关系全字段） |",
         "| `scripts/kg_query.py` | 零依赖查询脚本（search / show / neighbors / expand / path / stats） |",
         "",
     ]
     return "\n".join(front + body)
-
-
-def render_install(options: BuildOptions, name: str) -> str:
-    return "\n".join(
-        [
-            f"# 安装 `{name}`",
-            "",
-            "这是一份**框架无关**的技能目录：一个带 YAML frontmatter 的 `SKILL.md`，"
-            "加上按需加载的 `references/`、`data/`、`scripts/`。把整个目录复制到对应位置即可。",
-            "",
-            "## Claude Code",
-            "",
-            "```bash",
-            f"cp -r {name} .claude/skills/{name}          # 仅当前项目",
-            f"cp -r {name} ~/.claude/skills/{name}        # 全局可用",
-            "```",
-            "",
-            "重启（或新开）会话后，`/skills` 或自动触发都能看到它。",
-            "",
-            "## opencode",
-            "",
-            "```bash",
-            f"cp -r {name} .opencode/skill/{name}             # 仅当前项目",
-            f"cp -r {name} ~/.config/opencode/skill/{name}    # 全局可用",
-            "```",
-            "",
-            "## 其他框架 / 直接使用",
-            "",
-            "任何能读 Markdown 的智能体都可以用：把 `SKILL.md` 作为系统提示的一部分，",
-            "并允许模型按需读取 `references/` 下的文件。`scripts/kg_query.py` 只依赖 Python 3.9+ 标准库：",
-            "",
-            "```bash",
-            f"python3 {name}/scripts/kg_query.py stats",
-            f"python3 {name}/scripts/kg_query.py search \"邻居震荡\"",
-            f"python3 {name}/scripts/kg_query.py show <node_id>",
-            f"python3 {name}/scripts/kg_query.py expand <node_id> --depth 2",
-            "```",
-            "",
-            "## 更新",
-            "",
-            "重新运行 `subkg2skill build --out <目录> --force` 覆盖即可；",
-            "文件名按 `node_id` 生成，同一子图重复构建结果稳定。",
-            "",
-        ]
-    )
 
 
 # ------------------------------------------------------------------ data
@@ -820,25 +779,24 @@ def _query_script() -> str:
 # ----------------------------------------------------------------- build
 def build_package(graph: Graph, playbooks: Sequence[Playbook], report, options: BuildOptions) -> SkillPackage:
     """Render every file of the skill package into memory."""
-    name = normalise_name(options.name)
+    normalise_name(options.name)  # fail fast on an unusable skill name
     package = SkillPackage()
     filenames: Dict[str, str] = {}
     taken: Dict[str, str] = {}
     for playbook in playbooks:
         filename = playbook_filename(playbook, taken)
         filenames[playbook.node_id] = filename
-        package.files[f"references/playbooks/{filename}"] = render_playbook(
+        package.files[f"reference/{filename}"] = render_playbook(
             graph, playbook, options
         )
     package.files["SKILL.md"] = render_skill_md(graph, playbooks, options)
-    package.files["INSTALL.md"] = render_install(options, name)
     package.files.update(render_index(playbooks, filenames))
-    package.files["references/reading-guide.md"] = render_reading_guide(graph)
-    package.files["references/coverage.md"] = render_coverage(graph, playbooks, report, options)
+    package.files["reference/reading-guide.md"] = render_reading_guide(graph)
+    package.files["reference/coverage.md"] = render_coverage(graph, playbooks, report, options)
     if options.data_mode != "none":
-        package.files["data/subgraph.json"] = render_data(graph, options)
+        package.files["reference/subgraph.json"] = render_data(graph, options)
     elif options.include_script:
-        package.notes.append("--data none 时不生成 data/subgraph.json，查询脚本将无数据可读。")
+        package.notes.append("--data none 时不生成 reference/subgraph.json，查询脚本将无数据可读。")
     if options.include_script:
         package.files["scripts/kg_query.py"] = _query_script()
     if not playbooks:

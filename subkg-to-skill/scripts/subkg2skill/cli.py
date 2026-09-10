@@ -209,7 +209,12 @@ def cmd_build(args) -> int:
         print(f"  提示：{note}")
     if report.issues:
         print(f"  载入告警/丢弃 {len(report.issues)} 条，明细见 references/coverage.md")
-    print("\n安装方式见 INSTALL.md（Claude Code: .claude/skills/；opencode: .opencode/skill/）")
+    name = normalise_name(options.name)
+    print("\n装进框架：")
+    print(f"  cp -r {out_dir} .claude/skills/{name}          # Claude Code（项目级）")
+    print(f"  cp -r {out_dir} ~/.claude/skills/{name}        # Claude Code（全局）")
+    print(f"  cp -r {out_dir} .opencode/skill/{name}         # opencode（项目级）")
+    print(f"  cp -r {out_dir} ~/.config/opencode/skill/{name}")
     return 0
 
 
