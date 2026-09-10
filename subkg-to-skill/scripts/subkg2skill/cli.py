@@ -286,6 +286,21 @@ def cmd_list(args) -> int:
             print("    ⚠ 合并后原因过多，可能仍是多个场景混在一起，考虑只取其中一两个 --unit")
         if triggers:
             print(f"    触发说法 : {triggers}")
+        if args.show_causes:
+            print("    根因构成 :")
+            scoped_group = graph.scope_to_units(group.units) if group.units else graph
+            for symptom in group.symptoms:
+                units = "、".join(
+                    unit for unit in scoped_group.edge_units(symptom.node_id, "has_cause")
+                ) or "(未标注)"
+                causes = [
+                    node.name for node, _edge in scoped_group.targets(symptom.node_id, "has_cause")
+                ]
+                print(f"      [{units}] {symptom.name}")
+                for cause in causes:
+                    print(f"          - {cause}")
+                if not causes:
+                    print("          （该来源没有 has_cause 关系）")
         print(f"    建议 slug: {suggested_slug(group.primary)}（模板要求英文名，请按语义改写）")
         command = "build " + " ".join(f"--entry {node.node_id}" for node in group.symptoms)
         command += "".join(f" --unit {unit}" for unit in group.units)
@@ -575,6 +590,11 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--all-units", action="store_true", help="不按诊断单元拆分")
     listing.add_argument(
         "--no-merge", action="store_true", help="不按故障归并同名症状，逐个场景列出"
+    )
+    listing.add_argument(
+        "--show-causes",
+        action="store_true",
+        help="按来源列出每组的根因清单，用来判断一个组是不是混了两类故障",
     )
     listing.add_argument(
         "--suggest-merge",

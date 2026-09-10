@@ -295,3 +295,13 @@ def test_lint_does_not_flag_genuinely_different_causes():
     )
     warnings = " ".join(issue.message for issue in lint_text(document).warnings)
     assert "写法高度相似" not in warnings
+
+
+def test_list_show_causes_breaks_a_group_down_by_source(capsys):
+    assert main(["list", str(MULTI), "--show-causes"]) == 0
+    output = capsys.readouterr().out
+    assert "根因构成 :" in output
+    # 每个来源各自贡献了哪些根因，才看得出一个组是不是混了两类故障
+    assert "[17.4.1] IS-IS邻居无法建立" in output
+    assert "[ipran_icase] ISIS邻居无法建立" in output
+    assert "- 两端认证方式不匹配" in output
