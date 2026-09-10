@@ -8,9 +8,15 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 | 子命令 | 用途 | 退出码 |
 | --- | --- | --- |
-| `build` | 生成技能目录 | 0 成功；1 `--strict` 下有校验错误；2 输入/参数错误 |
-| `inspect` | 看规模、类型分布、章节、质量标记、能生成多少份手册 | 0 / 2 |
+| `list` | 列出故障入口（symptom）、规模、触发说法与建议 slug | 0 / 2 |
+| `build` | 为**一个**故障入口生成 skill | 0 成功；1 模板检查有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
+| `build-all` | 给每个故障入口各生成一份 skill | 同上 |
+| `inspect` | 看规模、类型分布、章节、质量标记 | 0 / 2 |
 | `validate` | 只做结构校验 | 0 无错误；1 有错误；2 输入错误 |
+| `lint` | 检查已生成的 skill 是否符合模板 | 0 通过；1 有 ERROR |
+
+一个 skill 对应一个故障入口。子图里有多个入口时，`build` 必须用 `--entry` 指定，
+或改用 `build-all`。
 
 ## 输入
 
@@ -40,41 +46,69 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 同时给 `--root` 和其他筛选条件时取交集；筛不中任何节点会报错退出（码 2）。
 
-## `build` 专有参数
+## 输出参数（`build` / `build-all` 共用）
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `--out DIR` | 必填 | 输出目录 |
-| `--name SLUG` | `kg-fault-diagnosis` | 技能名，会规范成 `^[a-z0-9-]+$`；纯中文名无法规范化，会报错 |
-| `--title TEXT` | `IP-RAN 故障诊断（知识图谱子图）` | 产物 `SKILL.md` 的标题 |
-| `--description TEXT` | 自动生成 | frontmatter 描述，超过 1024 字符会截断 |
-| `--max-playbooks N` | 0（不限） | 只生成前 N 份手册，按“真入口”优先排序 |
-| `--evidence N` | 3 | 每个条目展示几条来源 |
+| `--out DIR` | 必填 | 输出目录；`build-all` 在其下按 slug 建子目录 |
+| `--evidence N` | 3 | `reference/evidence.md` 里每个条目展示几条来源 |
 | `--data full\|slim\|none` | `full` | `slim` 去掉 `canonical_key`、`semantic_review` 等簿记字段并截断证据；`none` 不带数据（查询脚本会无数据可读） |
-| `--allowed-tools TEXT` | 空 | 写入产物 frontmatter 的 `allowed-tools` |
 | `--no-script` | 关 | 不生成 `scripts/kg_query.py` |
-| `--force` | 关 | 覆盖已有目录，并清理这次不再产生的 `fault-*.md` / `index-*.md` |
-| `--dry-run` | 关 | 只打印将写出的文件与大小，不落盘 |
+| `--no-lead` | 关 | 不在 frontmatter 后加指向 `reference/` 的提示行 |
+| `--force` | 关 | 覆盖已有目录 |
+| `--dry-run` | 关 | 只打印将写出的文件与模板检查结果，不落盘 |
+
+### `build` 专有
+
+| 参数 | 说明 |
+| --- | --- |
+| `--entry VALUE` | 入口症状：`node_id`、id 前缀或名称关键词。子图里只有一个 symptom 时可省略 |
+| `--name SLUG` | **必填**，英文技能名（`^[a-z0-9-]+$`）。模板硬性要求，中文名会报错 |
+| `--description TEXT` | frontmatter 描述；不给则由症状的名称、别名、`match_phrases`、`trigger_context` 生成 |
+
+### `build-all` 专有
+
+| 参数 | 说明 |
+| --- | --- |
+| `--names FILE` | `{node_id: slug}` 的 JSON 映射；没给的入口会用机械 slug 并在结尾列出，提醒改名 |
+| `--limit N` | 最多生成多少份（0=不限） |
+
+### `lint`
+
+```bash
+python3 scripts/build_skill.py lint <skill 目录或 SKILL.md> [更多路径...]
+```
 
 ## 例子
 
 ```bash
-# 摸底
+# 摸底 + 看入口
 python3 scripts/build_skill.py inspect /data/kg
+python3 scripts/build_skill.py list /data/kg
 
-# 只取一个症状及其三层邻域，先看会写什么
-python3 scripts/build_skill.py build /data/kg --root symptom_7f1c --depth 3 \
-    --out out/isis --name isis-neighbor-down --dry-run
+# 生成一份（先干跑）
+python3 scripts/build_skill.py build /data/kg --entry symptom_7f1c \
+    --name isis-neighbor-down --out out/isis-neighbor-down --dry-run
 
-# 按章节切一份，随包数据瘦身
-python3 scripts/build_skill.py build /data/node.json /data/edge.json \
-    --section 28.21 --out out/isis --name isis-diagnosis --data slim
+# 按章节切一块，批量生成并指定英文名
+python3 scripts/build_skill.py build-all /data/node.json /data/edge.json \
+    --section 28.21 --out out/ --names names.json --data slim
 
-# 覆盖重建
-python3 scripts/build_skill.py build /data/kg --out out/full --name ipran-diagnosis --force
+# 自检
+python3 scripts/build_skill.py lint out/isis-neighbor-down
+```
+
+`names.json` 形如：
+
+```json
+{
+  "symptom_7f1c02aa93be4d61b0c5e210": "isis-neighbor-down",
+  "symptom_2ad4471b8c0f4e2ab7d31f55": "service-interruption"
+}
 ```
 
 ## 性能
 
-全量 17,392 节点 / 17,088 边约 5 秒完成，产出 1,352 份手册；
-`--data slim` 时数据文件约 29 MB，`index.md` 自动分片后仍是几 KB。
+全量 17,392 节点 / 17,088 边的图，`build-all` 会产出 1,352 份 skill（每个故障入口一份）；
+每份只带自己那一片子图，所以单份体积很小。先用 `--section` / `--vendor` / `--limit` 收窄范围
+通常更实用。

@@ -56,19 +56,28 @@ def test_skill_md_stays_short(skill_text):
     assert len(skill_text.splitlines()) < 200
 
 
-def test_documented_commands_run(tmp_path, example_dir):
-    entry = SKILL_DIR / "scripts" / "build_skill.py"
-    assert subprocess.run([sys.executable, str(entry), "inspect", str(example_dir)]).returncode == 0
-    out = tmp_path / "generated"
-    built = subprocess.run(
-        [sys.executable, str(entry), "build", str(example_dir), "--out", str(out), "--name", "demo"],
+def _run(*args):
+    return subprocess.run(
+        [sys.executable, str(SKILL_DIR / "scripts" / "build_skill.py"), *args],
         capture_output=True,
         text=True,
+    )
+
+
+def test_documented_commands_run(tmp_path, example_dir):
+    assert _run("inspect", str(example_dir)).returncode == 0
+    listing = _run("list", str(example_dir))
+    assert listing.returncode == 0 and "建议 slug" in listing.stdout
+
+    out = tmp_path / "generated"
+    built = _run(
+        "build", str(example_dir), "--entry", "symptom_7f1c", "--name", "demo", "--out", str(out)
     )
     assert built.returncode == 0, built.stderr
     # the install lines the skill promises are printed for the user
     assert ".claude/skills/demo" in built.stdout and ".opencode/skill/demo" in built.stdout
     assert {path.name for path in out.iterdir()} == {"SKILL.md", "reference", "scripts"}
+    assert _run("lint", str(out)).returncode == 0
 
 
 def test_scripts_need_no_third_party_imports():

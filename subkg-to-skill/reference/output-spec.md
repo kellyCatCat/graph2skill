@@ -1,68 +1,80 @@
-# 产出 skill 的结构规范
+# 图谱字段 → 四章节的映射
 
-`build_skill.py build` 写出的目录只有三样东西：`SKILL.md`、`reference/`、`scripts/`。
-这一页说明每个文件为什么存在、内容从哪来，便于核对产物或手工微调。
+模板本身见 [`skill-template.md`](skill-template.md)。这一页说明生成器**怎么把图谱字段填进四章节**，
+便于核对产物、或在数据缺失时判断该写什么。
 
-## 目录
+一份 skill 覆盖一个 `symptom` 及其向前可达的原因、检查、观测、修复、升级节点
+（并把 `supports` / `confirms` / `excludes` 这些指回原因的判据边拉回来）。
+
+## 产物
 
 ```
 <skill>/
-├── SKILL.md              入口：何时用、使用流程、证据纪律、输出模板、目录表
+├── SKILL.md                # 四章节，不放出处
 ├── reference/
-│   ├── index.md          症状 → 手册路由表
-│   ├── index-001-*.md    （症状 >150 时的分片，仍在 reference/ 同层）
-│   ├── fault-*.md        每个 symptom 一份排查手册
-│   ├── reading-guide.md  本子图出现过的节点/边语义、条件状态、操作符、质量标记
-│   ├── coverage.md       构建报告
-│   └── subgraph.json     选中的节点与边 + meta（来源、生成时间、计数）
-└── scripts/kg_query.py   零依赖查询脚本，按相对路径读 ../reference/subgraph.json
+│   ├── evidence.md         # 出处、证据强度、未求值条件、质量标记
+│   └── subgraph.json       # 该故障的切片 + meta（来源、生成时间、计数）
+└── scripts/kg_query.py     # 按相对路径读 ../reference/subgraph.json
 ```
 
-## 渐进式加载
+frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behavior`）作故障现象，
+`aliases` + `attrs.match_phrases` 作适用时机，`attrs.trigger_context` 作补充；
+`name` 必须由调用方给出英文 slug。
 
-入口小、细节按需，这是布局的唯一目的：
+## `# 入参列表`
 
-1. `SKILL.md`（几 KB）讲流程与纪律，不含具体故障内容；
-2. `reference/index.md` 用“触发说法”把用户描述路由到**一份**手册；
-3. 手册（每份约 2–10 KB）展开该症状的完整排查路径；
-4. 手册没展开的部分（其他症状、完整来源列表、任意节点全字段）交给 `scripts/kg_query.py`；
-5. `reference/subgraph.json` 是最终事实来源，全字段保留。
+| 来源 | 是否必填 | 说明列写什么 |
+| --- | --- | --- |
+| `symptom.attrs.required_slots` | 是 | 现场提供 |
+| 前置检查命令里的 `<token>` | 是 | 前置检查步骤 N 命令参数 |
+| 只在排查步骤命令里出现的 `<token>` | 否 | 从前置检查回显中提取，无需人工输入 |
+| 只在修复/复检命令里出现的 `<token>` | 否 | 修复动作参数，按现场规划或回显确定 |
 
-## 手册的固定段落
+「信息」列由参数名把 `-` / `_` 换成空格得到（`<interface-type>` →「interface type」），
+所以去掉空格和连字符后仍与 CLI 参数名一致；中文参数名原样保留。
+同一参数按“去空格、去连字符、小写”归一，槽位与 CLI 参数会合并成一行。
 
-| 段落 | 来自哪些边/字段 |
+## `# 前置检查`
+
+来自 `symptom -diagnosed_by-> check`，以及 `symptom -next_step-> check` 及其 `next_step` 链
+（最长 6 步，遇环即停）。每条：
+
+- **CLI 命令**：该 check 的 `attrs.command_templates`（`{}` / `[]` 规整为 `<>`）；来源没有命令模板时
+  写“来源未给出命令模板，按来源步骤说明人工采集”。
+- **采集内容**：`attrs.intent` + 该检查可能观测到的 `attrs.field` 字段名；两者都没有时用 `attrs.procedure`。
+- **根因定位**：只在该观测判定的原因**没有自己的排查步骤**时才写，避免同一根因判两遍。
+
+## `# 排查步骤`
+
+每条 `symptom -has_cause-> cause` 一步，顺序按边的 `rank`：
+
+| 模板要求 | 数据来源 |
 | --- | --- |
-| 头部 | `name` + `aliases` + `attrs.match_phrases`（触发说法）；`scope`；`diagnostic_contexts`；`status` / `review_status` / `semantic_review.human_reviewed` |
-| 0. 现象与需补齐的信息 | `attrs.object_type` / `abnormal_behavior` / `expected_behavior` / `trigger_context` / `required_slots` |
-| 1. 入口检查 | `symptom -diagnosed_by-> check`，并沿 `next_step` 展开检查链（最长 6 步，遇环即停） |
-| 2. 候选原因对照表 | 每条 `has_cause` 一行：分类、确认观测、排除观测、修复动作、是否带条件 |
-| 2.x 原因分支 | `cause` 属性 + 判据（`confirms` / `supports` / `excludes`）+ `diagnosed_by` 检查 + `repaired_by` 修复 + `refines` / `leads_to` / `refers_to` |
-| 3. 转向 / 升级 | `refers_to`、`next_step` 指向的 escalation：转交对象与需收集的材料 |
-| 4. 出处 | 症状的 `provenance` |
+| 步骤名称 | `检查<原因名>` |
+| CLI 命令 | 判据观测由某条前置检查产生 → “复用前置检查步骤 N 回显（检查名，查看 `字段` 字段）”；否则用该原因 `diagnosed_by` 检查的命令模板 |
+| 跳转信息 | `confirms` / `supports` 观测 → “定位根因……结束排查”；`excludes` 观测 → “排除根因……顺序执行步骤 N+1”；末尾补“以上判据均不命中”一行 |
+| 根因定位 | 该步骤能判定的原因名 |
 
-同一个检查在一份手册里只展开一次，重复出现时标注“已在前文展开”，避免同样的命令列三遍。
+- `supports` 判定的根因一律带“（仅支持性证据 `supports`，需人工确认）”。
+- 最后一步的兜底写“判定‘未找到根因’，输出已执行的全部检查步骤及结果摘要，结束排查”。
+- 原因没有任何判据观测时，跳转信息写“本子图未给出该原因的判定观测”，仍把它列进根因定位，
+  对照表里的现象列注明“本子图未给出判定观测”。
 
-## 文件命名
+## `# 根因对照表`
 
-- 手册：`fault-<症状名的 ASCII 片段>-<node_id 尾部 12 位>.md`，例如
-  `fault-is-is-7f1c02aa93be.md`；症状名没有 ASCII 字符时退化为 `fault-<id 尾部>.md`。
-  命名只依赖 `node_id`，同一子图重复构建结果稳定。
-- 索引分片：先按诊断单元分组（`index-001-<单元>.md`）；诊断单元超过 40 个时
-  退化为固定块分片（`index-001.md`、`index-002.md`…，每片 150 个症状）。
-  无论哪种模式，`index.md` 本身都保持在几 KB。
+汇总前置检查与排查步骤里出现的全部根因，外加一行「未找到根因」。
 
-## 重新生成
-
-`--force` 覆盖时只清理**这次不再产生的** `fault-*.md` / `index-*.md`；
-人工加进 `reference/` 的其他文件不会被删。
-
-## 查询脚本
-
-| 子命令 | 用途 |
+| 列 | 数据来源 |
 | --- | --- |
-| `stats` | 规模、类型分布、生成信息 |
-| `search <词> [--type T] [--limit N]` | 按名称/别名/匹配短语/描述/章节标题检索 |
-| `show <node_id> [--evidence N] [--json]` | 全字段 + 来源 + 出入边（支持 id 前缀） |
-| `neighbors <node_id> [--edge-type T] [--direction out\|in\|both]` | 只看邻接 |
-| `expand <node_id> [--depth N]` | 向前展开子树，并把判据边拉回来 |
-| `path <a> <b> [--undirected]` | 两节点间的最短关系链 |
+| 根因 | `cause.name`，与「根因定位」逐字一致 |
+| 现象 | 判定该原因的观测表达式（优先 `normalized_expression`）+ 证据强度标注 |
+| 修复CLI和方法 | `cause -repaired_by-> repair` 的 `command_templates`；没有命令就照抄 `procedure` 文字；都没有写“无直接修复CLI”。附 `service_impact` 作“影响”、`rollback` 作“回退” |
+| 复检命令（可选） | 仅当 `repair -next_step-> check` 存在时取该检查的命令；否则 `-` |
+
+多条命令在表格内用 `<br>` 分行。
+
+## `reference/evidence.md`
+
+四章节里不放出处，全部集中在这里：症状、检查动作、判据（观测 → 原因，含未求值条件）、
+候选原因、修复动作、转交升级，每个节点给出 `node_id`、知识状态（`status` / `review_status` /
+`human_reviewed`）、适用范围、诊断单元、质量标记与原文引文，末尾附读法提醒。

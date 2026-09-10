@@ -1,249 +1,154 @@
-"""The generated package: frontmatter, routing, wording and file layout."""
+"""The package around SKILL.md: frontmatter, evidence, data and layout."""
 
 import json
-import re
 
 import pytest
 
-from subkg2skill.graph import Graph
-from subkg2skill.loader import RawBundle
-from subkg2skill.playbook import build_playbook, build_playbooks
+from subkg2skill.lint import lint_text
+from subkg2skill.playbook import build_playbook
 from subkg2skill.render import (
-    BuildOptions,
     MAX_DESCRIPTION,
+    BuildOptions,
     RenderError,
     build_package,
+    default_description,
     normalise_name,
-    render_index,
-    render_playbook,
+    suggested_slug,
 )
-from tests.conftest import make_edge, make_node
 
 ISIS = "symptom_7f1c02aa93be4d61b0c5e210"
 
 
 @pytest.fixture()
 def package(example_graph):
-    playbooks = build_playbooks(example_graph)
-    options = BuildOptions(name="ipran-fault-diagnosis", sources=["examples/subgraph"])
-    return build_package(example_graph, playbooks, None, options)
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    options = BuildOptions(name="isis-neighbor-down", sources=["examples/subgraph"])
+    return build_package(example_graph, playbook, options)
 
 
-def frontmatter(text: str) -> dict:
-    assert text.startswith("---\n")
-    block = text.split("---\n", 2)[1]
-    fields = {}
-    for line in block.splitlines():
-        key, _, value = line.partition(":")
-        fields[key.strip()] = value.strip()
-    return fields
+def test_layout_is_skill_md_reference_scripts(package):
+    assert set(package.files) == {
+        "SKILL.md",
+        "reference/evidence.md",
+        "reference/subgraph.json",
+        "scripts/kg_query.py",
+    }
 
 
-def test_package_contains_the_expected_layout(package):
-    names = set(package.files)
-    assert "SKILL.md" in names
-    assert "reference/index.md" in names
-    assert "reference/reading-guide.md" in names
-    assert "reference/coverage.md" in names
-    assert "reference/subgraph.json" in names
-    assert "scripts/kg_query.py" in names
-    # nothing outside SKILL.md / reference/ / scripts/
-    assert {name.split("/")[0] for name in names} == {"SKILL.md", "reference", "scripts"}
-    assert sum(name.startswith("reference/fault-") for name in names) == 2
+def test_generated_document_passes_its_own_linter(package):
+    result = lint_text(package.files["SKILL.md"])
+    assert result.ok, [issue.render() for issue in result.errors]
 
 
-def test_frontmatter_is_parseable_and_bounded(package):
-    fields = frontmatter(package.files["SKILL.md"])
-    assert fields["name"] == "ipran-fault-diagnosis"
-    assert re.match(r"^[a-z0-9][a-z0-9-]*$", fields["name"])
-    description = fields["description"]
-    assert description.startswith('"') and description.endswith('"')
-    assert len(description) <= MAX_DESCRIPTION + 2
-    assert "\n" not in description
+def test_description_is_phenomenon_plus_when_to_use(example_graph):
+    description = default_description(example_graph.nodes[ISIS])
+    assert description.startswith("IS-IS邻居无法建立：")
+    assert "ISIS邻居Down" in description and "时使用" in description
+    assert len(description) <= MAX_DESCRIPTION
 
 
-def test_description_mentions_triggering_symptoms(package):
-    description = frontmatter(package.files["SKILL.md"])["description"]
-    assert "IS-IS邻居无法建立" in description
-
-
-def test_custom_description_is_escaped_not_dropped(example_graph):
-    options = BuildOptions(name="x", description='含"引号"的描述\n第二行')
-    package = build_package(example_graph, build_playbooks(example_graph), None, options)
-    line = [l for l in package.files["SKILL.md"].splitlines() if l.startswith("description:")][0]
-    assert '\\"引号\\"' in line and "\n" not in line[len("description:") :]
-
-
-def test_skill_md_states_the_evidence_discipline(package):
-    text = package.files["SKILL.md"]
-    for expected in ("candidate", "未求值", "scope", "example_specific", "command_templates", "node_id"):
-        assert expected in text
-    assert "reference/index.md" in text
-
-
-def test_skill_md_stays_short(package):
-    assert len(package.files["SKILL.md"].splitlines()) < 120
-
-
-def test_allowed_tools_only_appears_when_asked(example_graph):
-    playbooks = build_playbooks(example_graph)
-    plain = build_package(example_graph, playbooks, None, BuildOptions(name="x"))
-    assert "allowed-tools" not in plain.files["SKILL.md"]
-    scoped = build_package(
-        example_graph, playbooks, None, BuildOptions(name="x", allowed_tools="Read, Bash")
+def test_custom_description_wins(example_graph):
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    package = build_package(
+        example_graph, playbook, BuildOptions(name="x", description="自定义描述。")
     )
-    assert "allowed-tools: Read, Bash" in scoped.files["SKILL.md"]
+    assert "description: 自定义描述。" in package.files["SKILL.md"]
 
 
-def test_index_routes_every_playbook(package):
-    index = package.files["reference/index.md"]
-    for name in package.files:
-        if name.startswith("reference/fault-"):
-            assert name.split("/")[-1] in index
+def test_lead_line_points_at_the_reference_files(package):
+    assert "reference/evidence.md" in package.files["SKILL.md"].split("# 入参列表")[0]
 
 
-def playbook_text(package):
-    return next(v for k, v in package.files.items() if k.startswith("reference/fault-is-is"))
+def test_lead_line_can_be_dropped(example_graph):
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    package = build_package(
+        example_graph, playbook, BuildOptions(name="x", include_lead=False)
+    )
+    head = package.files["SKILL.md"].split("# 入参列表")[0]
+    assert "reference/evidence.md" not in head
 
 
-def test_playbook_carries_causes_checks_verdicts_and_repairs(package):
-    text = playbook_text(package)
-    assert "## 2. 候选原因对照表" in text
-    assert "**确认** 原因「两端区域地址（Area ID）配置不一致」" in text
-    assert "display isis peer" in text
-    assert "统一两端接口 MTU" in text
-    assert "《NE40E 维护宝典.pdf》" in text
+def test_evidence_file_carries_sources_and_caveats(package):
+    evidence = package.files["reference/evidence.md"]
+    assert "《NE40E 维护宝典.pdf》" in evidence
+    assert "候选知识" in evidence and "人工复核=否" in evidence
+    assert "`symptom_7f1c02aa93be4d61b0c5e210`" in evidence
+    assert "未求值" in evidence
 
 
-def test_playbook_warns_when_only_supporting_evidence_exists(package):
-    text = playbook_text(package)
-    assert "没有 `confirms` 关系" in text
+def test_evidence_records_verdict_strength(package):
+    evidence = package.files["reference/evidence.md"]
+    assert "**支持**" in evidence and "**确认**" in evidence and "**排除**" in evidence
 
 
-def test_playbook_marks_example_specific_observations(package):
-    text = playbook_text(package)
-    assert "案例特定（example_specific=true）" in text
+def test_evidence_flags_example_specific_content(package):
+    assert "案例特定" in package.files["reference/evidence.md"]
 
 
-def test_playbook_headings_nest_under_their_cause(package):
-    text = playbook_text(package)
-    assert "### 2.1 原因：" in text and "#### 2.1.1 检查：" in text
-
-
-def test_reading_guide_only_documents_present_relations(package):
-    guide = package.files["reference/reading-guide.md"]
-    assert "`has_cause`" in guide and "`confirms`" in guide
-
-
-def test_data_file_keeps_provenance_by_default(package):
+def test_data_file_is_the_faults_own_slice(package, example_graph):
     data = json.loads(package.files["reference/subgraph.json"])
+    ids = {node["node_id"] for node in data["nodes"]}
+    assert ISIS in ids
+    # 切片只含这个故障走得到的节点
+    assert ids <= set(example_graph.nodes)
+    assert {node["node_type"] for node in data["nodes"]} >= {"cause", "check", "observation", "repair"}
     assert data["meta"]["data_mode"] == "full"
-    assert len(data["nodes"]) == 17 and len(data["edges"]) == 26
     assert data["nodes"][0]["provenance"]
 
 
 def test_slim_data_drops_bookkeeping_fields(example_graph):
-    options = BuildOptions(name="x", data_mode="slim")
-    package = build_package(example_graph, build_playbooks(example_graph), None, options)
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    package = build_package(example_graph, playbook, BuildOptions(name="x", data_mode="slim"))
     data = json.loads(package.files["reference/subgraph.json"])
     assert "canonical_key" not in data["nodes"][0]
     assert "semantic_review" not in data["nodes"][0]
 
 
 def test_data_none_skips_the_bundle_and_says_so(example_graph):
-    options = BuildOptions(name="x", data_mode="none")
-    package = build_package(example_graph, build_playbooks(example_graph), None, options)
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    package = build_package(example_graph, playbook, BuildOptions(name="x", data_mode="none"))
     assert "reference/subgraph.json" not in package.files
     assert any("查询脚本" in note for note in package.notes)
 
 
 def test_script_can_be_omitted(example_graph):
-    options = BuildOptions(name="x", include_script=False)
-    package = build_package(example_graph, build_playbooks(example_graph), None, options)
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    package = build_package(example_graph, playbook, BuildOptions(name="x", include_script=False))
     assert "scripts/kg_query.py" not in package.files
 
 
+def test_notes_report_an_empty_section(example_graph):
+    other = example_graph.nodes["symptom_2ad4471b8c0f4e2ab7d31f55"]
+    playbook = build_playbook(example_graph, other)
+    package = build_package(example_graph, playbook, BuildOptions(name="x"))
+    assert any("没有候选原因" in note for note in package.notes)
+
+
 def test_names_are_normalised_or_rejected():
-    assert normalise_name("IP-RAN Fault Diagnosis") == "ip-ran-fault-diagnosis"
-    assert normalise_name("ipran_kg") == "ipran-kg"
-    with pytest.raises(RenderError):
-        normalise_name("知识图谱")
+    assert normalise_name("ISIS Neighbor Down") == "isis-neighbor-down"
+    assert normalise_name("isis_neighbor") == "isis-neighbor"
+    with pytest.raises(RenderError) as excinfo:
+        normalise_name("邻居震荡")
+    assert "英文" in str(excinfo.value)
 
 
-def test_playbook_filenames_are_stable_and_unique(example_graph):
-    playbooks = build_playbooks(example_graph)
-    first = build_package(example_graph, playbooks, None, BuildOptions(name="x"))
-    second = build_package(example_graph, playbooks, None, BuildOptions(name="x"))
-    assert set(first.files) == set(second.files)
+def test_suggested_slug_is_valid_but_not_a_translation(example_graph):
+    slug = suggested_slug(example_graph.nodes["symptom_2ad4471b8c0f4e2ab7d31f55"])
+    assert slug.startswith("fault-") and normalise_name(slug) == slug
 
 
-def _many_symptoms(count: int, section_of):
-    nodes, edges = [], []
-    for i in range(count):
-        nodes.append(
-            make_node(
-                f"symptom_{i:04d}",
-                "symptom",
-                f"现象{i}",
-                diagnostic_contexts=[{"section": section_of(i), "title": "标题"}],
-            )
-        )
-        nodes.append(make_node(f"cause_{i:04d}", "cause", f"原因{i}"))
-        edges.append(make_edge(f"edge_{i:04d}", "has_cause", f"symptom_{i:04d}", f"cause_{i:04d}"))
-    graph, _ = Graph.from_bundle(RawBundle(nodes=nodes, edges=edges, sources=["t"]))
-    return graph
-
-
-def test_small_index_stays_one_file(example_graph):
-    files = render_index(
-        build_playbooks(example_graph), {ISIS: "a.md", "symptom_2ad4471b8c0f4e2ab7d31f55": "b.md"}
-    )
-    assert list(files) == ["reference/index.md"]
-
-
-def test_large_index_shards_by_diagnostic_unit():
-    graph = _many_symptoms(200, lambda i: f"{i % 6 + 1}.{i}.1")
-    playbooks = build_playbooks(graph)
-    files = render_index(playbooks, {p.node_id: f"{p.node_id}.md" for p in playbooks})
-    shards = [name for name in files if name.startswith("reference/index-")]
-    assert len(shards) == 6
-    directory = files["reference/index.md"]
-    assert len(directory) < 4000
-    assert all(shard.split("reference/")[1] in directory for shard in shards)
-
-
-def test_too_many_units_fall_back_to_fixed_chunks():
-    graph = _many_symptoms(400, lambda i: f"{i}.1.1")
-    playbooks = build_playbooks(graph)
-    files = render_index(playbooks, {p.node_id: f"{p.node_id}.md" for p in playbooks})
-    shards = sorted(name for name in files if name.startswith("reference/index-"))
-    assert shards == [f"reference/index-{i:03d}.md" for i in range(1, 4)]
-
-
-def test_empty_symptom_set_is_reported(tiny_graph):
-    graph = tiny_graph.subgraph(["cause_b", "repair_e"])
-    package = build_package(graph, [], None, BuildOptions(name="x"))
-    assert any("没有 symptom" in note for note in package.notes)
-
-
-def test_write_refuses_to_clobber_then_prunes(tmp_path, package):
+def test_write_refuses_to_clobber(tmp_path, package):
     target = tmp_path / "skill"
     package.write(target)
     assert (target / "SKILL.md").exists()
     with pytest.raises(RenderError):
         package.write(target)
-    stale = target / "reference" / "fault-gone.md"
-    stale.write_text("旧手册", encoding="utf-8")
-    kept = target / "reference" / "human-notes.md"
-    kept.write_text("人工补充", encoding="utf-8")
     package.write(target, force=True)
-    assert not stale.exists()
-    assert kept.exists()
 
 
-def test_render_playbook_is_deterministic(example_graph):
+def test_rendering_is_deterministic(example_graph):
     playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
     options = BuildOptions(name="x")
-    assert render_playbook(example_graph, playbook, options) == render_playbook(
-        example_graph, playbook, options
-    )
+    first = build_package(example_graph, playbook, options).files["SKILL.md"]
+    second = build_package(example_graph, playbook, options).files["SKILL.md"]
+    assert first == second

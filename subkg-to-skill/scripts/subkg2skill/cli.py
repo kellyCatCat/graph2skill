@@ -1,24 +1,36 @@
-"""Command line interface: ``build``, ``inspect`` and ``validate``.
+"""Command line interface.
 
-    subkg2skill build node.json edge.json --out out/ipran --name ipran-diagnosis
-    subkg2skill build graph_dir --root symptom_9a1b --depth 3 --out out/one-case
-    subkg2skill inspect node.json edge.json
-    subkg2skill validate node.json edge.json --strict
+    build_skill.py list     <子图>                       # 有哪些故障入口，各自建议的 slug
+    build_skill.py build    <子图> --entry <症状> --name <slug> --out <目录>
+    build_skill.py build-all <子图> --out <目录> [--names names.json]
+    build_skill.py inspect  <子图>                       # 规模与分布
+    build_skill.py validate <子图>                       # 只做结构校验
+    build_skill.py lint     <skill 目录或 SKILL.md>      # 模板符合性检查
+
+一个 skill 对应一个故障入口（一个 symptom），文档遵循四章节模板。
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set
 
 from subkg2skill import __version__, schema
-from subkg2skill.graph import Graph, ValidationReport
+from subkg2skill.graph import Graph, Node, ValidationReport
+from subkg2skill.lint import lint_path, lint_text
 from subkg2skill.loader import SubgraphLoadError, load
-from subkg2skill.playbook import build_playbooks, coverage
-from subkg2skill.render import BuildOptions, RenderError, build_package, normalise_name
+from subkg2skill.playbook import build_playbook, build_playbooks, entry_symptoms
+from subkg2skill.render import (
+    BuildOptions,
+    RenderError,
+    build_package,
+    normalise_name,
+    suggested_slug,
+)
 
 
 def _add_input_arguments(parser: argparse.ArgumentParser) -> None:
@@ -29,19 +41,12 @@ def _add_input_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--nodes", action="append", default=[], help="显式指定节点文件，可重复")
     parser.add_argument("--edges", action="append", default=[], help="显式指定边文件，可重复")
-    parser.add_argument(
-        "--strict", action="store_true", help="把校验告警也当作错误（构建时直接失败）"
-    )
+    parser.add_argument("--strict", action="store_true", help="把校验告警也当作错误")
 
 
 def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
     group = parser.add_argument_group("子图选择（都不给时使用全部输入）")
-    group.add_argument(
-        "--root",
-        action="append",
-        default=[],
-        help="起点节点：node_id、id 前缀或名称关键词，可重复",
-    )
+    group.add_argument("--root", action="append", default=[], help="起点：node_id、id 前缀或名称关键词")
     group.add_argument("--depth", type=int, default=0, help="从起点向前展开的层数（0=不限）")
     group.add_argument(
         "--node-type", action="append", default=[], choices=list(schema.NODE_TYPES), help="按节点类型筛选种子"
@@ -51,14 +56,25 @@ def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--query", default="", help="按关键词筛选种子")
 
 
-def _load_graph(args) -> tuple:
+def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--out", required=True, help="输出目录")
+    parser.add_argument("--evidence", type=int, default=3, help="每个条目展示的来源条数")
+    parser.add_argument(
+        "--data", choices=("full", "slim", "none"), default="full", help="随包数据的详细程度"
+    )
+    parser.add_argument("--no-script", action="store_true", help="不生成查询脚本")
+    parser.add_argument("--no-lead", action="store_true", help="不在 frontmatter 后加参考文件提示行")
+    parser.add_argument("--force", action="store_true", help="覆盖已有目录")
+    parser.add_argument("--dry-run", action="store_true", help="只打印将生成的内容")
+
+
+def _load_graph(args):
     bundle, sources = load(args.inputs, node_files=args.nodes, edge_files=args.edges)
     graph, report = Graph.from_bundle(bundle, strict=bool(args.strict))
     return graph, report, sources
 
 
 def _resolve_roots(graph: Graph, roots: Sequence[str]) -> Set[str]:
-    """Roots may be node ids, id prefixes or plain search terms."""
     resolved: Set[str] = set()
     for root in roots:
         if root in graph:
@@ -77,7 +93,7 @@ def _resolve_roots(graph: Graph, roots: Sequence[str]) -> Set[str]:
 
 def _select(graph: Graph, args) -> Graph:
     seeds: Set[str] = set()
-    if args.root:
+    if getattr(args, "root", None):
         seeds |= _resolve_roots(graph, args.root)
     if args.node_type or args.section or args.vendor or args.query:
         filtered = graph.filter_nodes(
@@ -92,8 +108,32 @@ def _select(graph: Graph, args) -> Graph:
             raise RenderError("筛选条件没有选中任何节点")
         return graph
     depth = args.depth if args.depth > 0 else None
-    keep = graph.reachable(seeds, depth=depth)
-    return graph.subgraph(keep)
+    return graph.subgraph(graph.reachable(seeds, depth=depth))
+
+
+def _resolve_entry(graph: Graph, entry: str) -> Node:
+    """Find the one symptom a skill will document."""
+    symptoms = entry_symptoms(graph)
+    if not symptoms:
+        raise RenderError("子图里没有 symptom 节点，无法生成 skill")
+    if not entry:
+        if len(symptoms) == 1:
+            return symptoms[0]
+        raise RenderError(
+            f"子图里有 {len(symptoms)} 个故障入口，请用 --entry 指定一个"
+            "（先跑 `list` 看清单），或用 build-all 批量生成"
+        )
+    if entry in graph and graph.nodes[entry].node_type == "symptom":
+        return graph.nodes[entry]
+    candidates = [node for node in symptoms if node.node_id.startswith(entry)]
+    if not candidates:
+        candidates = [node for node in graph.search(entry, node_types=["symptom"])]
+    if not candidates:
+        raise RenderError(f"入口 {entry!r} 没有匹配到任何 symptom 节点")
+    if len(candidates) > 1:
+        listed = "、".join(f"{node.name}({node.node_id})" for node in candidates[:5])
+        raise RenderError(f"入口 {entry!r} 匹配到多个症状：{listed}…；请给出确切的 node_id")
+    return candidates[0]
 
 
 def _print_report(report: ValidationReport, *, limit: int = 20) -> None:
@@ -108,6 +148,47 @@ def _print_report(report: ValidationReport, *, limit: int = 20) -> None:
         print(f"  {issue.render()}")
     if len(report.issues) > limit:
         print(f"  …另有 {len(report.issues) - limit} 条")
+
+
+def _print_lint(result, *, prefix: str = "  ") -> None:
+    if result.ok and not result.warnings:
+        print(f"{prefix}模板检查：通过")
+        return
+    print(f"{prefix}模板检查：{len(result.errors)} 错误 / {len(result.warnings)} 警告")
+    for issue in result.issues[:20]:
+        print(f"{prefix}  {issue.render()}")
+    if len(result.issues) > 20:
+        print(f"{prefix}  …另有 {len(result.issues) - 20} 条")
+
+
+def _install_hint(out_dir: Path, name: str) -> None:
+    print("\n装进框架：")
+    print(f"  cp -r {out_dir} .claude/skills/{name}          # Claude Code（项目级）")
+    print(f"  cp -r {out_dir} ~/.claude/skills/{name}        # Claude Code（全局）")
+    print(f"  cp -r {out_dir} .opencode/skill/{name}         # opencode（项目级）")
+    print(f"  cp -r {out_dir} ~/.config/opencode/skill/{name}")
+
+
+# ------------------------------------------------------------- commands
+def cmd_list(args) -> int:
+    graph, _report, sources = _load_graph(args)
+    graph = _select(graph, args)
+    symptoms = entry_symptoms(graph)
+    print(f"输入：{'、'.join(sources)}")
+    print(f"故障入口（symptom）共 {len(symptoms)} 个：\n")
+    for symptom in symptoms[: args.limit]:
+        playbook = build_playbook(graph, symptom)
+        triggers = " / ".join(playbook.trigger_terms()[1:4])
+        print(f"  {symptom.name}")
+        print(f"    node_id : {symptom.node_id}")
+        print(f"    规模    : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、修复 {playbook.repair_count}")
+        if triggers:
+            print(f"    触发说法: {triggers}")
+        print(f"    建议 slug: {suggested_slug(symptom)}（模板要求英文名，请按语义改写）")
+        print()
+    if len(symptoms) > args.limit:
+        print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
+    return 0
 
 
 def cmd_inspect(args) -> int:
@@ -140,14 +221,7 @@ def cmd_inspect(args) -> int:
         for node in orphans[:5]:
             print(f"  {node.name} ({node.node_id})")
     playbooks = build_playbooks(graph)
-    print(f"\n可生成排查手册：{len(playbooks)} 份")
-    for playbook in playbooks[:10]:
-        print(
-            f"  {playbook.symptom.name} — 原因 {len(playbook.causes)}、"
-            f"检查 {playbook.check_count}、修复 {playbook.repair_count}"
-        )
-    if len(playbooks) > 10:
-        print(f"  …另有 {len(playbooks) - 10} 份")
+    print(f"\n可生成 skill：{len(playbooks)} 份（一个故障入口一份，用 list 看清单）")
     print()
     _print_report(report)
     return 0
@@ -167,6 +241,41 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def _build_one(graph: Graph, symptom: Node, name: str, out_dir: Path, args, sources) -> int:
+    playbook = build_playbook(graph, symptom)
+    options = BuildOptions(
+        name=name,
+        description=args.description,
+        evidence_limit=args.evidence,
+        data_mode=args.data,
+        include_script=not args.no_script,
+        include_lead=not args.no_lead,
+        sources=sources,
+    )
+    package = build_package(graph, playbook, options)
+    result = lint_text(package.files["SKILL.md"])
+
+    if args.dry_run:
+        print(f"技能名：{normalise_name(name)}｜入口：{symptom.name}（{symptom.node_id}）")
+        print("将写出：")
+        for relative in sorted(package.files):
+            print(f"  {relative}  ({len(package.files[relative])} 字符)")
+        for note in package.notes:
+            print(f"提示：{note}")
+        _print_lint(result)
+        return 0 if result.ok else 1
+
+    written = package.write(out_dir, force=args.force)
+    print(f"技能已生成：{out_dir}")
+    print(f"  技能名：{normalise_name(name)}")
+    print(f"  入口症状：{symptom.name}（{symptom.node_id}）")
+    print(f"  前置检查 {len(playbook.entry_checks)} 条；排查步骤 {len(playbook.causes)} 步；文件 {len(written)} 个")
+    for note in package.notes:
+        print(f"  提示：{note}")
+    _print_lint(result)
+    return 0 if result.ok else 1
+
+
 def cmd_build(args) -> int:
     graph, report, sources = _load_graph(args)
     if args.strict and report.errors:
@@ -174,77 +283,111 @@ def cmd_build(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
-    playbooks = build_playbooks(graph, limit=args.max_playbooks)
-    options = BuildOptions(
-        name=args.name,
-        title=args.title,
-        description=args.description,
-        evidence_limit=args.evidence,
-        data_mode=args.data,
-        allowed_tools=args.allowed_tools,
-        include_script=not args.no_script,
-        sources=sources,
-    )
-    package = build_package(graph, playbooks, report, options)
-
-    if args.dry_run:
-        print(f"技能名：{normalise_name(options.name)}")
-        print(f"节点 {len(graph)}；关系 {len(graph.edges)}；手册 {len(playbooks)} 份")
-        print("将写出：")
-        for relative in sorted(package.files):
-            print(f"  {relative}  ({len(package.files[relative])} 字符)")
-        for note in package.notes:
-            print(f"提示：{note}")
-        return 0
-
+    symptom = _resolve_entry(graph, args.entry)
+    if not args.name:
+        raise RenderError(
+            "模板要求英文技能名，请用 --name 指定（`list` 会给出建议 slug，但请按语义改写）"
+        )
     out_dir = Path(args.out)
-    written = package.write(out_dir, force=args.force)
-    stats = coverage(graph, playbooks)
-    print(f"技能已生成：{out_dir}")
-    print(f"  技能名：{normalise_name(options.name)}")
-    print(f"  节点 {len(graph)}；关系 {len(graph.edges)}；排查手册 {len(playbooks)} 份")
-    print(f"  覆盖节点 {len(stats['documented'])}；未覆盖 {len(stats['uncovered'])}")
-    print(f"  文件 {len(written)} 个")
-    for note in package.notes:
-        print(f"  提示：{note}")
-    if report.issues:
-        print(f"  载入告警/丢弃 {len(report.issues)} 条，明细见 references/coverage.md")
-    name = normalise_name(options.name)
-    print("\n装进框架：")
-    print(f"  cp -r {out_dir} .claude/skills/{name}          # Claude Code（项目级）")
-    print(f"  cp -r {out_dir} ~/.claude/skills/{name}        # Claude Code（全局）")
-    print(f"  cp -r {out_dir} .opencode/skill/{name}         # opencode（项目级）")
-    print(f"  cp -r {out_dir} ~/.config/opencode/skill/{name}")
-    return 0
+    code = _build_one(graph, symptom, args.name, out_dir, args, sources)
+    if not args.dry_run:
+        _install_hint(out_dir, normalise_name(args.name))
+    return code
+
+
+def cmd_build_all(args) -> int:
+    graph, report, sources = _load_graph(args)
+    if args.strict and report.errors:
+        _print_report(report)
+        print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
+        return 1
+    graph = _select(graph, args)
+    names: Dict[str, str] = {}
+    if args.names:
+        path = Path(args.names)
+        if not path.exists():
+            raise RenderError(f"{path}: 命名映射文件不存在")
+        try:
+            names = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
+        if not isinstance(names, dict):
+            raise RenderError(f"{path}: 应为 {{node_id: slug}} 的对象")
+
+    symptoms = entry_symptoms(graph)
+    if args.limit:
+        symptoms = symptoms[: args.limit]
+    if not symptoms:
+        raise RenderError("子图里没有 symptom 节点，无法生成 skill")
+
+    root = Path(args.out)
+    failures = 0
+    unnamed: List[str] = []
+    for symptom in symptoms:
+        name = names.get(symptom.node_id) or names.get(symptom.name) or ""
+        if not name:
+            name = suggested_slug(symptom)
+            unnamed.append(f"{symptom.node_id}  {symptom.name}  →  {name}")
+        slug = normalise_name(name)
+        code = _build_one(graph, symptom, name, root / slug, args, sources)
+        failures += 1 if code else 0
+        print()
+    print(f"共生成 {len(symptoms)} 份 skill，{failures} 份未通过模板检查。")
+    if unnamed:
+        print(
+            f"\n以下 {len(unnamed)} 份用了机械生成的 slug（模板要求英文名，请按语义改写后重跑，"
+            "或用 --names 提供 {node_id: slug} 映射）："
+        )
+        for line in unnamed[:20]:
+            print(f"  {line}")
+        if len(unnamed) > 20:
+            print(f"  …另有 {len(unnamed) - 20} 条")
+    return 1 if failures else 0
+
+
+def cmd_lint(args) -> int:
+    failures = 0
+    for target in args.targets:
+        result = lint_path(Path(target))
+        print(f"{target}:")
+        _print_lint(result)
+        failures += 1 if not result.ok else 0
+    return 1 if failures else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="subkg2skill",
-        description="把 JSON 格式的故障诊断知识图谱子图编译成可直接使用的智能体技能包",
+        prog="build_skill.py",
+        description="把 JSON 知识图谱子图编译成符合模板的排障 skill（一个故障入口一份）",
     )
-    parser.add_argument("--version", action="version", version=f"subkg2skill {__version__}")
+    parser.add_argument("--version", action="version", version=f"subkg-to-skill {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    build = sub.add_parser("build", help="生成技能目录")
+    listing = sub.add_parser("list", help="列出故障入口（symptom）与建议 slug")
+    _add_input_arguments(listing)
+    _add_selection_arguments(listing)
+    listing.add_argument("--limit", type=int, default=30, help="最多列出多少个")
+    listing.set_defaults(func=cmd_list)
+
+    build = sub.add_parser("build", help="为一个故障入口生成 skill")
     _add_input_arguments(build)
     _add_selection_arguments(build)
-    build.add_argument("--out", required=True, help="输出目录")
-    build.add_argument("--name", default="kg-fault-diagnosis", help="技能名（小写字母/数字/连字符）")
-    build.add_argument("--title", default="", help="SKILL.md 标题")
-    build.add_argument("--description", default="", help="frontmatter 描述（不给则自动生成）")
-    build.add_argument("--max-playbooks", type=int, default=0, help="最多生成多少份手册（0=不限）")
-    build.add_argument("--evidence", type=int, default=3, help="每个条目展示的来源条数")
-    build.add_argument(
-        "--data", choices=("full", "slim", "none"), default="full", help="随包数据的详细程度"
-    )
-    build.add_argument("--allowed-tools", default="", help="写入 frontmatter 的 allowed-tools")
-    build.add_argument("--no-script", action="store_true", help="不生成查询脚本")
-    build.add_argument("--force", action="store_true", help="覆盖已有目录")
-    build.add_argument("--dry-run", action="store_true", help="只打印将生成的内容")
+    _add_output_arguments(build)
+    build.add_argument("--entry", default="", help="入口症状：node_id、id 前缀或名称关键词")
+    build.add_argument("--name", default="", help="技能名（英文 slug，模板硬性要求）")
+    build.add_argument("--description", default="", help="frontmatter 描述（不给则由症状自动生成）")
     build.set_defaults(func=cmd_build)
 
-    inspect = sub.add_parser("inspect", help="查看子图规模、分布与可生成的手册")
+    build_all = sub.add_parser("build-all", help="给每个故障入口各生成一份 skill")
+    _add_input_arguments(build_all)
+    _add_selection_arguments(build_all)
+    _add_output_arguments(build_all)
+    build_all.add_argument("--names", default="", help="{node_id: slug} 的 JSON 映射文件")
+    build_all.add_argument("--limit", type=int, default=0, help="最多生成多少份（0=不限）")
+    build_all.add_argument("--description", default="", help="统一的 frontmatter 描述（一般不用）")
+    build_all.set_defaults(func=cmd_build_all)
+
+    inspect = sub.add_parser("inspect", help="查看子图规模与分布")
     _add_input_arguments(inspect)
     _add_selection_arguments(inspect)
     inspect.set_defaults(func=cmd_inspect)
@@ -253,6 +396,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_input_arguments(validate)
     validate.add_argument("--limit", type=int, default=50, help="最多打印多少条明细")
     validate.set_defaults(func=cmd_validate)
+
+    lint = sub.add_parser("lint", help="检查已生成的 skill 是否符合模板")
+    lint.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")
+    lint.set_defaults(func=cmd_lint)
     return parser
 
 

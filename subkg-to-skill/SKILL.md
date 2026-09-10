@@ -1,6 +1,6 @@
 ---
 name: subkg-to-skill
-description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成一份可直接使用的排障 skill：SKILL.md + reference/ 排查手册 + scripts/ 查询脚本，Claude Code、opencode 等框架拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包/排障手册”，或手里有 node.json、edge.json 想变成智能体能用的东西时使用。Turns a fault-diagnosis knowledge-graph subgraph into a ready-to-load agent skill."
+description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成符合模板的排障 skill：一个故障入口一份，文档为「入参列表 / 前置检查 / 排查步骤 / 根因对照表」四章节，配 reference/ 出处与 scripts/ 查询脚本，Claude Code、opencode 拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包”，或手里有 node.json、edge.json 想变成智能体能用的排障文档时使用。Turns a fault-diagnosis knowledge-graph subgraph into template-conformant agent skills."
 ---
 
 # 子图 → skill 生成器
@@ -9,118 +9,110 @@ description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.
 observation / repair / escalation；十一类边：has_cause、diagnosed_by、observes、supports /
 confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to）。
 
-输出：一个框架无关的技能目录，**每个症状一份排查手册**，判据、命令、出处逐条可回查。
+输出：**一个故障入口（symptom）一份 skill**，`SKILL.md` 严格按四章节模板写：
 
 ```
-<输出目录>/
-├── SKILL.md              入口：何时用、使用流程、证据纪律、输出模板
+<skill>/
+├── SKILL.md                # 入参列表 → 前置检查 → 排查步骤 → 根因对照表
 ├── reference/
-│   ├── index.md          症状 → 手册路由表（症状 >150 时自动分片成 index-001.md…）
-│   ├── fault-*.md        每个症状一份：入口检查 → 候选原因 → 判据 → 修复 → 转交
-│   ├── reading-guide.md  本子图出现过的节点/边语义、条件状态、操作符、质量标记
-│   ├── coverage.md       构建报告：分布、载入丢弃项、未覆盖节点
-│   └── subgraph.json     选中的节点与边（全字段，可回查出处）
-└── scripts/kg_query.py   零依赖查询脚本（search / show / neighbors / expand / path / stats）
+│   ├── evidence.md         # 每条判据/命令/修复的出处、证据强度、未求值条件
+│   └── subgraph.json       # 该故障的子图切片（全字段）
+└── scripts/kg_query.py     # 零依赖查询脚本
 ```
 
-生成过程**不调用大模型**：全部内容由数据直接展开，因此可重复、可比对、可追溯。
+模板细则见 [`reference/skill-template.md`](reference/skill-template.md)，**这是硬性要求**。
+生成过程不调用大模型：内容由数据直接展开，可重复、可比对、可追溯。
 
 ## 使用流程
 
-### 1. 确认输入
-
-问清楚（或自己确认）三件事：图文件在哪、要不要只取一部分、技能叫什么名字。
-技能名必须能规范成 `^[a-z0-9-]+$`（中文名会报错，让用户给一个英文 slug，或按内容建议一个）。
-
-文件形状不用纠结：目录（自动识别 `node*.json` / `edge*.json`）、两个数组文件、
-`{"nodes": [...], "edges": [...]}` 整包对象、混合数组、`.jsonc`、`.jsonl` 都能读；
-猜不准时用 `--nodes` / `--edges` 明确指定。
-
-### 2. 先摸底，别直接生成
+### 1. 摸底
 
 ```bash
 python3 scripts/build_skill.py inspect <图文件或目录>
+python3 scripts/build_skill.py validate <图文件或目录>   # 结构可疑时
 ```
 
-看清楚：节点/关系分布、诊断单元（章节）、厂商范围、质量标记、能生成多少份手册、有没有孤立节点。
-结构可疑时再跑 `validate`（有错误退出码为 1）：
+看清楚节点/关系分布、诊断单元、厂商范围、质量标记、孤立节点。
+悬空边与端点类型非法的边会被丢弃；`--strict` 让这类问题直接中止。
+
+文件形状不用纠结：目录（自动识别 `node*.json` / `edge*.json`）、两个数组文件、
+`{"nodes": [...], "edges": [...]}` 整包对象、混合数组、`.jsonc`、`.jsonl` 都能读；
+猜不准时用 `--nodes` / `--edges` 指定。
+
+### 2. 看有哪些故障入口，敲定英文名
 
 ```bash
-python3 scripts/build_skill.py validate <图文件或目录>
+python3 scripts/build_skill.py list <图文件或目录>
 ```
 
-悬空边、端点类型非法的边会被丢弃并记进产物的 `reference/coverage.md`；
-`--strict` 让这类问题直接中止构建。
+列出每个 symptom 的 `node_id`、规模、触发说法和一个机械生成的建议 slug。
 
-### 3. 需要的话先选子图
+**模板要求 `name` 是英文 slug，而图谱里的症状名多为中文——不要音译。**
+按症状语义拟一个英文名（`IS-IS邻居无法建立` → `isis-neighbor-down`），
+入口多时和用户确认命名，或整理成 `{node_id: slug}` 的 JSON 映射。
 
-不给选择参数就用全部输入。给了就先选出**种子节点**，再沿诊断方向向前闭包
-（并把 `supports` / `confirms` / `excludes` / `observes` 这些反向证据拉回来）：
+### 3. 生成
 
-| 用户想要 | 参数 |
-| --- | --- |
-| 只针对某个症状 | `--root symptom_7f1c --depth 3` |
-| 某章节 / 诊断单元 | `--section 28.21`（前缀匹配） |
-| 某厂商 / 某产品线 | `--vendor Huawei` |
-| 与某关键词相关 | `--query "光模块"` |
-| 全图 | 不加参数 |
-
-`--root` 接受 `node_id`、id 前缀或名称关键词。
-
-### 4. 生成
+一个入口一份：
 
 ```bash
 python3 scripts/build_skill.py build <图文件或目录> \
-    --out <输出目录> --name <skill-slug>
+    --entry symptom_7f1c --name isis-neighbor-down --out out/isis-neighbor-down
 ```
 
-先加 `--dry-run` 看会写出哪些文件、多大，确认后再真写。常用开关见
-[`reference/cli.md`](reference/cli.md)（`--data slim`、`--max-playbooks`、`--evidence`、
-`--allowed-tools`、`--force` 等）。
-
-### 5. 自检并交付
-
-生成后**必须**做这几件事，再回报用户：
-
-1. 读一眼 `reference/coverage.md`：把载入丢弃项（悬空边、端点类型不合法）和未覆盖节点数量如实告诉用户，
-   不要只报“已生成”。
-2. 抽查一份 `reference/fault-*.md`：确认判据、命令模板、出处都在。
-3. 跑一次脚本确认数据可用：`python3 <输出目录>/scripts/kg_query.py stats`。
-4. 给出安装路径（构建命令末尾也会打印）：
+批量（每个入口一个子目录）：
 
 ```bash
-cp -r <输出目录> .claude/skills/<skill-slug>          # Claude Code（项目级）
-cp -r <输出目录> ~/.claude/skills/<skill-slug>        # Claude Code（全局）
-cp -r <输出目录> .opencode/skill/<skill-slug>         # opencode（项目级）
-cp -r <输出目录> ~/.config/opencode/skill/<skill-slug>
+python3 scripts/build_skill.py build-all <图文件或目录> --out out/ --names names.json
+```
+
+子图大、只想要其中一块时，先用 `--root` / `--section` / `--vendor` / `--query` / `--depth`
+把范围收窄（见 [`reference/cli.md`](reference/cli.md)）。先加 `--dry-run` 看会写出什么。
+
+### 4. 自检并交付
+
+`build` / `build-all` 会自动跑模板检查；也可以单独跑：
+
+```bash
+python3 scripts/build_skill.py lint out/isis-neighbor-down
+```
+
+检查四章节顺序、步骤编号连续、跳转目标存在、根因在对照表里逐字可查、
+CLI 参数都在入参列表内、占位符写法、接口名缩写。**有 ERROR 必须修到零再交付**；
+WARNING（如“来源未给出修复命令”）如实转告用户，不要自己补命令消灭它。
+
+回报用户时说清楚三件事：生成了哪些 skill（入口 + 英文名）、模板检查结果、
+以及安装路径（构建命令末尾会打印）：
+
+```bash
+cp -r <输出目录> .claude/skills/<slug>          # Claude Code（项目级）
+cp -r <输出目录> ~/.claude/skills/<slug>        # Claude Code（全局）
+cp -r <输出目录> .opencode/skill/<slug>         # opencode（项目级）
+cp -r <输出目录> ~/.config/opencode/skill/<slug>
 ```
 
 ## 硬性约束
 
-生成器已经把下面这些写进产物；**你在手工润色产物时也必须守住**，改坏了就失去可信度：
+生成器已经把下面这些写进产物；**你手工润色时也必须守住**：
 
-- `condition` 一律标“未求值”，附 `condition_status` 的中文解释——不要替现场下判断。
-- `supports` 不能写成“确认”；只有 `supports` 的原因必须保留“不要宣布根因”的提示。
-- `excludes` 只排除它指向的那个原因，不能外推成“排除全部”。
-- `service_impact` / `rollback` / `preconditions` 为空写“来源未给出”，不能写成“无影响/无需回退”。
-- `command_templates` 保留待绑定参数，不改写成可直接下发的命令。
-- 每条结论带 `node_id` 和来源（文档 / 页码 / 章节 / 引文）。
+- **命令只能来自源数据**：`check` / `repair` / `escalation` 的 `attrs.command_templates`
+  与 `attrs.procedure`。`observation` 是回显，**不是命令来源**。来源只给了一句修复方向就照实写，
+  不要补全成可执行的配置序列；来源为空就写“无直接修复CLI”。
+- **不升级证据强度**：`supports` 判定的根因必须带“仅支持性证据，需人工确认”，不能写成确认。
+- **`excludes` 只排除它指向的那个原因**，不能外推。
+- **空值不是承诺**：`service_impact` / `rollback` / `preconditions` 为空写“来源未给出”。
+- **参数名沿用来源写法**，只规整分隔符（`{interface-type}` → `<interface-type>`），不翻译、不换词；
+  同一参数全篇同名，接口名用全称。
+- **每条结论可回查**：出处放在 `reference/evidence.md`，四章节里不塞出处。
 
-完整措辞对照见 [`reference/evidence-rules.md`](reference/evidence-rules.md)。
+完整措辞对照见 [`reference/evidence-rules.md`](reference/evidence-rules.md)；
+图谱字段含义见 [`reference/graph-schema.md`](reference/graph-schema.md)；
+四章节与图谱字段的对应关系见 [`reference/output-spec.md`](reference/output-spec.md)。
 
 ## 不要做的事
 
+- 不要音译或凭空生成英文技能名——让用户定，或按症状语义拟定后请用户确认。
 - 不要为了“看起来完整”补写来源里没有的字段（预期效果、回退方法、命令参数值）。
 - 不要合并同名节点：身份以 `node_id` 为准，同名节点可能范围不同。
-- 不要在生成的手册里替用户执行命令；那是使用该技能时的事，且变更类操作要用户确认。
-- 不要把 `--data none` 和查询脚本一起用：脚本会没有数据可读。
-
-## 参考文件
-
-| 文件 | 内容 |
-| --- | --- |
-| [`reference/graph-schema.md`](reference/graph-schema.md) | 输入字段字典：节点/边类型、端点规则、`attrs`、`scope`、`condition`、来源定位、质量标记 |
-| [`reference/output-spec.md`](reference/output-spec.md) | 产出 skill 的结构规范：每份手册的段落、文件命名、索引分片规则 |
-| [`reference/evidence-rules.md`](reference/evidence-rules.md) | 数据情况 → 措辞的对照表 |
-| [`reference/cli.md`](reference/cli.md) | `build_skill.py` 全部子命令与参数 |
-| `scripts/build_skill.py` | 生成器入口（只依赖 Python 3.9+ 标准库） |
+- 不要在生成的 skill 里替用户执行命令；变更类操作要用户确认。
+- 不要用 `--data none` 配查询脚本：脚本会没有数据可读。

@@ -13,8 +13,16 @@ from subkg2skill.cli import main
 def skill_dir(tmp_path_factory):
     from tests.conftest import EXAMPLE_DIR
 
-    out = tmp_path_factory.mktemp("skill") / "ipran"
-    assert main(["build", str(EXAMPLE_DIR), "--out", str(out), "--name", "ipran"]) == 0
+    out = tmp_path_factory.mktemp("skill") / "isis"
+    code = main(
+        [
+            "build", str(EXAMPLE_DIR),
+            "--entry", "symptom_7f1c",
+            "--name", "isis-neighbor-down",
+            "--out", str(out),
+        ]
+    )
+    assert code == 0
     return out
 
 
