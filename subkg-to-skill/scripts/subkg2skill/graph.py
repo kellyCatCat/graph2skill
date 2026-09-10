@@ -485,6 +485,19 @@ class Graph:
         counter = Counter(edge.section or "(未标注)" for edge in edges)
         return dict(counter.most_common())
 
+    def scope_to_units(self, units: Sequence[str], *, include_unscoped: bool = True) -> "Graph":
+        """Keep relations belonging to any of *units* (empty = keep everything)."""
+        wanted = [unit for unit in units if unit]
+        if not wanted:
+            return self
+        kept = [
+            edge
+            for edge in self.edges
+            if any(self.unit_matches(edge.section, unit) for unit in wanted)
+            or (include_unscoped and not edge.section)
+        ]
+        return Graph(self.nodes.values(), kept)
+
     def scope_to_unit(self, unit: str, *, include_unscoped: bool = True) -> "Graph":
         """Keep only relations belonging to *unit*.
 

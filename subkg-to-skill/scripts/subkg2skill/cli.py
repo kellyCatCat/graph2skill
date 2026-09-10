@@ -24,10 +24,13 @@ from subkg2skill.graph import Graph, Node, ValidationReport
 from subkg2skill.lint import lint_path, lint_text
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import (
+    build_merged_playbook,
     build_playbook,
     build_playbooks,
     entry_scenarios,
     entry_symptoms,
+    fault_groups,
+    fault_key,
 )
 from subkg2skill.render import (
     BuildOptions,
@@ -129,24 +132,46 @@ def _units_of(graph: Graph, symptom: Node) -> Dict[str, int]:
     return graph.edge_units(symptom.node_id, "has_cause", "diagnosed_by", "next_step")
 
 
-def _resolve_unit(graph: Graph, symptom: Node, unit: str, all_units: bool) -> str:
-    """Pick the diagnostic unit this skill covers, or explain why one is needed."""
+def _resolve_units(
+    graph: Graph, symptoms: Sequence[Node], units: Sequence[str], all_units: bool
+) -> List[str]:
+    """Pick the diagnostic units this skill covers, or explain why one is needed."""
     if all_units:
-        return ""
-    units = {name: count for name, count in _units_of(graph, symptom).items() if name != "(未标注)"}
-    if unit:
-        matched = [name for name in units if Graph.unit_matches(name, unit)]
-        if not matched:
-            listed = "、".join(list(units)[:8]) or "（无）"
-            raise RenderError(f"诊断单元 {unit!r} 在该症状下没有关系；现有单元：{listed}")
-        return unit
-    if len(units) <= 1:
-        return next(iter(units), "")
-    listed = "\n".join(f"    {name}（{count} 条关系）" for name, count in list(units.items())[:10])
+        return []
+    available: Dict[str, int] = {}
+    for symptom in symptoms:
+        for name, count in _units_of(graph, symptom).items():
+            if name != "(未标注)":
+                available[name] = available.get(name, 0) + count
+    if units:
+        resolved: List[str] = []
+        for unit in units:
+            if not any(Graph.unit_matches(name, unit) for name in available):
+                listed = "、".join(list(available)[:8]) or "（无）"
+                raise RenderError(f"诊断单元 {unit!r} 在这些症状下没有关系；现有单元：{listed}")
+            resolved.append(unit)
+        return resolved
+    if len(available) <= 1:
+        return [next(iter(available))] if available else []
+    if len(symptoms) > 1:
+        # Merging sources is the point of this build; their units all belong.
+        return list(available)
+    listed = "\n".join(f"    {name}（{count} 条关系）" for name, count in list(available.items())[:10])
     raise RenderError(
-        f"“{symptom.name}”的关系分布在 {len(units)} 个诊断单元里，合成一份 skill 会把多个"
-        f"故障场景混在一起。请用 --unit 指定其中一个（或 --all-units 明确要合并）：\n{listed}"
+        f"“{symptoms[0].name}”的关系分布在 {len(available)} 个诊断单元里，合成一份 skill 会把多个"
+        f"故障场景混在一起。请用 --unit 指定其中一个（可重复；或 --all-units 明确要合并）：\n{listed}"
     )
+
+
+def _same_fault_symptoms(graph: Graph, symptom: Node) -> List[Node]:
+    """Symptom nodes from other sources describing the same fault."""
+    key = fault_key(symptom.name)
+    same = [
+        node
+        for node in graph.of_type("symptom")
+        if node.node_id != symptom.node_id and fault_key(node.name) == key
+    ]
+    return [symptom] + sorted(same, key=lambda node: node.node_id)
 
 
 def _resolve_entry(graph: Graph, entry: str) -> Node:
@@ -229,33 +254,44 @@ def cmd_list(args) -> int:
             print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
         return 0
 
-    scenarios = entry_scenarios(graph, min_causes=args.min_causes)
-    skipped = len(entry_scenarios(graph, min_causes=0)) - len(scenarios)
-    print(f"故障场景（症状 × 诊断单元）共 {len(scenarios)} 个，一个场景一份 skill：\n")
+    groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
+    total_scenarios = len(entry_scenarios(graph, min_causes=args.min_causes))
+    skipped = len(entry_scenarios(graph, min_causes=0)) - total_scenarios
+    if args.no_merge:
+        print(f"故障场景（症状 × 诊断单元）共 {len(groups)} 个，一个场景一份 skill：\n")
+    else:
+        print(
+            f"故障（跨来源合并后）共 {len(groups)} 个，来自 {total_scenarios} 个场景；"
+            "一个故障一份 skill：\n"
+        )
     cache: Dict[str, Graph] = {}
-    for scenario in scenarios[: args.limit]:
-        symptom = scenario.symptom
-        scoped = cache.setdefault(scenario.unit, graph.scope_to_unit(scenario.unit))
-        playbook = build_playbook(scoped, symptom)
-        triggers = " / ".join(playbook.trigger_terms()[1:4])
-        print(f"  {symptom.name}")
-        print(f"    node_id  : {symptom.node_id}")
-        print(f"    诊断单元 : {scenario.unit or '(未标注)'}")
+    for group in groups[: args.limit]:
+        unit_key = "|".join(sorted(group.units))
+        scoped = cache.setdefault(unit_key, graph.scope_to_units(group.units))
+        playbook = build_merged_playbook(scoped, group.symptoms, group.units)
+        triggers = " / ".join(playbook.trigger_terms()[1:5])
+        print(f"  {group.name}")
+        if group.sources > 1:
+            print(f"    合并来源 : {group.sources} 个 — " + "；".join(
+                f"{node.name}({node.node_id})" for node in group.symptoms))
+        else:
+            print(f"    node_id  : {group.primary.node_id}")
+        print(f"    诊断单元 : {'、'.join(group.units) or '(未标注)'}")
         print(
             f"    规模     : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、"
             f"修复 {playbook.repair_count}"
         )
+        if len(playbook.causes) > 25:
+            print("    ⚠ 合并后原因过多，可能仍是多个场景混在一起，考虑只取其中一两个 --unit")
         if triggers:
             print(f"    触发说法 : {triggers}")
-        print(f"    建议 slug: {suggested_slug(symptom, scenario.unit)}（模板要求英文名，请按语义改写）")
-        print(
-            f"    生成命令 : build --entry {symptom.node_id}"
-            + (f" --unit {scenario.unit}" if scenario.unit else "")
-            + " --name <english-slug>"
-        )
+        print(f"    建议 slug: {suggested_slug(group.primary)}（模板要求英文名，请按语义改写）")
+        command = "build " + " ".join(f"--entry {node.node_id}" for node in group.symptoms)
+        command += "".join(f" --unit {unit}" for unit in group.units)
+        print(f"    生成命令 : {command} --name <english-slug>")
         print()
-    if len(scenarios) > args.limit:
-        print(f"  …另有 {len(scenarios) - args.limit} 个（--limit 调整）")
+    if len(groups) > args.limit:
+        print(f"  …另有 {len(groups) - args.limit} 个（--limit 调整）")
     if skipped:
         print(f"  另有 {skipped} 个场景候选原因少于 {args.min_causes} 个，已跳过（--min-causes 0 可包含）")
     return 0
@@ -313,22 +349,25 @@ def cmd_validate(args) -> int:
 
 def _build_one(
     graph: Graph,
-    symptom: Node,
+    symptoms: Sequence[Node],
     name: str,
     out_dir: Path,
     args,
     sources,
-    unit: str = "",
+    units: Sequence[str] = (),
     cache: Optional[Dict[str, Graph]] = None,
 ) -> int:
-    if cache is None:
-        scoped = graph.scope_to_unit(unit) if unit else graph
+    symptoms = list(symptoms)
+    units = [unit for unit in units if unit]
+    unit_key = "|".join(sorted(units))
+    if cache is None or unit_key not in cache:
+        scoped = graph.scope_to_units(units) if units else graph
+        if cache is not None:
+            cache[unit_key] = scoped
     else:
-        scoped = cache.get(unit)
-        if scoped is None:
-            scoped = graph.scope_to_unit(unit) if unit else graph
-            cache[unit] = scoped
-    playbook = build_playbook(scoped, symptom)
+        scoped = cache[unit_key]
+    playbook = build_merged_playbook(scoped, symptoms, units)
+    symptom = playbook.symptom
     options = BuildOptions(
         name=name,
         description=args.description,
@@ -337,7 +376,7 @@ def _build_one(
         include_script=not args.no_script,
         include_lead=not args.no_lead,
         sources=sources,
-        unit=unit,
+        unit="、".join(units),
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
@@ -348,7 +387,8 @@ def _build_one(
     if args.dry_run:
         print(
             f"技能名：{normalise_name(name)}｜入口：{symptom.name}（{symptom.node_id}）"
-            + (f"｜诊断单元：{unit}" if unit else "")
+            + (f"｜合并来源 {len(symptoms)} 个" if len(symptoms) > 1 else "")
+            + (f"｜诊断单元：{'、'.join(units)}" if units else "")
         )
         print("将写出：")
         for relative in sorted(package.files):
@@ -361,7 +401,12 @@ def _build_one(
     written = package.write(out_dir, force=args.force)
     print(f"技能已生成：{out_dir}")
     print(f"  技能名：{normalise_name(name)}")
-    print(f"  入口症状：{symptom.name}（{symptom.node_id}）" + (f"｜诊断单元：{unit}" if unit else ""))
+    print(
+        f"  入口症状：{symptom.name}（{symptom.node_id}）"
+        + (f"｜诊断单元：{'、'.join(units)}" if units else "")
+    )
+    if len(symptoms) > 1:
+        print("  合并来源：" + "；".join(f"{node.name}（{node.node_id}）" for node in symptoms))
     stats = package.stats
     print(
         f"  前置检查 {stats.get('prechecks', 0)} 条；排查步骤 {stats.get('steps', 0)} 步；"
@@ -380,14 +425,26 @@ def cmd_build(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
-    symptom = _resolve_entry(graph, args.entry)
-    unit = _resolve_unit(graph, symptom, args.unit, args.all_units)
+    entries = args.entry or [""]
+    symptoms = [_resolve_entry(graph, entry) for entry in entries]
+    if args.merge_same_name and len(symptoms) == 1:
+        symptoms = _same_fault_symptoms(graph, symptoms[0])
+    elif len(symptoms) == 1:
+        others = _same_fault_symptoms(graph, symptoms[0])[1:]
+        if others:
+            print(
+                f"提示：另有 {len(others)} 个同名症状（其他来源）描述同一故障，"
+                "加 --merge-same-name 可合并成一份更完整的 skill："
+            )
+            for node in others[:5]:
+                print(f"  {node.name}（{node.node_id}）")
+    units = _resolve_units(graph, symptoms, args.unit, args.all_units)
     if not args.name:
         raise RenderError(
             "模板要求英文技能名，请用 --name 指定（`list` 会给出建议 slug，但请按语义改写）"
         )
     out_dir = Path(args.out)
-    code = _build_one(graph, symptom, args.name, out_dir, args, sources, unit)
+    code = _build_one(graph, symptoms, args.name, out_dir, args, sources, units)
     if not args.dry_run:
         _install_hint(out_dir, normalise_name(args.name))
     return code
@@ -414,11 +471,13 @@ def cmd_build_all(args) -> int:
 
     skipped = 0
     if args.all_units:
-        scenarios = [(symptom, "") for symptom in entry_symptoms(graph)]
+        scenarios = [([symptom], []) for symptom in entry_symptoms(graph)]
     else:
-        selected = entry_scenarios(graph, min_causes=args.min_causes)
-        skipped = len(entry_scenarios(graph, min_causes=0)) - len(selected)
-        scenarios = [(scenario.symptom, scenario.unit) for scenario in selected]
+        groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
+        skipped = len(entry_scenarios(graph, min_causes=0)) - sum(
+            len(group.symptoms) for group in groups
+        )
+        scenarios = [(group.symptoms, group.units) for group in groups]
     if args.limit:
         scenarios = scenarios[: args.limit]
     if not scenarios:
@@ -428,14 +487,22 @@ def cmd_build_all(args) -> int:
     failures = 0
     unnamed: List[str] = []
     cache: Dict[str, Graph] = {}
-    for symptom, unit in scenarios:
+    for symptoms, units in scenarios:
+        symptom = symptoms[0]
+        unit = units[0] if units else ""
         key = f"{symptom.node_id}@{unit}" if unit else symptom.node_id
-        name = names.get(key) or names.get(symptom.node_id) or names.get(symptom.name) or ""
+        name = (
+            names.get(fault_key(symptom.name))
+            or names.get(key)
+            or names.get(symptom.node_id)
+            or names.get(symptom.name)
+            or ""
+        )
         if not name:
             name = suggested_slug(symptom, unit)
             unnamed.append(f"{key}  {symptom.name}  →  {name}")
         slug = normalise_name(name)
-        code = _build_one(graph, symptom, name, root / slug, args, sources, unit, cache)
+        code = _build_one(graph, symptoms, name, root / slug, args, sources, units, cache)
         failures += 1 if code else 0
         print()
     print(f"共生成 {len(scenarios)} 份 skill，{failures} 份未通过模板检查。")
@@ -479,6 +546,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selection_arguments(listing)
     listing.add_argument("--limit", type=int, default=30, help="最多列出多少个")
     listing.add_argument("--all-units", action="store_true", help="不按诊断单元拆分")
+    listing.add_argument(
+        "--no-merge", action="store_true", help="不按故障归并同名症状，逐个场景列出"
+    )
     listing.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才算一个场景")
     listing.set_defaults(func=cmd_list)
 
@@ -486,8 +556,17 @@ def build_parser() -> argparse.ArgumentParser:
     _add_input_arguments(build)
     _add_selection_arguments(build)
     _add_output_arguments(build)
-    build.add_argument("--entry", default="", help="入口症状：node_id、id 前缀或名称关键词")
-    build.add_argument("--unit", default="", help="诊断单元（章节号/案例 ID），一个场景一份 skill")
+    build.add_argument(
+        "--entry", action="append", default=[], help="入口症状：node_id、id 前缀或名称关键词，可重复（多个即合并）"
+    )
+    build.add_argument(
+        "--unit", action="append", default=[], help="诊断单元（章节号/案例 ID），可重复"
+    )
+    build.add_argument(
+        "--merge-same-name",
+        action="store_true",
+        help="把其他来源里同名的症状一并合并进来（手册 + 作战树 + 案例库）",
+    )
     build.add_argument(
         "--all-units", action="store_true", help="合并该症状的全部诊断单元（会混合多个故障场景）"
     )
@@ -502,6 +581,9 @@ def build_parser() -> argparse.ArgumentParser:
     build_all.add_argument("--names", default="", help="{node_id: slug} 的 JSON 映射文件")
     build_all.add_argument("--limit", type=int, default=0, help="最多生成多少份（0=不限）")
     build_all.add_argument("--all-units", action="store_true", help="每个症状一份，不按诊断单元拆分")
+    build_all.add_argument(
+        "--no-merge", action="store_true", help="不按故障归并同名症状，一个场景一份"
+    )
     build_all.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才生成")
     build_all.add_argument("--description", default="", help="统一的 frontmatter 描述（一般不用）")
     build_all.set_defaults(func=cmd_build_all)

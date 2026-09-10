@@ -47,8 +47,12 @@ python3 scripts/build_skill.py validate <图文件或目录>   # 结构可疑时
 python3 scripts/build_skill.py list <图文件或目录>
 ```
 
-列出每个「症状 × 诊断单元」场景的 `node_id`、单元号、规模、触发说法、建议 slug
-和现成的生成命令。**一次只做一个场景**；一个症状下有多个单元时，逐个确认要不要生成。
+`list` 默认已经**按故障跨来源归并**：手册的「IS-IS邻居无法建立」、作战树的「ISIS邻居无法建立」、
+案例库的同名条目会并成一个故障，规模是三者之和，生成命令里带上全部 `--entry` 和 `--unit`。
+拼写差异（IS-IS / ISIS / 大小写 / 空格）不构成两个故障。
+
+**合并只跨来源节点，不跨同一节点的多个诊断单元**——后者是"一个症状节点挂了几十个章节的原因"，
+合并回去就又变成上百步的怪物。`--no-merge` 可以退回逐场景列出。
 
 **模板要求 `name` 是英文 slug，而图谱里的症状名多为中文——不要音译。**
 按症状语义拟一个英文名（`IS-IS邻居无法建立` → `isis-neighbor-down`），
@@ -56,13 +60,18 @@ python3 scripts/build_skill.py list <图文件或目录>
 
 ### 3. 生成
 
-一个场景一份（`--unit` 从 `list` 的输出里抄）：
+一个故障一份，命令直接抄 `list` 给的那行（`--entry` 和 `--unit` 都可重复）：
 
 ```bash
 python3 scripts/build_skill.py build <图文件或目录> \
-    --entry symptom_7f1c --unit 28.21.3 \
+    --entry symptom_manual --entry symptom_tree --entry symptom_case \
+    --unit 17.4.1 --unit ipran_battle_tree:s0:r159 --unit ipran_icase \
     --name isis-neighbor-down --out out/isis-neighbor-down
 ```
+
+只给一个 `--entry` 时，如果别的来源还有同名症状，命令会提示你加 `--merge-same-name`
+（自动把同名症状及其单元并进来）。合并后同名的根因会折成一步，
+判据取并集、修复取并集——手册给判据、案例给修复的情况就是这样补全的。
 
 症状横跨多个诊断单元又没给 `--unit` 时，命令会**报错并列出可选单元**——这是有意的，
 不要用 `--all-units` 绕过去，除非用户明确要一份合并版。
@@ -109,6 +118,7 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 | **步骤里出现 IP、设备名、拓扑** | 案例节点（`example_specific`）带着某次事故的地址与组网 | 默认整体剔除，并在 `reference/evidence.md` 里说明；确需保留时 `--include-example-specific`，且命令旁会标出案例字面量 |
 | **几十个步骤、长度爆炸** | 一个症状合并了多个章节/案例的原因 | 按诊断单元切分（上面第 2、3 步）；`--max-steps` 可再设上限；超过 25 步 lint 会告警 |
 | **场景杂糅（ISIS 里混进 MPLS、BGP）** | 跨单元的边被一并展开 | `--unit` 只保留该单元的关系；无判据又无修复的原因不进正文 |
+| **同一故障被拆成几份薄 skill** | 手册、作战树、案例库各写一遍，节点不同名不同 | `list` 按故障归并，`--merge-same-name` 合并；同名根因折成一步，判据与修复取并集 |
 
 跑完看一眼输出里的「N 个原因/检查未进入正文」和 lint 告警，把它们如实转告用户——
 剔除了什么、为什么剔除，比假装“全都覆盖到了”有用。

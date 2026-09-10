@@ -1,0 +1,937 @@
+[
+  {
+    "node_id": "symptom_manual",
+    "node_type": "symptom",
+    "canonical_key": "{}",
+    "name": "IS-IS邻居无法建立",
+    "description": "IS-IS邻居无法建立",
+    "aliases": [],
+    "attrs": {
+      "required_slots": [
+        "neName",
+        "interfaceName"
+      ],
+      "match_phrases": [
+        "邻居建不起来"
+      ],
+      "abnormal_behavior": "邻居停留在 Init"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "IS-IS邻居无法建立",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_peer_manual",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看IS-IS邻居状态",
+    "description": "查看IS-IS邻居状态",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认邻居状态",
+      "command_templates": [
+        "display isis peer"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "查看IS-IS邻居状态",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_init",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "邻居停留在Init",
+    "description": "邻居停留在Init",
+    "aliases": [],
+    "attrs": {
+      "field": "邻居状态",
+      "operator": "eq",
+      "value": "Init",
+      "normalized_expression": "邻居状态 == 'Init'"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "邻居停留在Init",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_mtu_manual",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端接口MTU不一致",
+    "description": "两端接口MTU不一致",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "fault_mechanism": "MTU 不一致导致 LSP 丢弃"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端接口MTU不一致",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_mtu_manual",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "统一两端MTU",
+    "description": "统一两端MTU",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration_change",
+      "command_templates": [
+        "mtu {mtu-value}"
+      ],
+      "service_impact": "接口重启会中断业务"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "统一两端MTU",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_level",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "Level不匹配",
+    "description": "Level不匹配",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "Level不匹配",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_level",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "调整Level",
+    "description": "调整Level",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration",
+      "command_templates": [
+        "isis circuit-level level-2"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "调整Level",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_level",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "Mismatched Level 计数增长",
+    "description": "Mismatched Level 计数增长",
+    "aliases": [],
+    "attrs": {
+      "field": "Mismatched Level",
+      "operator": "gt",
+      "value": 0,
+      "normalized_expression": "Mismatched Level 计数增长"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "Mismatched Level 计数增长",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_error_manual",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看错误报文统计",
+    "description": "查看错误报文统计",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认报文校验丢弃原因",
+      "command_templates": [
+        "display isis error interface {interface-type}{interface-number}"
+      ],
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "17.4.1",
+        "title": "17.4.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "查看错误报文统计",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "symptom_tree",
+    "node_type": "symptom",
+    "canonical_key": "{}",
+    "name": "ISIS邻居无法建立",
+    "description": "ISIS邻居无法建立",
+    "aliases": [],
+    "attrs": {
+      "required_slots": [
+        "neName",
+        "peerName"
+      ],
+      "match_phrases": [
+        "ISIS邻居Down"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "ISIS邻居无法建立",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_mtu_tree",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端接口MTU不一致",
+    "description": "两端接口MTU不一致",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "fault_mechanism": "现网常见配置不一致"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端接口MTU不一致",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_mtu_tree",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "比对两端接口MTU",
+    "description": "比对两端接口MTU",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "比对两端 MTU",
+      "command_templates": [
+        "display current-configuration interface {interface-type}{interface-number}"
+      ],
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "比对两端接口MTU",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_mtu_diff",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "两端MTU取值不同",
+    "description": "两端MTU取值不同",
+    "aliases": [],
+    "attrs": {
+      "field": "MTU",
+      "operator": "ne",
+      "value": "对端MTU",
+      "normalized_expression": "本端 MTU != 对端 MTU"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端MTU取值不同",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_sysid",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "System ID冲突",
+    "description": "System ID冲突",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "System ID冲突",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_sysid",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看System ID冲突",
+    "description": "查看System ID冲突",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "定位冲突设备",
+      "command_templates": [
+        "display isis system-id conflict"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "查看System ID冲突",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_sysid",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "存在System ID冲突",
+    "description": "存在System ID冲突",
+    "aliases": [],
+    "attrs": {
+      "field": "System ID",
+      "operator": "eq",
+      "value": "conflict",
+      "normalized_expression": "存在 System ID 冲突记录"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "存在System ID冲突",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_sysid",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "修改System ID",
+    "description": "修改System ID",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration",
+      "command_templates": [
+        "network-entity <net-addr>"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_battle_tree:s0:r159",
+        "title": "ipran_battle_tree:s0:r159 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "修改System ID",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "symptom_case",
+    "node_type": "symptom",
+    "canonical_key": "{}",
+    "name": "ISIS邻居无法建立",
+    "description": "ISIS邻居无法建立",
+    "aliases": [],
+    "attrs": {
+      "match_phrases": [
+        "邻居无法Up"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_icase",
+        "title": "ipran_icase 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "ISIS邻居无法建立",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_auth",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端认证方式不匹配",
+    "description": "两端认证方式不匹配",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_icase",
+        "title": "ipran_icase 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端认证方式不匹配",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_auth",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看接口认证配置",
+    "description": "查看接口认证配置",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "比对两端认证",
+      "command_templates": [
+        "display current-configuration interface {interface-type}{interface-number}"
+      ],
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_icase",
+        "title": "ipran_icase 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "查看接口认证配置",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_auth",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "两端认证方式不同",
+    "description": "两端认证方式不同",
+    "aliases": [],
+    "attrs": {
+      "field": "认证方式",
+      "operator": "ne",
+      "value": "对端认证方式",
+      "normalized_expression": "本端认证方式 != 对端认证方式"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_icase",
+        "title": "ipran_icase 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端认证方式不同",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_auth",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "统一认证配置",
+    "description": "统一认证配置",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration",
+      "command_templates": [
+        "isis authentication-mode md5 <password>"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "ipran_icase",
+        "title": "ipran_icase 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "统一认证配置",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  }
+]

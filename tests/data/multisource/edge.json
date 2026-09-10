@@ -1,0 +1,626 @@
+[
+  {
+    "edge_id": "m1",
+    "edge_type": "diagnosed_by",
+    "source": "symptom_manual",
+    "target": "check_peer_manual",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m2",
+    "edge_type": "observes",
+    "source": "check_peer_manual",
+    "target": "observation_init",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m3",
+    "edge_type": "has_cause",
+    "source": "symptom_manual",
+    "target": "cause_mtu_manual",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m4",
+    "edge_type": "supports",
+    "source": "observation_init",
+    "target": "cause_mtu_manual",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m5",
+    "edge_type": "repaired_by",
+    "source": "cause_mtu_manual",
+    "target": "repair_mtu_manual",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m6",
+    "edge_type": "has_cause",
+    "source": "symptom_manual",
+    "target": "cause_level",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 2,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m7",
+    "edge_type": "diagnosed_by",
+    "source": "symptom_manual",
+    "target": "check_error_manual",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 2,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m8",
+    "edge_type": "observes",
+    "source": "check_error_manual",
+    "target": "observation_level",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m9",
+    "edge_type": "confirms",
+    "source": "observation_level",
+    "target": "cause_level",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "m10",
+    "edge_type": "repaired_by",
+    "source": "cause_level",
+    "target": "repair_level",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "17.4.1",
+      "title": "17.4.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t1",
+    "edge_type": "has_cause",
+    "source": "symptom_tree",
+    "target": "cause_mtu_tree",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t2",
+    "edge_type": "diagnosed_by",
+    "source": "cause_mtu_tree",
+    "target": "check_mtu_tree",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t3",
+    "edge_type": "observes",
+    "source": "check_mtu_tree",
+    "target": "observation_mtu_diff",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t4",
+    "edge_type": "confirms",
+    "source": "observation_mtu_diff",
+    "target": "cause_mtu_tree",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t5",
+    "edge_type": "has_cause",
+    "source": "symptom_tree",
+    "target": "cause_sysid",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 2,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t6",
+    "edge_type": "diagnosed_by",
+    "source": "cause_sysid",
+    "target": "check_sysid",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t7",
+    "edge_type": "observes",
+    "source": "check_sysid",
+    "target": "observation_sysid",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t8",
+    "edge_type": "confirms",
+    "source": "observation_sysid",
+    "target": "cause_sysid",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "t9",
+    "edge_type": "repaired_by",
+    "source": "cause_sysid",
+    "target": "repair_sysid",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_battle_tree:s0:r159",
+      "title": "ipran_battle_tree:s0:r159 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "c1",
+    "edge_type": "has_cause",
+    "source": "symptom_case",
+    "target": "cause_auth",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_icase",
+      "title": "ipran_icase 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "c2",
+    "edge_type": "diagnosed_by",
+    "source": "cause_auth",
+    "target": "check_auth",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_icase",
+      "title": "ipran_icase 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "c3",
+    "edge_type": "observes",
+    "source": "check_auth",
+    "target": "observation_auth",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_icase",
+      "title": "ipran_icase 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "c4",
+    "edge_type": "confirms",
+    "source": "observation_auth",
+    "target": "cause_auth",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_icase",
+      "title": "ipran_icase 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "c5",
+    "edge_type": "repaired_by",
+    "source": "cause_auth",
+    "target": "repair_auth",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "ipran_icase",
+      "title": "ipran_icase 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  }
+]

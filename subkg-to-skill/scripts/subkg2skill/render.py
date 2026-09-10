@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from subkg2skill import describe, schema
 from subkg2skill.condition import describe_edge_condition
@@ -111,14 +111,20 @@ def suggested_slug(symptom: Node, unit: str = "") -> str:
     return normalise_name(f"{base}-{unit_hint}" if unit_hint else base)
 
 
-def default_description(symptom: Node) -> str:
-    """``故障现象 + 适用时机``, as the template's example does it."""
+def default_description(symptom: Node, playbook: Optional[Playbook] = None) -> str:
+    """``故障现象 + 适用时机``, as the template's example does it.
+
+    When several sources were merged, their names and match phrases all become
+    trigger wording — that is what makes one skill answer for the manual, the
+    battle tree and the case library at once.
+    """
     phenomenon = symptom.name
     abnormal = _text(symptom.attr("abnormal_behavior"))
     if abnormal:
         phenomenon = f"{symptom.name}：{abnormal}"
+    terms = playbook.trigger_terms() if playbook else (symptom.aliases + symptom.match_phrases)
     triggers: List[str] = []
-    for term in symptom.aliases + symptom.match_phrases:
+    for term in terms:
         term = term.strip()
         if term and term != symptom.name and term not in triggers:
             triggers.append(term)
@@ -161,7 +167,6 @@ def render_evidence(
     omitted: Sequence = (),
 ) -> str:
     """Everything the four sections deliberately leave out: sources and caveats."""
-    symptom = playbook.symptom
     lines = [
         "# 证据与出处",
         "",
@@ -177,7 +182,14 @@ def render_evidence(
         "## 症状",
         "",
     ]
-    lines += _node_evidence_block(symptom, options.evidence_limit)
+    if len(playbook.symptoms) > 1:
+        lines += [
+            f"本 skill 合并了 {len(playbook.symptoms)} 个来源对同一故障的描述："
+            + "、".join(f"{node.name}（`{node.node_id}`）" for node in playbook.symptoms),
+            "",
+        ]
+    for node in playbook.symptoms:
+        lines += _node_evidence_block(node, options.evidence_limit)
 
     checks: List[Node] = []
     seen: Set[str] = set()
@@ -293,7 +305,7 @@ def _query_script() -> str:
 def build_package(graph: Graph, playbook: Playbook, options: BuildOptions) -> SkillPackage:
     """Render one fault entry into a template-conformant skill package."""
     name = normalise_name(options.name or suggested_slug(playbook.symptom))
-    description = options.description or default_description(playbook.symptom)
+    description = options.description or default_description(playbook.symptom, playbook)
     if len(description) > MAX_DESCRIPTION:
         description = description[: MAX_DESCRIPTION - 1]
 

@@ -27,7 +27,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from subkg2skill import schema
 from subkg2skill.describe import observation_expression
 from subkg2skill.graph import Graph, Node, _string_list, _text
-from subkg2skill.playbook import CauseBranch, CheckStep, Playbook, Verdict
+from subkg2skill.playbook import CauseBranch, CheckStep, Playbook, Verdict, fault_key
 
 #: ``{x}`` in source templates is re-bracketed to ``<x>``; the name never changes.
 #: ``[ ... ]`` is left alone — in CLI reference syntax it marks an optional
@@ -277,8 +277,9 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
                 producing_check.setdefault(observation.node_id, node.node_id)
 
     branch_causes = {branch.cause.node_id for branch in playbook.causes}
+    branch_keys = {fault_key(branch.cause.name) for branch in playbook.causes}
     prechecks: List[Precheck] = []
-    precheck_causes: Dict[str, Tuple[str, str]] = {}  # 根因名 -> (现象, cause node_id)
+    precheck_causes: Dict[str, Tuple[List[str], str]] = {}  # 根因名 -> (现象们, cause node_id)
     by_signature: Dict[str, int] = {}  # 命令签名 -> 前置检查序号
     precheck_of_check: Dict[str, int] = {}
     omitted: List[Tuple[str, str]] = []
@@ -314,7 +315,10 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
 
         for observation, verdict in _decisive(step):
             # Causes that get their own step are judged there, once, not twice.
+            # A merged document may judge the cause under another source's node.
             if verdict.kind == "excludes" or verdict.cause.node_id in branch_causes:
+                continue
+            if fault_key(verdict.cause.name) in branch_keys:
                 continue
             if not (_usable(verdict.cause, policy) and _usable(observation, policy)):
                 continue
@@ -322,13 +326,19 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
             precheck.verdicts.append(
                 f"若 {_criterion(observation)}，判定根因为“{verdict.cause.name}”{strength}，结束排查。"
             )
-            precheck_causes.setdefault(
-                verdict.cause.name, (f"{_criterion(observation)}{strength}", verdict.cause.node_id)
-            )
+            entry = precheck_causes.setdefault(verdict.cause.name, ([], verdict.cause.node_id))
+            criterion = f"{_criterion(observation)}{strength}"
+            if criterion not in entry[0]:
+                entry[0].append(criterion)
 
     steps: List[Step] = []
-    branch_by_cause: Dict[str, CauseBranch] = {b.cause.node_id: b for b in playbook.causes}
-    step_causes: Dict[str, Tuple[str, str]] = {}
+    # Indexed by fault identity, not node id: when sources are merged the cause
+    # that a verdict points at may be another source's node for the same fault,
+    # while the repairs hang off the one we kept.
+    branch_by_cause: Dict[str, CauseBranch] = {
+        fault_key(b.cause.name): b for b in playbook.causes
+    }
+    step_causes: Dict[str, Tuple[List[str], str]] = {}
 
     for branch in playbook.causes:
         if not _usable(branch.cause, policy):
@@ -362,9 +372,9 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
             branches.append(Branch(criterion, f"定位根因“{verdict.cause.name}”{strength}，结束排查。"))
             if verdict.cause.name not in causes:
                 causes.append(verdict.cause.name)
-            step_causes.setdefault(
-                verdict.cause.name, (f"{criterion}{strength}", verdict.cause.node_id)
-            )
+            entry = step_causes.setdefault(verdict.cause.name, ([], verdict.cause.node_id))
+            if f"{criterion}{strength}" not in entry[0]:
+                entry[0].append(f"{criterion}{strength}")
         if not any(verdict.kind != "excludes" for _obs, verdict in decisive):
             # No observation decides this cause: say so instead of inventing a criterion.
             branches.append(
@@ -376,7 +386,7 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
             causes.append(branch.cause.name)
             step_causes.setdefault(
                 branch.cause.name,
-                ("本子图未给出判定观测（无 `confirms` / `supports` 关系）", branch.cause.node_id),
+                (["本子图未给出判定观测（无 `confirms` / `supports` 关系）"], branch.cause.node_id),
             )
 
         steps.append(
@@ -403,13 +413,18 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
 
     root_causes: List[RootCause] = []
     repair_commands: List[str] = []
-    for name, (evidence, node_id) in {**precheck_causes, **step_causes}.items():
+    for name, (criteria, node_id) in {**precheck_causes, **step_causes}.items():
         cause_node = graph.get(node_id)
-        branch = branch_by_cause.get(node_id)
+        branch = branch_by_cause.get(fault_key(name))
         fix, recheck, commands = _repair_fix(graph, cause_node, branch)
         repair_commands.extend(commands)
         root_causes.append(
-            RootCause(name=name, evidence=cell(evidence), fix=cell(fix), recheck=cell(recheck))
+            RootCause(
+                name=name,
+                evidence=cell("；".join(criteria)),
+                fix=cell(fix),
+                recheck=cell(recheck),
+            )
         )
     root_causes.append(
         RootCause(
@@ -433,7 +448,7 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
 
     doc = SkillDoc(
         symptom=playbook.symptom,
-        params=_build_params(playbook.symptom, prechecks, steps, repair_commands),
+        params=_build_params(playbook, prechecks, steps, repair_commands),
         prechecks=prechecks,
         steps=steps,
         root_causes=root_causes,
@@ -545,7 +560,7 @@ def _step_commands(
 
 
 def _build_params(
-    symptom: Node,
+    playbook: Playbook,
     prechecks: Sequence[Precheck],
     steps: Sequence[Step],
     repair_commands: Sequence[str] = (),
@@ -553,7 +568,7 @@ def _build_params(
     """Required slots plus every ``<token>`` the document's commands actually use."""
     params: Dict[str, Param] = {}
 
-    for slot in _string_list(symptom.attrs.get("required_slots")):
+    for slot in playbook.required_slots():
         key = param_key(slot)
         if key:
             params[key] = Param(slot, param_display(slot), True, "现场提供")

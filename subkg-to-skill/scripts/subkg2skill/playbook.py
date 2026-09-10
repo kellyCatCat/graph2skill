@@ -9,6 +9,9 @@ source allows.  This module only walks the graph — the wording lives in
 
 from __future__ import annotations
 
+import re
+import unicodedata
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
@@ -82,6 +85,21 @@ class CauseBranch:
         return [verdict for verdict in self.verdicts if verdict.kind == kind]
 
 
+#: Punctuation and spacing that spelling differences hide behind (IS-IS vs ISIS).
+_KEY_STRIP_RE = re.compile(r"[\s\-_·/\\（）()\[\]【】：:，,。.、~!！?？\"'“”‘’]+")
+
+
+def fault_key(name: str) -> str:
+    """Identity of a fault across sources.
+
+    The same fault is written differently in a manual, a battle tree and a case
+    library — ``IS-IS邻居无法建立`` and ``ISIS邻居无法建立`` are one thing, and
+    keeping them apart produces two thin skills instead of one complete one.
+    """
+    folded = unicodedata.normalize("NFKC", name or "").lower()
+    return _KEY_STRIP_RE.sub("", folded)
+
+
 @dataclass
 class Playbook:
     """Everything needed to render one symptom's troubleshooting document."""
@@ -92,6 +110,10 @@ class Playbook:
     causes: List[CauseBranch] = field(default_factory=list)
     referrals: List[Link] = field(default_factory=list)
     covered: Set[str] = field(default_factory=set)
+    #: Every symptom this document covers — more than one when sources were merged.
+    merged: List[Node] = field(default_factory=list)
+    #: Diagnostic units the merged sources came from.
+    units: List[str] = field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -101,14 +123,30 @@ class Playbook:
     def node_id(self) -> str:
         return self.symptom.node_id
 
+    @property
+    def symptoms(self) -> List[Node]:
+        return self.merged or [self.symptom]
+
     def trigger_terms(self) -> List[str]:
-        terms = [self.symptom.name] + self.symptom.aliases + self.symptom.match_phrases
+        terms: List[str] = []
+        for symptom in self.symptoms:
+            terms += [symptom.name] + symptom.aliases + symptom.match_phrases
         seen: List[str] = []
         for term in terms:
             term = term.strip()
             if term and term not in seen:
                 seen.append(term)
         return seen
+
+    def required_slots(self) -> List[str]:
+        """Slots every merged source asks the field for."""
+        slots: List[str] = []
+        for symptom in self.symptoms:
+            for slot in symptom.attrs.get("required_slots") or []:
+                slot = str(slot).strip()
+                if slot and slot not in slots:
+                    slots.append(slot)
+        return slots
 
     @property
     def check_count(self) -> int:
@@ -270,6 +308,169 @@ def entry_symptoms(graph: Graph) -> List[Node]:
         return (rank, -outgoing, node.name)
 
     return sorted(graph.of_type("symptom"), key=weight)
+
+
+def _merge_branches(target: CauseBranch, extra: CauseBranch) -> None:
+    """Fold *extra* into *target*: same cause, documented by another source."""
+    seen_checks = {step.check.node_id for step in target.checks}
+    for step in extra.checks:
+        if step.check.node_id not in seen_checks:
+            seen_checks.add(step.check.node_id)
+            target.checks.append(step)
+    seen_repairs = {link.node.node_id for link in target.repairs}
+    for link in extra.repairs:
+        if link.node.node_id not in seen_repairs:
+            seen_repairs.add(link.node.node_id)
+            target.repairs.append(link)
+    seen_verdicts = {(v.observation.node_id, v.kind) for v in target.verdicts}
+    for verdict in extra.verdicts:
+        key = (verdict.observation.node_id, verdict.kind)
+        if key not in seen_verdicts:
+            seen_verdicts.add(key)
+            target.verdicts.append(verdict)
+    target.verdicts.sort(key=lambda v: (schema.VERDICT_EDGES.index(v.kind), v.observation.name))
+    for attribute in ("refines", "leads_to", "refers_to"):
+        current = getattr(target, attribute)
+        seen = {link.node.node_id for link in current}
+        for link in getattr(extra, attribute):
+            if link.node.node_id not in seen:
+                seen.add(link.node.node_id)
+                current.append(link)
+
+
+def build_merged_playbook(
+    graph: Graph, symptoms: Sequence[Node], units: Sequence[str] = ()
+) -> Playbook:
+    """One document covering the same fault as several sources describe it.
+
+    Causes are folded together by name, so a cause the manual and the case
+    library both mention becomes one step carrying both sources' checks,
+    observations and repairs — rather than two steps with the same title.
+    """
+    if not symptoms:
+        raise ValueError("至少需要一个症状节点")
+    parts = [build_playbook(graph, symptom) for symptom in symptoms]
+    merged = parts[0]
+    merged.merged = list(symptoms)
+    merged.units = [unit for unit in units if unit]
+    by_cause: Dict[str, CauseBranch] = {fault_key(b.cause.name): b for b in merged.causes}
+    seen_checks = {step.check.node_id for step in merged.entry_checks}
+    seen_links = {link.node.node_id for link in merged.referrals}
+
+    for part in parts[1:]:
+        for step in part.entry_checks:
+            if step.check.node_id not in seen_checks:
+                seen_checks.add(step.check.node_id)
+                merged.entry_checks.append(step)
+        for branch in part.causes:
+            key = fault_key(branch.cause.name)
+            existing = by_cause.get(key)
+            if existing is None:
+                by_cause[key] = branch
+                merged.causes.append(branch)
+            else:
+                _merge_branches(existing, branch)
+        for link in part.referrals:
+            if link.node.node_id not in seen_links:
+                seen_links.add(link.node.node_id)
+                merged.referrals.append(link)
+        for link in part.entry_actions:
+            merged.entry_actions.append(link)
+        merged.covered |= part.covered
+    return merged
+
+
+@dataclass
+class FaultGroup:
+    """Scenarios that describe the same fault, across sources and units."""
+
+    key: str
+    symptoms: List[Node]
+    units: List[str]
+    causes: int
+    checks: int
+
+    @property
+    def primary(self) -> Node:
+        return self.symptoms[0]
+
+    @property
+    def name(self) -> str:
+        return self.primary.name
+
+    @property
+    def sources(self) -> int:
+        return len(self.symptoms)
+
+
+def fault_groups(graph: Graph, *, min_causes: int = 1, merge: bool = True) -> List[FaultGroup]:
+    """Group scenarios that describe the same fault in different sources.
+
+    Only scenarios from **different symptom nodes** are merged — a manual, a
+    battle tree and a case library each writing up ``IS-IS邻居无法建立``.  The
+    several diagnostic units of one node stay apart: those are different faults
+    that a merged graph happened to hang off the same node, and folding them
+    together is what produced ninety-step documents.  A node contributing
+    several units joins the merge with its richest unit; the rest stand alone.
+    """
+    scenarios = entry_scenarios(graph, min_causes=min_causes)
+    if not merge:
+        return [
+            FaultGroup(
+                key=scenario.key,
+                symptoms=[scenario.symptom],
+                units=[scenario.unit] if scenario.unit else [],
+                causes=scenario.causes,
+                checks=scenario.checks,
+            )
+            for scenario in scenarios
+        ]
+
+    by_node: Dict[str, List[Scenario]] = defaultdict(list)
+    for scenario in scenarios:
+        by_node[scenario.symptom.node_id].append(scenario)
+
+    mergeable: List[Scenario] = []
+    standalone: List[Scenario] = []
+    for items in by_node.values():
+        items.sort(key=lambda s: (-s.causes, s.unit))
+        mergeable.append(items[0])
+        standalone.extend(items[1:])
+
+    grouped: Dict[str, FaultGroup] = {}
+    order: List[str] = []
+    for scenario in mergeable:
+        key = fault_key(scenario.symptom.name)
+        group = grouped.get(key)
+        if group is None:
+            grouped[key] = FaultGroup(
+                key=key,
+                symptoms=[scenario.symptom],
+                units=[scenario.unit] if scenario.unit else [],
+                causes=scenario.causes,
+                checks=scenario.checks,
+            )
+            order.append(key)
+            continue
+        group.symptoms.append(scenario.symptom)
+        if scenario.unit and scenario.unit not in group.units:
+            group.units.append(scenario.unit)
+        group.causes += scenario.causes
+        group.checks += scenario.checks
+
+    groups = [grouped[key] for key in order]
+    groups += [
+        FaultGroup(
+            key=scenario.key,
+            symptoms=[scenario.symptom],
+            units=[scenario.unit] if scenario.unit else [],
+            causes=scenario.causes,
+            checks=scenario.checks,
+        )
+        for scenario in standalone
+    ]
+    groups.sort(key=lambda g: (-g.causes, g.name, "|".join(g.units)))
+    return groups
 
 
 @dataclass
