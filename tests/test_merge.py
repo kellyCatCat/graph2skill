@@ -38,9 +38,9 @@ def multi_graph():
 
 @pytest.fixture()
 def group(multi_graph):
+    """The three-source 邻居无法建立 fault (the fixture also holds an overlapping one)."""
     groups = fault_groups(multi_graph)
-    assert len(groups) == 1
-    return groups[0]
+    return next(group for group in groups if group.sources == 3)
 
 
 @pytest.fixture()
@@ -64,6 +64,13 @@ def test_three_sources_become_one_group(group):
     assert set(group.units) == {"17.4.1", "ipran_battle_tree:s0:r159", "ipran_icase"}
 
 
+def test_differently_named_faults_are_not_merged_automatically(multi_graph):
+    # 「协议邻居关系无法建立」和「IS-IS邻居无法建立」根因高度重叠，但名字不同：
+    # 只作为建议，不自动合并
+    names = {group.name for group in fault_groups(multi_graph)}
+    assert names == {"IS-IS邻居无法建立", "协议邻居关系无法建立"}
+
+
 def test_units_of_one_node_are_not_merged_back():
     # 同一个症状节点跨三个单元，是三个不同故障，不能因为同名就并回去
     groups = fault_groups(graph_of(MESSY))
@@ -72,7 +79,8 @@ def test_units_of_one_node_are_not_merged_back():
 
 
 def test_no_merge_lists_every_scenario(multi_graph):
-    assert len(fault_groups(multi_graph, merge=False)) == 3
+    assert len(fault_groups(multi_graph, merge=False)) == 4
+    assert len(fault_groups(multi_graph)) == 2
 
 
 # -- 合并后的 playbook ---------------------------------------------------
@@ -188,13 +196,14 @@ def test_entry_can_be_repeated_for_unrelated_names(tmp_path):
 def test_build_all_emits_one_skill_for_the_merged_fault(tmp_path):
     out = tmp_path / "all"
     assert main(["build-all", str(MULTI), "--out", str(out)]) == 0
-    assert len(list(out.iterdir())) == 1
+    # 三来源的那个故障合成一份，另一个重叠但不同名的故障单独一份
+    assert len(list(out.iterdir())) == 2
 
 
 def test_build_all_no_merge_emits_one_per_source(tmp_path):
     out = tmp_path / "all"
     assert main(["build-all", str(MULTI), "--out", str(out), "--no-merge"]) == 0
-    assert len(list(out.iterdir())) == 3
+    assert len(list(out.iterdir())) == 4
 
 
 def test_list_shows_the_merge_and_its_build_command(capsys):
@@ -202,3 +211,87 @@ def test_list_shows_the_merge_and_its_build_command(capsys):
     output = capsys.readouterr().out
     assert "合并来源 : 3 个" in output
     assert "--entry symptom_manual --entry symptom_tree --entry symptom_case" in output
+
+
+# -- 合并建议（按根因/命令重叠发现，不自动合并） --------------------------
+def test_overlapping_faults_are_suggested_not_merged(multi_graph):
+    from subkg2skill.playbook import suggest_merges
+
+    groups = fault_groups(multi_graph)
+    suggestions = suggest_merges(multi_graph, groups)
+    assert len(suggestions) == 1
+    suggestion = suggestions[0]
+    assert {suggestion.left.name, suggestion.right.name} == {
+        "IS-IS邻居无法建立",
+        "协议邻居关系无法建立",
+    }
+    assert len(suggestion.shared_causes) == 3
+    assert suggestion.overlap >= 0.5
+    assert "display isis peer" in suggestion.shared_commands
+    # 建议里带上双方全部来源，可以直接执行
+    assert len(suggestion.entries) == 4
+
+
+def test_unrelated_faults_are_not_suggested():
+    from subkg2skill.playbook import suggest_merges
+
+    graph = graph_of(MESSY)
+    assert suggest_merges(graph, fault_groups(graph)) == []
+
+
+def test_a_single_shared_cause_is_not_enough(multi_graph):
+    from subkg2skill.playbook import suggest_merges
+
+    groups = fault_groups(multi_graph)
+    assert suggest_merges(multi_graph, groups, min_shared_causes=4) == []
+
+
+def test_list_reports_suggestions_with_a_runnable_command(capsys):
+    assert main(["list", str(MULTI), "--suggest-merge"]) == 0
+    output = capsys.readouterr().out
+    assert "根因大量重叠" in output and "要不要合并由你判断" in output
+    assert "--entry symptom_generic" in output
+
+
+def test_lint_flags_near_duplicate_root_causes():
+    from subkg2skill.lint import lint_text
+
+    document = (
+        "---\nname: dup\ndescription: 现象。出现时使用。\n---\n\n"
+        "# 入参列表\n\n| 信息 | 是否必填 | 说明 |\n| --- | --- | --- |\n\n"
+        "# 前置检查\n\n1. **采集**\n   - CLI 命令：`display isis peer`\n   - 采集内容：`状态`\n\n"
+        "# 排查步骤\n\n## 步骤1：检查MTU\n\n1. **步骤名称**：检查MTU\n"
+        "2. **CLI 命令**：复用前置检查步骤 1 回显\n3. **跳转信息**：\n"
+        "   - `MTU` 不一致：定位根因“两端接口MTU不一致”，结束排查。\n"
+        "   - 以上判据均不命中：判定“未找到根因”，输出摘要，结束排查。\n"
+        "4. **根因定位**：\n   - 两端接口MTU不一致\n\n"
+        "# 根因对照表\n\n| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |\n| --- | --- | --- | --- |\n"
+        "| 两端接口MTU不一致 | `MTU` 不一致 | 无直接修复CLI | - |\n"
+        "| 两端MTU不一致 | `MTU` 不一致 | 无直接修复CLI | - |\n"
+        "| 未找到根因 | 全部步骤走完仍未命中任何故障特征 | 输出摘要 | - |\n"
+    )
+    result = lint_text(document)
+    assert result.ok  # 只是提醒，不是错误
+    warnings = " ".join(issue.message for issue in result.warnings)
+    assert "写法高度相似" in warnings and "修复动作不同就别合" in warnings
+
+
+def test_lint_does_not_flag_genuinely_different_causes():
+    from subkg2skill.lint import lint_text
+
+    document = (
+        "---\nname: ok\ndescription: 现象。出现时使用。\n---\n\n"
+        "# 入参列表\n\n| 信息 | 是否必填 | 说明 |\n| --- | --- | --- |\n\n"
+        "# 前置检查\n\n1. **采集**\n   - CLI 命令：`display isis peer`\n   - 采集内容：`状态`\n\n"
+        "# 排查步骤\n\n## 步骤1：检查A\n\n1. **步骤名称**：检查A\n"
+        "2. **CLI 命令**：复用前置检查步骤 1 回显\n3. **跳转信息**：\n"
+        "   - `状态` 为 `Down`：定位根因“两端接口MTU不一致”，结束排查。\n"
+        "   - 以上判据均不命中：判定“未找到根因”，输出摘要，结束排查。\n"
+        "4. **根因定位**：\n   - 两端接口MTU不一致\n\n"
+        "# 根因对照表\n\n| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |\n| --- | --- | --- | --- |\n"
+        "| 两端接口MTU不一致 | `状态` 为 `Down` | 无直接修复CLI | - |\n"
+        "| System ID冲突 | `状态` 为 `Down` | 无直接修复CLI | - |\n"
+        "| 未找到根因 | 全部步骤走完仍未命中任何故障特征 | 输出摘要 | - |\n"
+    )
+    warnings = " ".join(issue.message for issue in lint_text(document).warnings)
+    assert "写法高度相似" not in warnings

@@ -474,6 +474,96 @@ def fault_groups(graph: Graph, *, min_causes: int = 1, merge: bool = True) -> Li
 
 
 @dataclass
+class MergeSuggestion:
+    """Two faults that look like one thing under two names."""
+
+    left: FaultGroup
+    right: FaultGroup
+    shared_causes: List[str]
+    shared_commands: List[str]
+    overlap: float
+
+    @property
+    def entries(self) -> List[Node]:
+        return self.left.symptoms + self.right.symptoms
+
+    @property
+    def units(self) -> List[str]:
+        return list(dict.fromkeys(self.left.units + self.right.units))
+
+
+def _group_signature(graph: Graph, group: "FaultGroup") -> Tuple[Dict[str, str], Set[str]]:
+    """Cause names and check commands this fault is described by."""
+    scoped = graph.scope_to_units(group.units) if group.units else graph
+    causes: Dict[str, str] = {}
+    commands: Set[str] = set()
+    for symptom in group.symptoms:
+        for cause, _edge in scoped.targets(symptom.node_id, "has_cause"):
+            causes[fault_key(cause.name)] = cause.name
+            for check, _e in scoped.targets(cause.node_id, "diagnosed_by"):
+                commands.update(_commands_of(check))
+        for check, _edge in scoped.targets(symptom.node_id, "diagnosed_by"):
+            commands.update(_commands_of(check))
+    return causes, commands
+
+
+def _commands_of(check: Node) -> Set[str]:
+    raw = check.attrs.get("command_templates") or []
+    return {re.sub(r"\s+", " ", str(command)).strip() for command in raw if str(command).strip()}
+
+
+def suggest_merges(
+    graph: Graph,
+    groups: Sequence["FaultGroup"],
+    *,
+    min_shared_causes: int = 2,
+    min_overlap: float = 0.34,
+) -> List[MergeSuggestion]:
+    """Faults worth a human look before they are generated as separate skills.
+
+    Names differ, but the causes (and the commands used to tell them apart)
+    largely coincide — usually one fault written from two angles.  This only
+    ever *suggests*: two causes named alike can still need different fixes,
+    so the decision stays with a person.
+    """
+    signatures = {id(group): _group_signature(graph, group) for group in groups}
+    by_cause: Dict[str, List["FaultGroup"]] = defaultdict(list)
+    for group in groups:
+        for key in signatures[id(group)][0]:
+            by_cause[key].append(group)
+
+    seen: Set[Tuple[int, int]] = set()
+    suggestions: List[MergeSuggestion] = []
+    for candidates in by_cause.values():
+        for index, left in enumerate(candidates):
+            for right in candidates[index + 1 :]:
+                pair = tuple(sorted((id(left), id(right))))
+                if pair in seen or fault_key(left.name) == fault_key(right.name):
+                    continue
+                seen.add(pair)
+                left_causes, left_commands = signatures[id(left)]
+                right_causes, right_commands = signatures[id(right)]
+                shared = set(left_causes) & set(right_causes)
+                union = set(left_causes) | set(right_causes)
+                if len(shared) < min_shared_causes or not union:
+                    continue
+                overlap = len(shared) / len(union)
+                if overlap < min_overlap:
+                    continue
+                suggestions.append(
+                    MergeSuggestion(
+                        left=left,
+                        right=right,
+                        shared_causes=sorted(left_causes[key] for key in shared),
+                        shared_commands=sorted(left_commands & right_commands),
+                        overlap=overlap,
+                    )
+                )
+    suggestions.sort(key=lambda s: (-s.overlap, -len(s.shared_causes), s.left.name))
+    return suggestions
+
+
+@dataclass
 class Scenario:
     """One fault entry inside one diagnostic unit — the unit of a skill."""
 

@@ -933,5 +933,248 @@
       }
     ],
     "quality_flags": []
+  },
+  {
+    "node_id": "symptom_generic",
+    "node_type": "symptom",
+    "canonical_key": "{}",
+    "name": "协议邻居关系无法建立",
+    "description": "协议邻居关系无法建立",
+    "aliases": [],
+    "attrs": {
+      "match_phrases": [
+        "邻居起不来"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "协议邻居关系无法建立",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_mtu_generic",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端接口MTU不一致",
+    "description": "两端接口MTU不一致",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端接口MTU不一致",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_level_generic",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "Level不匹配",
+    "description": "Level不匹配",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "Level不匹配",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_auth_generic",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端认证方式不匹配",
+    "description": "两端认证方式不匹配",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "两端认证方式不匹配",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_peer_generic",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看协议邻居状态",
+    "description": "查看协议邻居状态",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认邻居状态",
+      "command_templates": [
+        "display isis peer"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "查看协议邻居状态",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_generic",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "邻居未Up",
+    "description": "邻居未Up",
+    "aliases": [],
+    "attrs": {
+      "field": "邻居状态",
+      "operator": "ne",
+      "value": "Up",
+      "normalized_expression": "邻居状态 != 'Up'"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "16.7.1",
+        "title": "16.7.1 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "src.pdf",
+        "block_id": "b",
+        "quote": "邻居未Up",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
   }
 ]

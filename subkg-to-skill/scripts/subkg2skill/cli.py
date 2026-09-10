@@ -31,6 +31,7 @@ from subkg2skill.playbook import (
     entry_symptoms,
     fault_groups,
     fault_key,
+    suggest_merges,
 )
 from subkg2skill.render import (
     BuildOptions,
@@ -294,6 +295,32 @@ def cmd_list(args) -> int:
         print(f"  …另有 {len(groups) - args.limit} 个（--limit 调整）")
     if skipped:
         print(f"  另有 {skipped} 个场景候选原因少于 {args.min_causes} 个，已跳过（--min-causes 0 可包含）")
+
+    if args.suggest_merge:
+        suggestions = suggest_merges(graph, groups)
+        print()
+        if not suggestions:
+            print("没有发现名字不同但内容高度重叠的故障。")
+            return 0
+        print(
+            f"以下 {len(suggestions)} 组故障名字不同，但根因大量重叠，可能是同一故障的两种写法。"
+            "**要不要合并由你判断**——根因名字相近不代表修复相同：\n"
+        )
+        for suggestion in suggestions[: args.limit]:
+            print(f"  {suggestion.left.name}  ＋  {suggestion.right.name}")
+            print(
+                f"    根因重叠 : {len(suggestion.shared_causes)} 个"
+                f"（重叠度 {suggestion.overlap:.0%}）— " + "、".join(suggestion.shared_causes[:4])
+            )
+            if suggestion.shared_commands:
+                print(
+                    f"    共用命令 : {len(suggestion.shared_commands)} 条 — "
+                    + "、".join(f"`{command}`" for command in suggestion.shared_commands[:3])
+                )
+            command = "build " + " ".join(f"--entry {node.node_id}" for node in suggestion.entries)
+            command += "".join(f" --unit {unit}" for unit in suggestion.units)
+            print(f"    合并命令 : {command} --name <english-slug>")
+            print()
     return 0
 
 
@@ -548,6 +575,11 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--all-units", action="store_true", help="不按诊断单元拆分")
     listing.add_argument(
         "--no-merge", action="store_true", help="不按故障归并同名症状，逐个场景列出"
+    )
+    listing.add_argument(
+        "--suggest-merge",
+        action="store_true",
+        help="额外报告名字不同但根因高度重叠的故障，供人工判断是否合并",
     )
     listing.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才算一个场景")
     listing.set_defaults(func=cmd_list)

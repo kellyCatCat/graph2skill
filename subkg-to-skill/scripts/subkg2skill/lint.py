@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from subkg2skill.playbook import fault_key
 from subkg2skill.template import NOT_FOUND, PARAM_RE, case_literals, command_signature, param_key
 
 SECTIONS = ("入参列表", "前置检查", "排查步骤", "根因对照表")
@@ -26,6 +28,8 @@ BAD_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z0-9_\-一-鿿]+\}")
 MAX_REASONABLE_STEPS = 25
 #: The same command collected this many times means the prechecks were not merged.
 MAX_COMMAND_REPEATS = 2
+#: Root-cause names this similar are usually one cause written twice.
+NEAR_DUPLICATE_RATIO = 0.8
 SHORT_INTERFACE_RE = re.compile(r"\b(?:\d+)?(?:GE|XGE|FE|Eth)\d+/\d+", re.I)
 STEP_ITEMS = ("步骤名称", "CLI 命令", "跳转信息", "根因定位")
 
@@ -246,6 +250,23 @@ def lint_text(text: str) -> LintResult:
     for cause in sorted(declared_causes):
         if cause not in listed:
             issues.append(LintIssue("error", f"根因“{cause}”没有在根因对照表里逐字出现"))
+
+    names = [row[0].strip() for row in table_rows if row and row[0].strip() != NOT_FOUND]
+    for index, left in enumerate(names):
+        for right in names[index + 1 :]:
+            left_key, right_key = fault_key(left), fault_key(right)
+            if not left_key or not right_key:
+                continue
+            contained = left_key in right_key or right_key in left_key
+            ratio = SequenceMatcher(None, left_key, right_key).ratio()
+            if contained or ratio >= NEAR_DUPLICATE_RATIO:
+                issues.append(
+                    LintIssue(
+                        "warning",
+                        f"根因“{left}”与“{right}”写法高度相似，可能是同一根因的两种说法；"
+                        "确认是否该合并（修复动作不同就别合）",
+                    )
+                )
     if NOT_FOUND not in listed:
         issues.append(LintIssue("error", f"根因对照表缺少「{NOT_FOUND}」行"))
 
