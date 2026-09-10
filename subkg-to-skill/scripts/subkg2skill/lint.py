@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from subkg2skill.template import NOT_FOUND, PARAM_RE, param_key
+from subkg2skill.template import NOT_FOUND, PARAM_RE, case_literals, command_signature, param_key
 
 SECTIONS = ("入参列表", "前置检查", "排查步骤", "根因对照表")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -20,7 +20,12 @@ STEP_RE = re.compile(r"^##\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
 #: “步骤 N” as a jump target — “前置检查步骤 N” is a back-reference, not a jump.
 JUMP_RE = re.compile(r"(?<!前置检查)步骤\s*(\d+)")
 CODE_RE = re.compile(r"`([^`]+)`")
-BAD_PLACEHOLDER_RE = re.compile(r"[{\[][A-Za-z0-9_\-一-鿿]+[}\]]")
+#: Only ``{}`` is a stray placeholder; ``[ ... ]`` is CLI optional-argument syntax.
+BAD_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z0-9_\-一-鿿]+\}")
+#: Beyond this many steps a document stops being followable; split by diagnostic unit.
+MAX_REASONABLE_STEPS = 25
+#: The same command collected this many times means the prechecks were not merged.
+MAX_COMMAND_REPEATS = 2
 SHORT_INTERFACE_RE = re.compile(r"\b(?:\d+)?(?:GE|XGE|FE|Eth)\d+/\d+", re.I)
 STEP_ITEMS = ("步骤名称", "CLI 命令", "跳转信息", "根因定位")
 
@@ -250,8 +255,36 @@ def lint_text(text: str) -> LintResult:
             issues.append(LintIssue("error", f"命令里的占位符必须用 <>：`{command}`"))
         if re.search(r"\bXXX+\b", command):
             issues.append(LintIssue("warning", f"命令里保留了大写占位符：`{command}`"))
+        literals = case_literals(command)
+        if literals:
+            issues.append(
+                LintIssue(
+                    "warning",
+                    f"含案例字面量（{'、'.join(literals[:3])}）：`{command}`；"
+                    "换一张网就不成立，应替换为入参或剔除该案例条目",
+                )
+            )
         if SHORT_INTERFACE_RE.search(command):
             issues.append(LintIssue("warning", f"接口名疑似缩写，应使用全称：`{command}`"))
+    if len(step_bodies) > MAX_REASONABLE_STEPS:
+        issues.append(
+            LintIssue(
+                "warning",
+                f"共 {len(step_bodies)} 个排查步骤，超出可读范围（>{MAX_REASONABLE_STEPS}）；"
+                "多半是把多个故障场景合成了一份，建议按诊断单元拆分（build --unit）",
+            )
+        )
+
+    repeats: Dict[str, int] = {}
+    for command in _commands_in(precheck_lines):
+        signature = command_signature([command])
+        repeats[signature] = repeats.get(signature, 0) + 1
+    for signature, count in repeats.items():
+        if count > MAX_COMMAND_REPEATS:
+            issues.append(
+                LintIssue("warning", f"前置检查里 `{signature}` 重复了 {count} 次，应合并为一条采集步骤")
+            )
+
     for row in table_rows:
         if len(row) >= 3 and "无直接修复CLI" in row[2]:
             issues.append(LintIssue("warning", f"根因“{row[0]}”来源未给出修复命令，只能定位"))

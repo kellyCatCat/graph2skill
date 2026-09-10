@@ -23,7 +23,12 @@ from subkg2skill import __version__, schema
 from subkg2skill.graph import Graph, Node, ValidationReport
 from subkg2skill.lint import lint_path, lint_text
 from subkg2skill.loader import SubgraphLoadError, load
-from subkg2skill.playbook import build_playbook, build_playbooks, entry_symptoms
+from subkg2skill.playbook import (
+    build_playbook,
+    build_playbooks,
+    entry_scenarios,
+    entry_symptoms,
+)
 from subkg2skill.render import (
     BuildOptions,
     RenderError,
@@ -66,6 +71,15 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-lead", action="store_true", help="不在 frontmatter 后加参考文件提示行")
     parser.add_argument("--force", action="store_true", help="覆盖已有目录")
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的内容")
+    parser.add_argument(
+        "--include-example-specific",
+        action="store_true",
+        help="保留 example_specific 条目（含案例地址、设备名与组网，默认剔除）",
+    )
+    parser.add_argument(
+        "--keep-undecidable", action="store_true", help="保留既无判据也无修复动作的原因"
+    )
+    parser.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
 
 
 def _load_graph(args):
@@ -109,6 +123,30 @@ def _select(graph: Graph, args) -> Graph:
         return graph
     depth = args.depth if args.depth > 0 else None
     return graph.subgraph(graph.reachable(seeds, depth=depth))
+
+
+def _units_of(graph: Graph, symptom: Node) -> Dict[str, int]:
+    return graph.edge_units(symptom.node_id, "has_cause", "diagnosed_by", "next_step")
+
+
+def _resolve_unit(graph: Graph, symptom: Node, unit: str, all_units: bool) -> str:
+    """Pick the diagnostic unit this skill covers, or explain why one is needed."""
+    if all_units:
+        return ""
+    units = {name: count for name, count in _units_of(graph, symptom).items() if name != "(未标注)"}
+    if unit:
+        matched = [name for name in units if Graph.unit_matches(name, unit)]
+        if not matched:
+            listed = "、".join(list(units)[:8]) or "（无）"
+            raise RenderError(f"诊断单元 {unit!r} 在该症状下没有关系；现有单元：{listed}")
+        return unit
+    if len(units) <= 1:
+        return next(iter(units), "")
+    listed = "\n".join(f"    {name}（{count} 条关系）" for name, count in list(units.items())[:10])
+    raise RenderError(
+        f"“{symptom.name}”的关系分布在 {len(units)} 个诊断单元里，合成一份 skill 会把多个"
+        f"故障场景混在一起。请用 --unit 指定其中一个（或 --all-units 明确要合并）：\n{listed}"
+    )
 
 
 def _resolve_entry(graph: Graph, entry: str) -> Node:
@@ -173,21 +211,53 @@ def _install_hint(out_dir: Path, name: str) -> None:
 def cmd_list(args) -> int:
     graph, _report, sources = _load_graph(args)
     graph = _select(graph, args)
-    symptoms = entry_symptoms(graph)
     print(f"输入：{'、'.join(sources)}")
-    print(f"故障入口（symptom）共 {len(symptoms)} 个：\n")
-    for symptom in symptoms[: args.limit]:
-        playbook = build_playbook(graph, symptom)
+    if args.all_units:
+        symptoms = entry_symptoms(graph)
+        print(f"故障入口（symptom）共 {len(symptoms)} 个（未按诊断单元拆分）：\n")
+        for symptom in symptoms[: args.limit]:
+            playbook = build_playbook(graph, symptom)
+            print(f"  {symptom.name}")
+            print(f"    node_id : {symptom.node_id}")
+            print(
+                f"    规模    : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、"
+                f"修复 {playbook.repair_count}"
+            )
+            print(f"    诊断单元: {len(_units_of(graph, symptom))} 个（不拆分会把多个场景混在一起）")
+            print()
+        if len(symptoms) > args.limit:
+            print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
+        return 0
+
+    scenarios = entry_scenarios(graph, min_causes=args.min_causes)
+    skipped = len(entry_scenarios(graph, min_causes=0)) - len(scenarios)
+    print(f"故障场景（症状 × 诊断单元）共 {len(scenarios)} 个，一个场景一份 skill：\n")
+    cache: Dict[str, Graph] = {}
+    for scenario in scenarios[: args.limit]:
+        symptom = scenario.symptom
+        scoped = cache.setdefault(scenario.unit, graph.scope_to_unit(scenario.unit))
+        playbook = build_playbook(scoped, symptom)
         triggers = " / ".join(playbook.trigger_terms()[1:4])
         print(f"  {symptom.name}")
-        print(f"    node_id : {symptom.node_id}")
-        print(f"    规模    : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、修复 {playbook.repair_count}")
+        print(f"    node_id  : {symptom.node_id}")
+        print(f"    诊断单元 : {scenario.unit or '(未标注)'}")
+        print(
+            f"    规模     : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、"
+            f"修复 {playbook.repair_count}"
+        )
         if triggers:
-            print(f"    触发说法: {triggers}")
-        print(f"    建议 slug: {suggested_slug(symptom)}（模板要求英文名，请按语义改写）")
+            print(f"    触发说法 : {triggers}")
+        print(f"    建议 slug: {suggested_slug(symptom, scenario.unit)}（模板要求英文名，请按语义改写）")
+        print(
+            f"    生成命令 : build --entry {symptom.node_id}"
+            + (f" --unit {scenario.unit}" if scenario.unit else "")
+            + " --name <english-slug>"
+        )
         print()
-    if len(symptoms) > args.limit:
-        print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
+    if len(scenarios) > args.limit:
+        print(f"  …另有 {len(scenarios) - args.limit} 个（--limit 调整）")
+    if skipped:
+        print(f"  另有 {skipped} 个场景候选原因少于 {args.min_causes} 个，已跳过（--min-causes 0 可包含）")
     return 0
 
 
@@ -241,8 +311,24 @@ def cmd_validate(args) -> int:
     return 0
 
 
-def _build_one(graph: Graph, symptom: Node, name: str, out_dir: Path, args, sources) -> int:
-    playbook = build_playbook(graph, symptom)
+def _build_one(
+    graph: Graph,
+    symptom: Node,
+    name: str,
+    out_dir: Path,
+    args,
+    sources,
+    unit: str = "",
+    cache: Optional[Dict[str, Graph]] = None,
+) -> int:
+    if cache is None:
+        scoped = graph.scope_to_unit(unit) if unit else graph
+    else:
+        scoped = cache.get(unit)
+        if scoped is None:
+            scoped = graph.scope_to_unit(unit) if unit else graph
+            cache[unit] = scoped
+    playbook = build_playbook(scoped, symptom)
     options = BuildOptions(
         name=name,
         description=args.description,
@@ -251,12 +337,19 @@ def _build_one(graph: Graph, symptom: Node, name: str, out_dir: Path, args, sour
         include_script=not args.no_script,
         include_lead=not args.no_lead,
         sources=sources,
+        unit=unit,
+        include_example_specific=args.include_example_specific,
+        keep_undecidable=args.keep_undecidable,
+        max_steps=args.max_steps,
     )
-    package = build_package(graph, playbook, options)
+    package = build_package(scoped, playbook, options)
     result = lint_text(package.files["SKILL.md"])
 
     if args.dry_run:
-        print(f"技能名：{normalise_name(name)}｜入口：{symptom.name}（{symptom.node_id}）")
+        print(
+            f"技能名：{normalise_name(name)}｜入口：{symptom.name}（{symptom.node_id}）"
+            + (f"｜诊断单元：{unit}" if unit else "")
+        )
         print("将写出：")
         for relative in sorted(package.files):
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
@@ -268,8 +361,12 @@ def _build_one(graph: Graph, symptom: Node, name: str, out_dir: Path, args, sour
     written = package.write(out_dir, force=args.force)
     print(f"技能已生成：{out_dir}")
     print(f"  技能名：{normalise_name(name)}")
-    print(f"  入口症状：{symptom.name}（{symptom.node_id}）")
-    print(f"  前置检查 {len(playbook.entry_checks)} 条；排查步骤 {len(playbook.causes)} 步；文件 {len(written)} 个")
+    print(f"  入口症状：{symptom.name}（{symptom.node_id}）" + (f"｜诊断单元：{unit}" if unit else ""))
+    stats = package.stats
+    print(
+        f"  前置检查 {stats.get('prechecks', 0)} 条；排查步骤 {stats.get('steps', 0)} 步；"
+        f"根因 {stats.get('root_causes', 0)} 个；文件 {len(written)} 个"
+    )
     for note in package.notes:
         print(f"  提示：{note}")
     _print_lint(result)
@@ -284,12 +381,13 @@ def cmd_build(args) -> int:
         return 1
     graph = _select(graph, args)
     symptom = _resolve_entry(graph, args.entry)
+    unit = _resolve_unit(graph, symptom, args.unit, args.all_units)
     if not args.name:
         raise RenderError(
             "模板要求英文技能名，请用 --name 指定（`list` 会给出建议 slug，但请按语义改写）"
         )
     out_dir = Path(args.out)
-    code = _build_one(graph, symptom, args.name, out_dir, args, sources)
+    code = _build_one(graph, symptom, args.name, out_dir, args, sources, unit)
     if not args.dry_run:
         _install_hint(out_dir, normalise_name(args.name))
     return code
@@ -314,25 +412,38 @@ def cmd_build_all(args) -> int:
         if not isinstance(names, dict):
             raise RenderError(f"{path}: 应为 {{node_id: slug}} 的对象")
 
-    symptoms = entry_symptoms(graph)
+    skipped = 0
+    if args.all_units:
+        scenarios = [(symptom, "") for symptom in entry_symptoms(graph)]
+    else:
+        selected = entry_scenarios(graph, min_causes=args.min_causes)
+        skipped = len(entry_scenarios(graph, min_causes=0)) - len(selected)
+        scenarios = [(scenario.symptom, scenario.unit) for scenario in selected]
     if args.limit:
-        symptoms = symptoms[: args.limit]
-    if not symptoms:
-        raise RenderError("子图里没有 symptom 节点，无法生成 skill")
+        scenarios = scenarios[: args.limit]
+    if not scenarios:
+        raise RenderError("子图里没有可生成的故障场景（symptom × 诊断单元）")
 
     root = Path(args.out)
     failures = 0
     unnamed: List[str] = []
-    for symptom in symptoms:
-        name = names.get(symptom.node_id) or names.get(symptom.name) or ""
+    cache: Dict[str, Graph] = {}
+    for symptom, unit in scenarios:
+        key = f"{symptom.node_id}@{unit}" if unit else symptom.node_id
+        name = names.get(key) or names.get(symptom.node_id) or names.get(symptom.name) or ""
         if not name:
-            name = suggested_slug(symptom)
-            unnamed.append(f"{symptom.node_id}  {symptom.name}  →  {name}")
+            name = suggested_slug(symptom, unit)
+            unnamed.append(f"{key}  {symptom.name}  →  {name}")
         slug = normalise_name(name)
-        code = _build_one(graph, symptom, name, root / slug, args, sources)
+        code = _build_one(graph, symptom, name, root / slug, args, sources, unit, cache)
         failures += 1 if code else 0
         print()
-    print(f"共生成 {len(symptoms)} 份 skill，{failures} 份未通过模板检查。")
+    print(f"共生成 {len(scenarios)} 份 skill，{failures} 份未通过模板检查。")
+    if skipped:
+        print(
+            f"另有 {skipped} 个场景候选原因少于 {args.min_causes} 个未生成"
+            "（排查步骤会是空的；--min-causes 0 可强制生成）"
+        )
     if unnamed:
         print(
             f"\n以下 {len(unnamed)} 份用了机械生成的 slug（模板要求英文名，请按语义改写后重跑，"
@@ -367,6 +478,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_input_arguments(listing)
     _add_selection_arguments(listing)
     listing.add_argument("--limit", type=int, default=30, help="最多列出多少个")
+    listing.add_argument("--all-units", action="store_true", help="不按诊断单元拆分")
+    listing.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才算一个场景")
     listing.set_defaults(func=cmd_list)
 
     build = sub.add_parser("build", help="为一个故障入口生成 skill")
@@ -374,6 +487,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_selection_arguments(build)
     _add_output_arguments(build)
     build.add_argument("--entry", default="", help="入口症状：node_id、id 前缀或名称关键词")
+    build.add_argument("--unit", default="", help="诊断单元（章节号/案例 ID），一个场景一份 skill")
+    build.add_argument(
+        "--all-units", action="store_true", help="合并该症状的全部诊断单元（会混合多个故障场景）"
+    )
     build.add_argument("--name", default="", help="技能名（英文 slug，模板硬性要求）")
     build.add_argument("--description", default="", help="frontmatter 描述（不给则由症状自动生成）")
     build.set_defaults(func=cmd_build)
@@ -384,6 +501,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_output_arguments(build_all)
     build_all.add_argument("--names", default="", help="{node_id: slug} 的 JSON 映射文件")
     build_all.add_argument("--limit", type=int, default=0, help="最多生成多少份（0=不限）")
+    build_all.add_argument("--all-units", action="store_true", help="每个症状一份，不按诊断单元拆分")
+    build_all.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才生成")
     build_all.add_argument("--description", default="", help="统一的 frontmatter 描述（一般不用）")
     build_all.set_defaults(func=cmd_build_all)
 

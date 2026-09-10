@@ -9,7 +9,9 @@ description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.
 observation / repair / escalation；十一类边：has_cause、diagnosed_by、observes、supports /
 confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to）。
 
-输出：**一个故障入口（symptom）一份 skill**，`SKILL.md` 严格按四章节模板写：
+输出：**一个故障场景一份 skill**——场景 = 一个 symptom × 一个诊断单元（章节号或案例 ID）。
+知识图谱会把同一个症状在几十个章节、案例里的原因合并到一个节点上，不按诊断单元切分就会把
+互不相干的故障塞进同一份文档。`SKILL.md` 严格按四章节模板写：
 
 ```
 <skill>/
@@ -39,13 +41,14 @@ python3 scripts/build_skill.py validate <图文件或目录>   # 结构可疑时
 `{"nodes": [...], "edges": [...]}` 整包对象、混合数组、`.jsonc`、`.jsonl` 都能读；
 猜不准时用 `--nodes` / `--edges` 指定。
 
-### 2. 看有哪些故障入口，敲定英文名
+### 2. 看有哪些故障场景，敲定英文名
 
 ```bash
 python3 scripts/build_skill.py list <图文件或目录>
 ```
 
-列出每个 symptom 的 `node_id`、规模、触发说法和一个机械生成的建议 slug。
+列出每个「症状 × 诊断单元」场景的 `node_id`、单元号、规模、触发说法、建议 slug
+和现成的生成命令。**一次只做一个场景**；一个症状下有多个单元时，逐个确认要不要生成。
 
 **模板要求 `name` 是英文 slug，而图谱里的症状名多为中文——不要音译。**
 按症状语义拟一个英文名（`IS-IS邻居无法建立` → `isis-neighbor-down`），
@@ -53,14 +56,18 @@ python3 scripts/build_skill.py list <图文件或目录>
 
 ### 3. 生成
 
-一个入口一份：
+一个场景一份（`--unit` 从 `list` 的输出里抄）：
 
 ```bash
 python3 scripts/build_skill.py build <图文件或目录> \
-    --entry symptom_7f1c --name isis-neighbor-down --out out/isis-neighbor-down
+    --entry symptom_7f1c --unit 28.21.3 \
+    --name isis-neighbor-down --out out/isis-neighbor-down
 ```
 
-批量（每个入口一个子目录）：
+症状横跨多个诊断单元又没给 `--unit` 时，命令会**报错并列出可选单元**——这是有意的，
+不要用 `--all-units` 绕过去，除非用户明确要一份合并版。
+
+批量（每个场景一个子目录）：
 
 ```bash
 python3 scripts/build_skill.py build-all <图文件或目录> --out out/ --names names.json
@@ -68,6 +75,9 @@ python3 scripts/build_skill.py build-all <图文件或目录> --out out/ --names
 
 子图大、只想要其中一块时，先用 `--root` / `--section` / `--vendor` / `--query` / `--depth`
 把范围收窄（见 [`reference/cli.md`](reference/cli.md)）。先加 `--dry-run` 看会写出什么。
+
+**必须用脚本生成，不要照着模板手写文档。** 手写会漏掉命令去重、案例内容剔除、
+跳转编号一致性这些机器保证的东西——这些恰恰是生成质量的关键。
 
 ### 4. 自检并交付
 
@@ -90,6 +100,18 @@ cp -r <输出目录> ~/.claude/skills/<slug>        # Claude Code（全局）
 cp -r <输出目录> .opencode/skill/<slug>         # opencode（项目级）
 cp -r <输出目录> ~/.config/opencode/skill/<slug>
 ```
+
+## 四种常见的烂输出，以及生成器怎么防
+
+| 症状 | 成因 | 生成器的处理 |
+| --- | --- | --- |
+| **同一条命令出现几十次** | 图里多个 check 节点跑同一条命令 | 前置检查按命令合并成一条，采集内容取并集；排查步骤只写“复用前置检查步骤 N 回显”，不重复下发 |
+| **步骤里出现 IP、设备名、拓扑** | 案例节点（`example_specific`）带着某次事故的地址与组网 | 默认整体剔除，并在 `reference/evidence.md` 里说明；确需保留时 `--include-example-specific`，且命令旁会标出案例字面量 |
+| **几十个步骤、长度爆炸** | 一个症状合并了多个章节/案例的原因 | 按诊断单元切分（上面第 2、3 步）；`--max-steps` 可再设上限；超过 25 步 lint 会告警 |
+| **场景杂糅（ISIS 里混进 MPLS、BGP）** | 跨单元的边被一并展开 | `--unit` 只保留该单元的关系；无判据又无修复的原因不进正文 |
+
+跑完看一眼输出里的「N 个原因/检查未进入正文」和 lint 告警，把它们如实转告用户——
+剔除了什么、为什么剔除，比假装“全都覆盖到了”有用。
 
 ## 硬性约束
 
@@ -123,3 +145,5 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 - 不要合并同名节点：身份以 `node_id` 为准，同名节点可能范围不同。
 - 不要在生成的 skill 里替用户执行命令；变更类操作要用户确认。
 - 不要用 `--data none` 配查询脚本：脚本会没有数据可读。
+- 不要为了“覆盖全”而用 `--all-units` 把多个诊断单元合成一份：那正是长度爆炸和场景杂糅的来源。
+- 不要手工把案例里的 IP、设备名改成看起来通用的值——那是编造；要么剔除该条目，要么留着并标注。

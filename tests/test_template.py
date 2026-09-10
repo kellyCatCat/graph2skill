@@ -8,6 +8,7 @@ from subkg2skill.playbook import build_playbook
 from subkg2skill.template import (
     NOT_FOUND,
     NO_FIX,
+    BuildPolicy,
     build_doc,
     normalise_command,
     param_display,
@@ -62,7 +63,12 @@ def test_parameters_are_extracted_from_commands():
 
 def test_source_braces_are_rebracketed_without_renaming():
     assert normalise_command("mtu {mtu-value}") == "mtu <mtu-value>"
-    assert normalise_command("interface [if-name]") == "interface <if-name>"
+
+
+def test_cli_optional_syntax_is_left_alone():
+    # 在 CLI 参考语法里 [ ] 表示可选参数，不是占位符
+    command = "display cpu-usage service [ slot slot-id ]"
+    assert normalise_command(command) == command
 
 
 # -- 前置检查 ------------------------------------------------------------
@@ -142,17 +148,39 @@ def test_jump_targets_all_exist(text):
         assert int(target) in steps
 
 
-def test_cause_without_a_criterion_says_so():
+def _undecidable_graph(with_repair: bool):
     nodes = [
         make_node("symptom_a", "symptom", "现象"),
         make_node("cause_b", "cause", "无判据的原因"),
     ]
     edges = [make_edge("edge_1", "has_cause", "symptom_a", "cause_b")]
+    if with_repair:
+        nodes.append(make_node("repair_c", "repair", "修复", attrs={"command_templates": ["undo x"]}))
+        edges.append(make_edge("edge_2", "repaired_by", "cause_b", "repair_c"))
     graph, _ = Graph.from_bundle(RawBundle(nodes=nodes, edges=edges, sources=["t"]))
+    return graph
+
+
+def test_cause_with_neither_criterion_nor_repair_is_left_out():
+    graph = _undecidable_graph(with_repair=False)
     doc = build_doc(graph, build_playbook(graph, graph.nodes["symptom_a"]))
+    assert doc.steps == []
+    assert ("无判据的原因", "既无判定观测也无修复动作") in doc.omitted
+
+
+def test_keep_undecidable_brings_it_back():
+    graph = _undecidable_graph(with_repair=False)
+    doc = build_doc(
+        graph, build_playbook(graph, graph.nodes["symptom_a"]), BuildPolicy(keep_undecidable=True)
+    )
     assert "本子图未给出该原因的判定观测" in doc.steps[0].branches[0].criterion
     assert doc.steps[0].causes == ["无判据的原因"]
-    assert any("未给出判定观测" in cause.evidence for cause in doc.root_causes)
+
+
+def test_a_cause_with_a_repair_is_kept_even_without_a_criterion():
+    graph = _undecidable_graph(with_repair=True)
+    doc = build_doc(graph, build_playbook(graph, graph.nodes["symptom_a"]))
+    assert doc.steps and doc.steps[0].causes == ["无判据的原因"]
 
 
 # -- 根因对照表 ----------------------------------------------------------

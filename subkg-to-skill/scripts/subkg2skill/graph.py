@@ -469,6 +469,40 @@ class Graph:
                     queue.append((neighbour, level + 1))
         return seen
 
+    # -- diagnostic units ------------------------------------------------
+    @staticmethod
+    def unit_matches(section: str, unit: str) -> bool:
+        """Section ids nest with ``.`` (28.21.3) or ``:`` (ipran_battle_tree:s0:r56)."""
+        if not unit:
+            return True
+        if not section:
+            return False
+        return section == unit or section.startswith(unit + ".") or section.startswith(unit + ":")
+
+    def edge_units(self, node_id: str = "", *edge_types: str) -> Dict[str, int]:
+        """How many relations sit in each diagnostic unit (optionally from one node)."""
+        edges = self.out_edges(node_id, *edge_types) if node_id else self.edges
+        counter = Counter(edge.section or "(未标注)" for edge in edges)
+        return dict(counter.most_common())
+
+    def scope_to_unit(self, unit: str, *, include_unscoped: bool = True) -> "Graph":
+        """Keep only relations belonging to *unit*.
+
+        A knowledge graph merges one symptom across many chapters and cases, so
+        walking every edge out of it mixes unrelated scenarios into one
+        document.  Scoping to a diagnostic unit is what keeps a generated skill
+        about a single fault.  Relations with no unit of their own are kept by
+        default — they are generic rather than foreign.
+        """
+        if not unit:
+            return self
+        kept = [
+            edge
+            for edge in self.edges
+            if self.unit_matches(edge.section, unit) or (include_unscoped and not edge.section)
+        ]
+        return Graph(self.nodes.values(), kept)
+
     def subgraph(self, node_ids: Iterable[str]) -> "Graph":
         keep = {nid for nid in node_ids if nid in self.nodes}
         nodes = [self.nodes[nid] for nid in keep]

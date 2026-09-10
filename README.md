@@ -2,7 +2,7 @@
 
 本仓库交付**一个 skill**：[`subkg-to-skill/`](subkg-to-skill/)。
 它的作用是——把 JSON 格式的**故障诊断知识图谱子图**（`node.json` + `edge.json`）
-编译成符合模板的**排障 skill**：一个故障入口（symptom）一份，
+编译成符合模板的**排障 skill**：**一个故障场景一份**（场景 = 一个 symptom × 一个诊断单元），
 文档为「入参列表 → 前置检查 → 排查步骤 → 根因对照表」四章节。
 
 ```
@@ -72,8 +72,8 @@ cp -r subkg-to-skill ~/.config/opencode/skill/subkg-to-skill
 S=subkg-to-skill/scripts/build_skill.py
 
 python3 $S inspect examples/subgraph          # 规模与分布
-python3 $S list    examples/subgraph          # 有哪些故障入口，各自建议的 slug
-python3 $S build   examples/subgraph --entry symptom_7f1c \
+python3 $S list    examples/subgraph          # 有哪些故障场景（症状 × 诊断单元）
+python3 $S build   examples/subgraph --entry symptom_7f1c --unit 28.21.3 \
         --name isis-neighbor-down --out out/isis-neighbor-down
 python3 $S lint    out/isis-neighbor-down     # 模板符合性检查
 ```
@@ -105,6 +105,19 @@ python3 <skill>/scripts/kg_query.py stats
 python3 <skill>/scripts/kg_query.py show observation_6b40      # 支持 id 前缀
 python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 ```
+
+## 怎么防住四种烂输出
+
+真图喂进来最容易出的四个问题，生成器各有对策：
+
+| 症状 | 处理 |
+| --- | --- |
+| 同一条命令重复几十次 | 前置检查按命令合并，步骤写“复用前置检查步骤 N 回显” |
+| 步骤里出现 IP、设备名、拓扑 | `example_specific` 条目默认剔除并记录；保留时标出案例字面量 |
+| 几十个步骤、长度爆炸 | 按诊断单元切分场景；`--max-steps` 兜底；>25 步 lint 告警 |
+| 场景杂糅（ISIS 里混进 MPLS/BGP） | `--unit` 只保留该单元的关系；无判据又无修复的原因不进正文 |
+
+剔除了什么、为什么剔除，都写在生成物的 `reference/evidence.md` 里，不会静默丢失。
 
 ## 关键取舍：不把候选知识写成结论
 
@@ -139,7 +152,8 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `subkg-to-skill/scripts/build_skill.py` | 生成器入口 |
 | `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 模板渲染 / lint |
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
-| `tests/` | pytest 用例（193 个） |
+| `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
+| `tests/` | pytest 用例（218 个） |
 
 ## 开发
 

@@ -23,7 +23,7 @@ from subkg2skill import describe, schema
 from subkg2skill.condition import describe_edge_condition
 from subkg2skill.graph import Graph, Node, _text
 from subkg2skill.playbook import Playbook
-from subkg2skill.template import build_doc, render_doc
+from subkg2skill.template import BuildPolicy, build_doc, render_doc
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 MAX_DESCRIPTION = 1024
@@ -52,12 +52,25 @@ class BuildOptions:
     include_script: bool = True
     include_lead: bool = True
     sources: Sequence[str] = ()
+    unit: str = ""
+    include_example_specific: bool = False
+    keep_undecidable: bool = False
+    max_steps: int = 0
+
+    def policy(self) -> BuildPolicy:
+        return BuildPolicy(
+            include_example_specific=self.include_example_specific,
+            keep_undecidable=self.keep_undecidable,
+            max_steps=self.max_steps,
+        )
 
 
 @dataclass
 class SkillPackage:
     files: Dict[str, str] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
+    #: What the finished document actually contains, after merging and pruning.
+    stats: Dict[str, int] = field(default_factory=dict)
 
     def write(self, out_dir: Path, *, force: bool = False) -> List[Path]:
         """Write every file under *out_dir*; refuse to clobber without ``force``."""
@@ -84,7 +97,7 @@ def normalise_name(name: str) -> str:
     return slug[:64].strip("-")
 
 
-def suggested_slug(symptom: Node) -> str:
+def suggested_slug(symptom: Node, unit: str = "") -> str:
     """A valid fallback slug — ASCII fragments of the name plus the id tail.
 
     It is deliberately not a translation: Chinese symptom names cannot be turned
@@ -93,7 +106,9 @@ def suggested_slug(symptom: Node) -> str:
     """
     hint = re.sub(r"[^a-z0-9]+", "-", symptom.name.lower()).strip("-")
     tail = symptom.node_id.split("_", 1)[-1][:8]
-    return normalise_name(f"{hint}-{tail}" if hint else f"fault-{tail}")
+    unit_hint = re.sub(r"[^a-z0-9]+", "-", unit.lower()).strip("-")
+    base = f"{hint}-{tail}" if hint else f"fault-{tail}"
+    return normalise_name(f"{base}-{unit_hint}" if unit_hint else base)
 
 
 def default_description(symptom: Node) -> str:
@@ -139,7 +154,12 @@ def _node_evidence_block(node: Node, limit: int) -> List[str]:
     return lines
 
 
-def render_evidence(graph: Graph, playbook: Playbook, options: BuildOptions) -> str:
+def render_evidence(
+    graph: Graph,
+    playbook: Playbook,
+    options: BuildOptions,
+    omitted: Sequence = (),
+) -> str:
     """Everything the four sections deliberately leave out: sources and caveats."""
     symptom = playbook.symptom
     lines = [
@@ -152,6 +172,7 @@ def render_evidence(graph: Graph, playbook: Playbook, options: BuildOptions) -> 
         f"- 生成时间（UTC）：{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}",
         f"- 输入：{'、'.join(options.sources) or '(未记录)'}",
         f"- 本切片：节点 {len(graph)}、关系 {len(graph.edges)}",
+        f"- 诊断单元：{options.unit or '（未按诊断单元收窄）'}",
         "",
         "## 症状",
         "",
@@ -207,6 +228,16 @@ def render_evidence(graph: Graph, playbook: Playbook, options: BuildOptions) -> 
         lines += ["## 转交 / 升级", ""]
         for escalation in {node.node_id: node for node in escalations}.values():
             lines += _node_evidence_block(escalation, options.evidence_limit)
+
+    if omitted:
+        lines += ["## 未进入正文的条目", "", "以下内容留在子图里但没有写进四章节，原因如下：", ""]
+        lines += [f"- {name}：{reason}" for name, reason in omitted]
+        lines += [
+            "",
+            "带 `example_specific` 的条目描述的是某次案例的地址、设备名与组网，换一张网就不成立；"
+            "确需保留时用 `--include-example-specific` 重新生成。",
+            "",
+        ]
 
     lines += [
         "## 读法提醒",
@@ -267,12 +298,23 @@ def build_package(graph: Graph, playbook: Playbook, options: BuildOptions) -> Sk
         description = description[: MAX_DESCRIPTION - 1]
 
     slice_graph = graph.subgraph(playbook.covered)
-    doc = build_doc(slice_graph, playbook)
-    package = SkillPackage(notes=list(doc.notes))
+    doc = build_doc(slice_graph, playbook, options.policy())
+    doc.unit = options.unit
+    package = SkillPackage(
+        notes=list(doc.notes),
+        stats={
+            "prechecks": len(doc.prechecks),
+            "steps": len(doc.steps),
+            "root_causes": len(doc.root_causes) - 1,  # 不含「未找到根因」兜底行
+            "omitted": len(doc.omitted),
+        },
+    )
     package.files["SKILL.md"] = render_doc(
         doc, name=name, description=description, lead=LEAD if options.include_lead else ""
     )
-    package.files["reference/evidence.md"] = render_evidence(slice_graph, playbook, options)
+    package.files["reference/evidence.md"] = render_evidence(
+        slice_graph, playbook, options, doc.omitted
+    )
     if options.data_mode != "none":
         package.files["reference/subgraph.json"] = render_data(slice_graph, options)
     elif options.include_script:

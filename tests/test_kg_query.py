@@ -38,7 +38,8 @@ def run(skill_dir, *args):
 
 def test_stats_reports_the_bundled_counts(skill_dir):
     output = run(skill_dir, "stats")
-    assert "节点：17；关系：26" in output
+    # 该 skill 只带自己那个诊断单元的切片，不是整张图
+    assert "节点：17；关系：25" in output
     assert "candidate" in output
 
 

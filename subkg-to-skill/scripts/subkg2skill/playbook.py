@@ -272,6 +272,63 @@ def entry_symptoms(graph: Graph) -> List[Node]:
     return sorted(graph.of_type("symptom"), key=weight)
 
 
+@dataclass
+class Scenario:
+    """One fault entry inside one diagnostic unit — the unit of a skill."""
+
+    symptom: Node
+    unit: str
+    causes: int
+    checks: int
+
+    @property
+    def key(self) -> str:
+        return f"{self.symptom.node_id}@{self.unit}" if self.unit else self.symptom.node_id
+
+
+def entry_scenarios(graph: Graph, *, min_causes: int = 0) -> List[Scenario]:
+    """Split every entry symptom by the diagnostic units its relations live in.
+
+    One symptom in a merged graph can carry causes from dozens of chapters and
+    cases; each of those is a separate troubleshooting scenario, and turning
+    them into one document is what produces hundred-step skills.
+    """
+    scenarios: List[Scenario] = []
+    for symptom in entry_symptoms(graph):
+        # Count straight off the symptom's own edges — scoping the whole graph
+        # once per scenario turns a 17k-edge export into an O(n²) build.
+        causes: Dict[str, int] = {}
+        checks: Dict[str, int] = {}
+        unscoped_causes = 0
+        unscoped_checks = 0
+        for edge in graph.out_edges(symptom.node_id, "has_cause", "diagnosed_by"):
+            bucket = causes if edge.edge_type == "has_cause" else checks
+            if edge.section:
+                bucket[edge.section] = bucket.get(edge.section, 0) + 1
+            elif edge.edge_type == "has_cause":
+                unscoped_causes += 1
+            else:
+                unscoped_checks += 1
+        units = set(causes) | set(checks)
+        if not units:
+            units = {""}
+        for unit in units:
+            # Relations with no unit of their own stay in every scenario.
+            count = causes.get(unit, 0) + unscoped_causes
+            if count < min_causes:
+                continue
+            scenarios.append(
+                Scenario(
+                    symptom=symptom,
+                    unit=unit,
+                    causes=count,
+                    checks=checks.get(unit, 0) + unscoped_checks,
+                )
+            )
+    scenarios.sort(key=lambda s: (-s.causes, s.symptom.name, s.unit))
+    return scenarios
+
+
 def build_playbooks(graph: Graph, *, limit: int = 0) -> List[Playbook]:
     """Build playbooks for every symptom (or the first *limit* entry points)."""
     symptoms = entry_symptoms(graph)

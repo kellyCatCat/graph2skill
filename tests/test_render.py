@@ -121,7 +121,7 @@ def test_notes_report_an_empty_section(example_graph):
     other = example_graph.nodes["symptom_2ad4471b8c0f4e2ab7d31f55"]
     playbook = build_playbook(example_graph, other)
     package = build_package(example_graph, playbook, BuildOptions(name="x"))
-    assert any("没有候选原因" in note for note in package.notes)
+    assert any("没有可展开的候选原因" in note for note in package.notes)
 
 
 def test_names_are_normalised_or_rejected():

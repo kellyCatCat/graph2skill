@@ -8,15 +8,16 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 | 子命令 | 用途 | 退出码 |
 | --- | --- | --- |
-| `list` | 列出故障入口（symptom）、规模、触发说法与建议 slug | 0 / 2 |
-| `build` | 为**一个**故障入口生成 skill | 0 成功；1 模板检查有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
-| `build-all` | 给每个故障入口各生成一份 skill | 同上 |
+| `list` | 列出故障场景（症状 × 诊断单元）、规模、触发说法、建议 slug 与生成命令 | 0 / 2 |
+| `build` | 为**一个**故障场景生成 skill | 0 成功；1 模板检查有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
+| `build-all` | 给每个故障场景各生成一份 skill | 同上 |
 | `inspect` | 看规模、类型分布、章节、质量标记 | 0 / 2 |
 | `validate` | 只做结构校验 | 0 无错误；1 有错误；2 输入错误 |
 | `lint` | 检查已生成的 skill 是否符合模板 | 0 通过；1 有 ERROR |
 
-一个 skill 对应一个故障入口。子图里有多个入口时，`build` 必须用 `--entry` 指定，
-或改用 `build-all`。
+一个 skill 对应一个**故障场景**：一个 symptom × 一个诊断单元。子图里有多个入口时
+`build` 必须用 `--entry` 指定；症状横跨多个诊断单元时必须用 `--unit` 指定其一
+（或 `--all-units` 明确要合并，代价是场景杂糅与长度爆炸）。
 
 ## 输入
 
@@ -55,6 +56,9 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--data full\|slim\|none` | `full` | `slim` 去掉 `canonical_key`、`semantic_review` 等簿记字段并截断证据；`none` 不带数据（查询脚本会无数据可读） |
 | `--no-script` | 关 | 不生成 `scripts/kg_query.py` |
 | `--no-lead` | 关 | 不在 frontmatter 后加指向 `reference/` 的提示行 |
+| `--include-example-specific` | 关 | 保留 `example_specific` 条目（含案例地址、设备名与组网）；默认剔除并记进 evidence.md |
+| `--keep-undecidable` | 关 | 保留既无判定观测也无修复动作的原因（默认剔除，这类步骤没有信息量） |
+| `--max-steps N` | 0（不限） | 排查步骤上限；被截掉的原因会记进 evidence.md，不会静默丢失 |
 | `--force` | 关 | 覆盖已有目录 |
 | `--dry-run` | 关 | 只打印将写出的文件与模板检查结果，不落盘 |
 
@@ -63,6 +67,8 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | 参数 | 说明 |
 | --- | --- |
 | `--entry VALUE` | 入口症状：`node_id`、id 前缀或名称关键词。子图里只有一个 symptom 时可省略 |
+| `--unit SECTION` | 诊断单元（章节号如 `28.21`，或案例 ID 如 `case:loop-001`，前缀匹配）。症状横跨多个单元时必填 |
+| `--all-units` | 合并该症状的全部诊断单元；会把多个故障场景写进一份文档，仅在用户明确要求时用 |
 | `--name SLUG` | **必填**，英文技能名（`^[a-z0-9-]+$`）。模板硬性要求，中文名会报错 |
 | `--description TEXT` | frontmatter 描述；不给则由症状的名称、别名、`match_phrases`、`trigger_context` 生成 |
 
@@ -70,8 +76,10 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 | 参数 | 说明 |
 | --- | --- |
-| `--names FILE` | `{node_id: slug}` 的 JSON 映射；没给的入口会用机械 slug 并在结尾列出，提醒改名 |
+| `--names FILE` | `{node_id: slug}` 或 `{"node_id@unit": slug}` 的 JSON 映射；没给的场景会用机械 slug 并在结尾列出，提醒改名 |
 | `--limit N` | 最多生成多少份（0=不限） |
+| `--min-causes N` | 候选原因少于 N 个的场景不生成（默认 1；这类 skill 排查步骤会是空的） |
+| `--all-units` | 每个症状一份，不按诊断单元拆分 |
 
 ### `lint`
 
@@ -82,12 +90,12 @@ python3 scripts/build_skill.py lint <skill 目录或 SKILL.md> [更多路径...]
 ## 例子
 
 ```bash
-# 摸底 + 看入口
+# 摸底 + 看有哪些故障场景
 python3 scripts/build_skill.py inspect /data/kg
 python3 scripts/build_skill.py list /data/kg
 
-# 生成一份（先干跑）
-python3 scripts/build_skill.py build /data/kg --entry symptom_7f1c \
+# 生成一份（先干跑）；--unit 从 list 的输出里抄
+python3 scripts/build_skill.py build /data/kg --entry symptom_7f1c --unit 28.21.3 \
     --name isis-neighbor-down --out out/isis-neighbor-down --dry-run
 
 # 按章节切一块，批量生成并指定英文名
@@ -98,11 +106,12 @@ python3 scripts/build_skill.py build-all /data/node.json /data/edge.json \
 python3 scripts/build_skill.py lint out/isis-neighbor-down
 ```
 
-`names.json` 形如：
+`names.json` 形如（键可以是 `node_id`，也可以是 `node_id@诊断单元` 以区分同一症状的不同场景）：
 
 ```json
 {
-  "symptom_7f1c02aa93be4d61b0c5e210": "isis-neighbor-down",
+  "symptom_7f1c02aa93be4d61b0c5e210@28.21.3": "isis-neighbor-down",
+  "symptom_7f1c02aa93be4d61b0c5e210@4.3.3": "isis-route-flapping",
   "symptom_2ad4471b8c0f4e2ab7d31f55": "service-interruption"
 }
 ```

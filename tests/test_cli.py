@@ -103,8 +103,24 @@ def test_build_all_uses_the_name_mapping(tmp_path, example_dir, capsys):
     )
     out = tmp_path / "all"
     assert main(["build-all", str(example_dir), "--out", str(out), "--names", str(names)]) == 0
-    assert {path.name for path in out.iterdir()} == {"isis-neighbor-down", "service-down"}
+    # 承载业务中断没有 has_cause，排查步骤会是空的，默认跳过并说明
+    assert {path.name for path in out.iterdir()} == {"isis-neighbor-down"}
     assert (out / "isis-neighbor-down" / "SKILL.md").exists()
+    assert "候选原因少于" in capsys.readouterr().out
+
+
+def test_build_all_can_include_causeless_scenarios(tmp_path, example_dir):
+    names = tmp_path / "names.json"
+    names.write_text(
+        json.dumps({ISIS: "isis-neighbor-down", "symptom_2ad4471b8c0f4e2ab7d31f55": "service-down"}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "all"
+    code = main(
+        ["build-all", str(example_dir), "--out", str(out), "--names", str(names), "--min-causes", "0"]
+    )
+    assert code == 0
+    assert {path.name for path in out.iterdir()} == {"isis-neighbor-down", "service-down"}
 
 
 def test_build_all_warns_about_mechanical_slugs(tmp_path, example_dir, capsys):
@@ -115,7 +131,7 @@ def test_build_all_warns_about_mechanical_slugs(tmp_path, example_dir, capsys):
 
 def test_build_all_limit(tmp_path, example_dir):
     out = tmp_path / "all"
-    assert main(["build-all", str(example_dir), "--out", str(out), "--limit", "1"]) == 0
+    assert main(["build-all", str(example_dir), "--out", str(out), "--limit", "1", "--min-causes", "0"]) == 0
     assert len(list(out.iterdir())) == 1
 
 

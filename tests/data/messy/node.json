@@ -1,0 +1,781 @@
+[
+  {
+    "node_id": "symptom_isis",
+    "node_type": "symptom",
+    "canonical_key": "{}",
+    "name": "ISIS故障",
+    "description": "ISIS故障",
+    "aliases": [],
+    "attrs": {
+      "required_slots": [
+        "neName"
+      ],
+      "match_phrases": [
+        "ISIS异常"
+      ],
+      "abnormal_behavior": "ISIS 异常"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      },
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 场景"
+      },
+      {
+        "section": "case:loop-001",
+        "title": "case:loop-001 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "ISIS故障",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_peer_a",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看IS-IS邻居状态",
+    "description": "查看IS-IS邻居状态",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认邻居状态",
+      "command_templates": [
+        "display isis peer"
+      ],
+      "parameters": []
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "查看IS-IS邻居状态",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_peer_b",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "检查邻居是否Up",
+    "description": "检查邻居是否Up",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "判断邻居是否Up",
+      "command_templates": [
+        "display isis peer"
+      ],
+      "parameters": []
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "检查邻居是否Up",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_peer_c",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "复核邻居状态",
+    "description": "复核邻居状态",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "复核邻居状态",
+      "command_templates": [
+        "display isis peer"
+      ],
+      "parameters": []
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "复核邻居状态",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_peer_init",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "邻居停留在Init",
+    "description": "邻居停留在Init",
+    "aliases": [],
+    "attrs": {
+      "field": "邻居状态",
+      "operator": "eq",
+      "value": "Init",
+      "normalized_expression": "邻居状态 == 'Init'"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "邻居停留在Init",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_mtu",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "两端MTU不一致",
+    "description": "两端MTU不一致",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "fault_mechanism": "MTU 不一致导致 LSP 丢弃"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "两端MTU不一致",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_mtu",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "统一两端MTU",
+    "description": "统一两端MTU",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration_change",
+      "command_templates": [
+        "interface {interface-type}{interface-number}",
+        "mtu {mtu-value}"
+      ],
+      "procedure": [
+        "修改两端 MTU"
+      ],
+      "service_impact": "接口重启会中断业务",
+      "rollback": "恢复原 MTU"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "统一两端MTU",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_bare",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "疑似底层故障",
+    "description": "疑似底层故障",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "other"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "疑似底层故障",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_level",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "Level不匹配",
+    "description": "Level不匹配",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "Level不匹配",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "repair_level",
+    "node_type": "repair",
+    "canonical_key": "{}",
+    "name": "调整Level",
+    "description": "调整Level",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration",
+      "procedure": [
+        "修改两端 is-level，\n使其一致 | 注意先确认规划"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "调整Level",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_level",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "Level不匹配计数增长",
+    "description": "Level不匹配计数增长",
+    "aliases": [],
+    "attrs": {
+      "field": "Mismatched Level",
+      "operator": "gt",
+      "value": 0,
+      "normalized_expression": "Mismatched Level 计数增长"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "Level不匹配计数增长",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_error",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看错误报文统计",
+    "description": "查看错误报文统计",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认报文校验丢弃原因",
+      "command_templates": [
+        "display isis error interface {interface-type}{interface-number}"
+      ],
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "查看错误报文统计",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_bgp_case",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "在DeviceB上查看BGP路由表",
+    "description": "在DeviceB上查看BGP路由表",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "确认DeviceB优选了来自DeviceE的路由",
+      "command_templates": [
+        "display bgp routing-table 10.10.10.10"
+      ],
+      "parameters": [],
+      "example_specific": true
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "case:loop-001",
+        "title": "case:loop-001 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "在DeviceB上查看BGP路由表",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_bgp_case",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "DeviceB优选5.5.5.5的路由",
+    "description": "DeviceB优选5.5.5.5的路由",
+    "aliases": [],
+    "attrs": {
+      "field": "best",
+      "operator": "eq",
+      "value": true,
+      "normalized_expression": "DeviceB BGP路由表中10.10.10.10/32的best为true",
+      "example_specific": true
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "case:loop-001",
+        "title": "case:loop-001 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "DeviceB优选5.5.5.5的路由",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_med_case",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "MED值配置不当导致路由优选错误",
+    "description": "MED值配置不当导致路由优选错误",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "fault_mechanism": "案例中 MED 配置不当",
+      "example_specific": true
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "case:loop-001",
+        "title": "case:loop-001 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "MED值配置不当导致路由优选错误",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "check_cpu",
+    "node_type": "check",
+    "canonical_key": "{}",
+    "name": "查看CPU占用率",
+    "description": "查看CPU占用率",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "intent": "查看各服务 CPU 占用",
+      "command_templates": [
+        "display cpu-usage service [ slot slot-id ]"
+      ],
+      "parameters": []
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "查看CPU占用率",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "observation_cpu",
+    "node_type": "observation",
+    "canonical_key": "{}",
+    "name": "ISIS服务CPU占用率高",
+    "description": "ISIS服务CPU占用率高",
+    "aliases": [],
+    "attrs": {
+      "field": "CPU占用率",
+      "operator": "gt",
+      "value": 80,
+      "normalized_expression": "ISIS 服务 CPU 占用率 > 阈值"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "ISIS服务CPU占用率高",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  },
+  {
+    "node_id": "cause_flap",
+    "node_type": "cause",
+    "canonical_key": "{}",
+    "name": "ISIS路由震荡",
+    "description": "ISIS路由震荡",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "protocol_or_route_error",
+      "fault_mechanism": "震荡消耗 CPU"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 场景"
+      }
+    ],
+    "provenance": [
+      {
+        "document": "手册.pdf",
+        "block_id": "b1",
+        "quote": "ISIS路由震荡",
+        "char_start": 0,
+        "char_end": 1,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct"
+      }
+    ],
+    "quality_flags": []
+  }
+]
