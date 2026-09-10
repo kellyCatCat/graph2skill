@@ -200,3 +200,90 @@ def test_dry_run_lists_the_scenarios(tmp_path, capsys):
     output = capsys.readouterr().out
     assert "场景A：" in output and "场景B：" in output
     assert not out.exists()
+
+
+# -- 阶段三：生成前规划 ---------------------------------------------------
+def test_plan_counts_what_the_document_would_hold(scenarios):
+    from subkg2skill.plan import plan_document
+
+    graph, named = scenarios
+    doc = build_multi_doc(graph, named)
+    plan = plan_document(doc)
+    assert [p.label for p in plan.scenarios] == ["A", "B"]
+    assert plan.steps == sum(len(s.steps) for s in doc.scenarios)
+    assert plan.prechecks == len(doc.prechecks)
+    # 修复命令数只数真有命令的根因
+    scenario_a = plan.scenarios[0]
+    assert scenario_a.fix_commands >= 1
+    assert plan.scenarios[1].fix_commands == 0
+
+
+def test_plan_records_which_prechecks_a_scenario_reads(scenarios):
+    from subkg2skill.plan import plan_document
+
+    graph, named = scenarios
+    plan = plan_document(build_multi_doc(graph, named))
+    assert plan.scenarios[0].prechecks  # 场景A 复用了公共采集
+    assert all(1 <= number <= plan.prechecks for s in plan.scenarios for number in s.prechecks)
+
+
+def test_plan_flags_a_scenario_contained_in_another(scenarios):
+    from subkg2skill.plan import plan_document
+
+    graph, named = scenarios
+    plan = plan_document(build_multi_doc(graph, named))
+    messages = " ".join(hint.message for hint in plan.hints)
+    assert "全部也出现在" in messages and "可考虑并入" in messages
+
+
+def test_plan_flags_a_cause_investigated_twice(scenarios):
+    from subkg2skill.plan import plan_document
+
+    graph, named = scenarios
+    plan = plan_document(build_multi_doc(graph, named))
+    messages = " ".join(hint.message for hint in plan.hints)
+    assert "同一个根因在多处各排一遍" in messages
+
+
+def test_plan_of_a_single_clean_scenario_has_nothing_to_suggest(scenarios):
+    from subkg2skill.plan import plan_document
+
+    graph, named = scenarios
+    plan = plan_document(build_multi_doc(graph, named[:1]))
+    assert [hint for hint in plan.hints if hint.kind == "scenario"] == []
+
+
+def test_plan_lists_what_was_dropped(scenarios):
+    from subkg2skill.plan import plan_document, render_plan
+
+    graph, named = scenarios
+    plan = plan_document(build_multi_doc(graph, named))
+    rendered = "\n".join(render_plan(plan))
+    assert "生成规划（未写盘" in rendered
+    assert "| **合计** |" in rendered
+
+
+def test_plan_command_runs_on_the_automatic_grouping(capsys):
+    assert main(["plan", str(MULTI)]) == 0
+    output = capsys.readouterr().out
+    assert "生成规划" in output and "自动分组" in output
+    assert "还能再合并的地方" in output
+
+
+def test_plan_command_reads_a_manifest(tmp_path, capsys):
+    manifest = tmp_path / "scenarios.json"
+    main(["list", str(MULTI), "--export-scenarios", str(manifest)])
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["name"] = "isis-troubleshooting"
+    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+
+    assert main(["plan", str(MULTI), "--scenarios", str(manifest)]) == 0
+    output = capsys.readouterr().out
+    assert "场景清单" in output and "isis-troubleshooting" in output
+
+
+def test_plan_writes_nothing(tmp_path):
+    before = set(tmp_path.iterdir())
+    main(["plan", str(MULTI)])
+    assert set(tmp_path.iterdir()) == before

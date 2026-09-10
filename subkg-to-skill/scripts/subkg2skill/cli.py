@@ -40,7 +40,8 @@ from subkg2skill.render import (
     normalise_name,
     suggested_slug,
 )
-from subkg2skill.template import scenario_label
+from subkg2skill.plan import plan_document, render_plan
+from subkg2skill.template import build_multi_doc, scenario_label
 
 
 def _add_input_arguments(parser: argparse.ArgumentParser) -> None:
@@ -495,17 +496,14 @@ def _load_manifest(path: Path) -> Dict:
     return manifest
 
 
-def cmd_build_scenarios(args, graph: Graph, sources) -> int:
-    """One document covering several faults off a shared collection phase."""
-    manifest = _load_manifest(Path(args.scenarios))
-    name = args.name or manifest.get("name") or ""
-    if not name or name.startswith("<"):
-        raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
-
+def _scenarios_from_manifest(graph: Graph, path: Path) -> Tuple[str, str, List[Tuple[str, object]], List[str]]:
+    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元)."""
+    manifest = _load_manifest(path)
     units: List[str] = []
     for entry in manifest["scenarios"]:
         units += [unit for unit in entry.get("units") or [] if unit]
-    scoped = graph.scope_to_units(list(dict.fromkeys(units))) if units else graph
+    units = list(dict.fromkeys(units))
+    scoped = graph.scope_to_units(units) if units else graph
 
     named: List[Tuple[str, object]] = []
     for index, entry in enumerate(manifest["scenarios"]):
@@ -518,10 +516,81 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
             scoped.scope_to_units(unit_scope) if unit_scope else scoped, symptoms, unit_scope
         )
         named.append((entry.get("name") or symptoms[0].name, playbook))
+    return manifest.get("name", ""), manifest.get("description", ""), named, units
+
+
+def _scenarios_from_groups(graph: Graph, args) -> Tuple[List[Tuple[str, object]], List[str]]:
+    """Fall back to the automatic grouping when no manifest is given."""
+    groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
+    if args.limit:
+        groups = groups[: args.limit]
+    if not groups:
+        raise RenderError("子图里没有可生成的故障场景")
+    units = list(dict.fromkeys(unit for group in groups for unit in group.units))
+    scoped = graph.scope_to_units(units) if units else graph
+    named = [
+        (
+            group.name,
+            build_merged_playbook(
+                scoped.scope_to_units(group.units) if group.units else scoped,
+                group.symptoms,
+                group.units,
+            ),
+        )
+        for group in groups
+    ]
+    return named, units
+
+
+def cmd_plan(args) -> int:
+    """Phase 3: what would actually be written, and what could still be folded."""
+    graph, report, sources = _load_graph(args)
+    graph = _select(graph, args)
+    if args.scenarios:
+        name, _description, named, units = _scenarios_from_manifest(graph, Path(args.scenarios))
+        source = f"场景清单 {args.scenarios}"
+    else:
+        named, units = _scenarios_from_groups(graph, args)
+        name = ""
+        source = "自动分组（未用场景清单）"
+    scoped = graph.scope_to_units(units) if units else graph
+
+    policy = BuildOptions(
+        include_example_specific=args.include_example_specific,
+        keep_undecidable=args.keep_undecidable,
+        max_steps=args.max_steps,
+    ).policy()
+    doc = build_multi_doc(scoped, named, policy)
+    plan = plan_document(doc)
+
+    print(f"输入：{'、'.join(sources)}")
+    print(f"编排来源：{source}" + (f"；技能名 {name}" if name and not name.startswith("<") else ""))
+    print()
+    for line in render_plan(plan, limit=args.limit or 20):
+        print(line)
+    if report.issues:
+        print(f"载入时有 {len(report.issues)} 条告警/丢弃，生成后见 reference/evidence.md")
+    if not args.scenarios:
+        print(
+            "把编排固化下来：list --export-scenarios scenarios.json（改名/调整分组）"
+            "→ plan --scenarios scenarios.json → build --scenarios scenarios.json"
+        )
+    return 0
+
+
+def cmd_build_scenarios(args, graph: Graph, sources) -> int:
+    """One document covering several faults off a shared collection phase."""
+    manifest_name, manifest_description, named, units = _scenarios_from_manifest(
+        graph, Path(args.scenarios)
+    )
+    name = args.name or manifest_name or ""
+    if not name or name.startswith("<"):
+        raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
+    scoped = graph.scope_to_units(units) if units else graph
 
     options = BuildOptions(
         name=name,
-        description=args.description or manifest.get("description", ""),
+        description=args.description or manifest_description,
         evidence_limit=args.evidence,
         data_mode=args.data,
         include_script=not args.no_script,
@@ -765,6 +834,22 @@ def build_parser() -> argparse.ArgumentParser:
     _add_input_arguments(validate)
     validate.add_argument("--limit", type=int, default=50, help="最多打印多少条明细")
     validate.set_defaults(func=cmd_validate)
+
+    plan = sub.add_parser(
+        "plan", help="生成前预览：每个场景的步骤/根因/修复命令数，以及还能合并什么"
+    )
+    _add_input_arguments(plan)
+    _add_selection_arguments(plan)
+    plan.add_argument("--scenarios", default="", help="场景清单 JSON；不给则用自动分组")
+    plan.add_argument("--limit", type=int, default=20, help="提示最多列出多少条")
+    plan.add_argument("--min-causes", type=int, default=1, help="自动分组时的最小候选原因数")
+    plan.add_argument("--no-merge", action="store_true", help="自动分组时不跨来源归并")
+    plan.add_argument(
+        "--include-example-specific", action="store_true", help="保留 example_specific 条目"
+    )
+    plan.add_argument("--keep-undecidable", action="store_true", help="保留既无判据也无修复的原因")
+    plan.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
+    plan.set_defaults(func=cmd_plan)
 
     lint = sub.add_parser("lint", help="检查已生成的 skill 是否符合模板")
     lint.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")

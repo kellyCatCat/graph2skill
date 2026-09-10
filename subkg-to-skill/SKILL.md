@@ -25,109 +25,105 @@ confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to�
 模板细则见 [`reference/skill-template.md`](reference/skill-template.md)，**这是硬性要求**。
 生成过程不调用大模型：内容由数据直接展开，可重复、可比对、可追溯。
 
-## 使用流程
+## 使用流程（三段，不要跳段）
 
-### 1. 摸底
+### 阶段一 · 数据摸底
+
+先看清楚手里是什么，再谈生成。
 
 ```bash
-python3 scripts/build_skill.py inspect <图文件或目录>
-python3 scripts/build_skill.py validate <图文件或目录>   # 结构可疑时
+python3 scripts/build_skill.py inspect <图文件或目录>     # 节点/边分布、诊断单元、厂商、质量标记、孤立节点
+python3 scripts/build_skill.py validate <图文件或目录>    # 结构校验；有错误退出码为 1
 ```
 
-看清楚节点/关系分布、诊断单元、厂商范围、质量标记、孤立节点。
-悬空边与端点类型非法的边会被丢弃；`--strict` 让这类问题直接中止。
+要回答的问题：六类节点各多少、十一类边各多少、覆盖哪些诊断单元与来源、
+有没有大量 `example_specific` 或 `ocr_only` 之类的质量标记、悬空边有多少。
+悬空边和端点类型非法的边会被丢弃并记进产物；`--strict` 让这类问题直接中止。
 
 文件形状不用纠结：目录（自动识别 `node*.json` / `edge*.json`）、两个数组文件、
 `{"nodes": [...], "edges": [...]}` 整包对象、混合数组、`.jsonc`、`.jsonl` 都能读；
 猜不准时用 `--nodes` / `--edges` 指定。
 
-### 2. 看有哪些故障场景，敲定英文名
+### 阶段二 · 语义判断与编排
+
+这一段是**人和你一起做判断**，工具只提供证据。
 
 ```bash
-python3 scripts/build_skill.py list <图文件或目录>
+python3 scripts/build_skill.py list <图>                    # 故障分组（默认已跨来源归并）
+python3 scripts/build_skill.py list <图> --show-causes      # 每组的根因按来源列出 → 判断该不该拆
+python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但根因高度重叠 → 判断该不该合
 ```
 
-`list` 默认已经**按故障跨来源归并**：手册的「IS-IS邻居无法建立」、作战树的「ISIS邻居无法建立」、
-案例库的同名条目会并成一个故障，规模是三者之和，生成命令里带上全部 `--entry` 和 `--unit`。
-拼写差异（IS-IS / ISIS / 大小写 / 空格）不构成两个故障。
+要做的三类决策：
 
-**合并只跨来源节点，不跨同一节点的多个诊断单元**——后者是"一个症状节点挂了几十个章节的原因"，
-合并回去就又变成上百步的怪物。`--no-merge` 可以退回逐场景列出。
+| 决策 | 依据 | 怎么落实 |
+| --- | --- | --- |
+| **合并**：同一故障被多来源各写一遍 | `list` 已自动归并同名；`--suggest-merge` 给名字不同但根因重叠的候选 | 多个 `--entry`，或把它们写进同一个场景 |
+| **拆分**：一组里混了两类故障（如"中断"和"震荡"） | `--show-causes` 看根因是否分属两个技术域 | 拆成两个场景，各自 `--unit` / `--entry` |
+| **剔除**：案例特定内容、没有判据也没有修复的原因 | 默认就剔除并记录；`plan` 会列出剔除清单 | 需要保留时才加 `--include-example-specific` / `--keep-undecidable` |
 
-合并组是否合理，用 `list --show-causes` 看**每个来源各自贡献了哪些根因**：
-一组里如果两拨根因分属不同技术域（如一边是 MTU/认证、另一边是 BFD/定时器），
-那是两个故障被并到了一起，应该拆开分别生成。
-
-名字不同、实为一事的（如「协议邻居关系无法建立」与「ISIS邻居无法建立」）自动归并抓不到，
-用 `list --suggest-merge`：它按**根因重叠度 + 共用命令**找出候选并给出可直接执行的合并命令。
-**这只是建议，合不合由你和用户判断**——根因名字相近不代表修复相同
-（「MTU 两端不一致」和「MTU 小于 Hello 报文长度」的修复就不同）。不要按命令行合并故障：
-命令是手段不是故障，`display isis peer` 横跨十几个故障，按它聚类就是场景杂糅。
-
-**模板要求 `name` 是英文 slug，而图谱里的症状名多为中文——不要音译。**
-按症状语义拟一个英文名（`IS-IS邻居无法建立` → `isis-neighbor-down`），
-入口多时和用户确认命名，或整理成 `{node_id: slug}` 的 JSON 映射。
-
-### 3. 生成
-
-一个故障一份，命令直接抄 `list` 给的那行（`--entry` 和 `--unit` 都可重复）：
-
-```bash
-python3 scripts/build_skill.py build <图文件或目录> \
-    --entry symptom_manual --entry symptom_tree --entry symptom_case \
-    --unit 17.4.1 --unit ipran_battle_tree:s0:r159 --unit ipran_icase \
-    --name isis-neighbor-down --out out/isis-neighbor-down
-```
-
-只给一个 `--entry` 时，如果别的来源还有同名症状，命令会提示你加 `--merge-same-name`
-（自动把同名症状及其单元并进来）。合并后同名的根因会折成一步，
-判据取并集、修复取并集——手册给判据、案例给修复的情况就是这样补全的。
-
-症状横跨多个诊断单元又没给 `--unit` 时，命令会**报错并列出可选单元**——这是有意的，
-不要用 `--all-units` 绕过去，除非用户明确要一份合并版。
-
-批量（每个场景一个子目录）：
-
-```bash
-python3 scripts/build_skill.py build-all <图文件或目录> --out out/ --names names.json
-```
-
-**多个故障合成一份（公共前置检查 + 场景跳转表）**：用户想要"一个 ISIS skill"而不是八份时用这个。
-先导出场景清单，改好中文场景名和英文技能名，再按清单生成：
+判断完把编排固化成场景清单，后面两段都用它：
 
 ```bash
 python3 scripts/build_skill.py list <图> --export-scenarios scenarios.json
-# 编辑 scenarios.json：填 name（英文 slug）、按需调整每个场景的 name/entries/units、删掉不要的场景
-python3 scripts/build_skill.py build <图> --scenarios scenarios.json --out out/isis-troubleshooting
+# 编辑 scenarios.json：填英文技能名 name、改中文场景名、按判断结果拆/并 entries 与 units、删掉不要的场景
 ```
 
-产物形态：公共前置检查（跨场景按命令去重）→ `## 场景跳转表` → 每个场景
-`### 场景A：xxx` + `#### 步骤1…`（**场景内从 1 计数**）→ 根因对照表按场景分节。
-细则见 [`reference/skill-template.md`](reference/skill-template.md)。
+### 阶段三 · 生成前规划
 
-**什么时候用哪种**：场景之间共用大量前置检查、用户希望一个入口 → 合成一份；
-场景之间几乎不共用命令、或合并后步骤超过 25 步 → 各自一份。
+**先 plan 再 build。** `list` 数的是图上有什么，`plan` 数的是**文档里实际会有什么**——
+剔除、按命令去重、按名称折叠根因都已经算进去了。
 
-子图大、只想要其中一块时，先用 `--root` / `--section` / `--vendor` / `--query` / `--depth`
-把范围收窄（见 [`reference/cli.md`](reference/cli.md)）。先加 `--dry-run` 看会写出什么。
+```bash
+python3 scripts/build_skill.py plan <图> --scenarios scenarios.json
+```
+
+```
+| 场景 | 步骤 | 根因 | 修复命令 | 复用的公共前置检查 |
+| 场景A：IS-IS 邻居无法建立 | 4 | 4 | 4 | 步骤 1、步骤 2 |
+| 场景B：协议邻居关系无法建立 | 3 | 3 | 0 | 步骤 1 |
+| **合计** | **7** | **7** | **4** | 公共前置检查 2 条 |
+
+还能再合并的地方（只是提示，合不合由你判断）：
+  - 场景B 的 3 个根因全部也出现在 场景A，可考虑并入（合并后少一个场景）
+  - 同一个根因在多处各排一遍：场景A 的「检查MTU不一致」；场景B 的「检查MTU不一致」
+```
+
+看三件事，不满意就回阶段二改清单再 plan：
+
+1. **每个场景的步骤数**：超过 10 步多半还能拆；只有 1 步且修复命令为 0 的场景考虑并掉或不做。
+2. **修复命令数为 0 的场景**：生成出来只能定位不能处置，要么先不做，要么交付时说清楚。
+3. **合并提示**：根因被完全包含 → 并；同一根因在多个场景各排一遍 → 说明场景边界画错了。
+
+规划满意了再生成：
+
+```bash
+python3 scripts/build_skill.py build <图> --scenarios scenarios.json --out out/isis-troubleshooting
+python3 scripts/build_skill.py lint out/isis-troubleshooting
+```
+
+全部子命令与参数见 [`reference/cli.md`](reference/cli.md)。
+
+单个故障一份（不需要多场景时）：
+
+```bash
+python3 scripts/build_skill.py build <图> --entry symptom_7f1c --unit 28.21.3 \
+    --name isis-neighbor-down --out out/isis-neighbor-down
+```
+
+只给一个 `--entry` 时，若别的来源还有同名症状，命令会提示加 `--merge-same-name`。
+批量：`build-all <图> --out out/ --names names.json`（每个故障一个子目录）。
 
 **必须用脚本生成，不要照着模板手写文档。** 手写会漏掉命令去重、案例内容剔除、
 跳转编号一致性这些机器保证的东西——这些恰恰是生成质量的关键。
 
-### 4. 自检并交付
+### 交付
 
-`build` / `build-all` 会自动跑模板检查；也可以单独跑：
+`build` / `build-all` 会自动跑模板检查。**有 ERROR 必须修到零再交付**；
+WARNING（如"来源未给出修复命令"）如实转告用户，不要自己补命令消灭它。
 
-```bash
-python3 scripts/build_skill.py lint out/isis-neighbor-down
-```
-
-检查四章节顺序、步骤编号连续、跳转目标存在、根因在对照表里逐字可查、
-CLI 参数都在入参列表内、占位符写法、接口名缩写。**有 ERROR 必须修到零再交付**；
-WARNING（如“来源未给出修复命令”）如实转告用户，不要自己补命令消灭它。
-
-回报用户时说清楚三件事：生成了哪些 skill（入口 + 英文名）、模板检查结果、
-以及安装路径（构建命令末尾会打印）：
+回报时说清楚四件事：生成了哪些 skill（场景 + 英文名）、`plan` 的规模数字、
+模板检查结果、以及安装路径（构建命令末尾会打印）：
 
 ```bash
 cp -r <输出目录> .claude/skills/<slug>          # Claude Code（项目级）

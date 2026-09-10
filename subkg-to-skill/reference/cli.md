@@ -6,8 +6,17 @@
 python3 scripts/build_skill.py <子命令> [输入...] [参数]
 ```
 
+按三段流程使用：
+
+| 阶段 | 子命令 |
+| --- | --- |
+| 一 · 数据摸底 | `inspect`、`validate` |
+| 二 · 语义判断与编排 | `list`（`--show-causes` / `--suggest-merge` / `--export-scenarios`） |
+| 三 · 生成前规划与生成 | `plan` → `build` / `build-all` → `lint` |
+
 | 子命令 | 用途 | 退出码 |
 | --- | --- | --- |
+| `plan` | 生成前预览：每个场景实际会有多少步骤/根因/修复命令，以及还能合并什么。不写盘 | 0 / 2 |
 | `list` | 列出故障（默认跨来源归并）、规模、触发说法、建议 slug 与生成命令 | 0 / 2 |
 | `build` | 为**一个**故障场景生成 skill | 0 成功；1 模板检查有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
 | `build-all` | 给每个故障场景各生成一份 skill | 同上 |
@@ -96,6 +105,18 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--export-scenarios FILE` | 把当前分组导出成场景清单 JSON，编辑后交给 `build --scenarios` 生成一份多场景 skill |
 | `--show-causes` | 按来源列出每组的根因清单——判断一个合并组是不是混了两类故障（例如"中断"和"震荡"），最直接的依据 |
 | `--suggest-merge` | 额外报告名字不同但根因高度重叠的故障（默认阈值：共享 ≥2 个根因且重叠度 ≥34%），并给出可直接执行的合并命令。**只建议，不自动合并** |
+
+### `plan` 专有
+
+| 参数 | 说明 |
+| --- | --- |
+| `--scenarios FILE` | 按场景清单规划；不给则用自动分组 |
+| `--limit N` | 提示最多列出多少条（默认 20） |
+| `--min-causes N` / `--no-merge` | 自动分组时的分组参数，与 `list` 同义 |
+| `--include-example-specific` / `--keep-undecidable` / `--max-steps N` | 与 `build` 同义，用来预演剔除策略的效果 |
+
+输出的「步骤 / 根因 / 修复命令」是**文档里实际会有的量**（已算进剔除、命令去重、根因折叠），
+不是图上的原始计数；「复用的公共前置检查」列出该场景的步骤读了哪几条采集步骤。
 
 ### `lint`
 

@@ -68,10 +68,29 @@ cp -r subkg-to-skill ~/.config/opencode/skill/subkg-to-skill
 
 ## 也可以直接当命令行用
 
+三段流程：**摸底 → 判断与编排 → 规划后生成**。
+
 ```bash
 S=subkg-to-skill/scripts/build_skill.py
 
-python3 $S inspect examples/subgraph          # 规模与分布
+# 一 · 摸底
+python3 $S inspect examples/subgraph
+python3 $S validate examples/subgraph
+
+# 二 · 判断与编排（合并 / 拆分 / 剔除），结果固化成场景清单
+python3 $S list examples/subgraph --show-causes      # 该不该拆
+python3 $S list examples/subgraph --suggest-merge    # 该不该合
+python3 $S list examples/subgraph --export-scenarios scenarios.json
+
+# 三 · 生成前规划 → 生成 → 自检
+python3 $S plan  examples/subgraph --scenarios scenarios.json
+python3 $S build examples/subgraph --scenarios scenarios.json --out out/isis
+python3 $S lint  out/isis
+```
+
+单个故障一份：
+
+```bash
 python3 $S list    examples/subgraph          # 有哪些故障场景（症状 × 诊断单元）
 python3 $S build   examples/subgraph --entry symptom_7f1c --unit 28.21.3 \
         --name isis-neighbor-down --out out/isis-neighbor-down
@@ -160,11 +179,11 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `subkg-to-skill/reference/evidence-rules.md` | 措辞对照表 |
 | `subkg-to-skill/reference/cli.md` | CLI 参数全表 |
 | `subkg-to-skill/scripts/build_skill.py` | 生成器入口 |
-| `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 模板渲染 / lint |
+| `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 编排 / 规划 / 模板渲染 / lint |
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
 | `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
 | `tests/data/multisource/` | 同一故障被手册 / 作战树 / 案例库各写一遍的子图，用于验证跨来源合并 |
-| `tests/` | pytest 用例（267 个） |
+| `tests/` | pytest 用例（276 个） |
 
 ## 开发
 
