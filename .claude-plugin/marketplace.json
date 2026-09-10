@@ -1,0 +1,17 @@
+{
+  "name": "graph2skill",
+  "owner": {
+    "name": "kellyCatCat",
+    "url": "https://github.com/kellyCatCat/graph2skill"
+  },
+  "plugins": [
+    {
+      "name": "subkg-to-skill",
+      "source": "./subkg-to-skill",
+      "displayName": "子图 → skill 生成器",
+      "description": "把 JSON 格式的故障诊断知识图谱子图（node.json + edge.json）编译成符合四章节模板的排障 skill：入参列表 / 前置检查 / 排查步骤 / 根因对照表，附出处与查询脚本。",
+      "license": "MIT",
+      "keywords": ["knowledge-graph", "fault-diagnosis", "skill-generator", "ip-ran"]
+    }
+  ]
+}

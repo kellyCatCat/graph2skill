@@ -1,0 +1,12 @@
+{
+  "name": "subkg-to-skill",
+  "description": "把 JSON 格式的故障诊断知识图谱子图（node.json + edge.json）编译成符合四章节模板的排障 skill。",
+  "version": "0.2.0",
+  "author": {
+    "name": "kellyCatCat"
+  },
+  "homepage": "https://github.com/kellyCatCat/graph2skill",
+  "repository": "https://github.com/kellyCatCat/graph2skill",
+  "license": "MIT",
+  "keywords": ["knowledge-graph", "fault-diagnosis", "skill-generator", "ip-ran"]
+}

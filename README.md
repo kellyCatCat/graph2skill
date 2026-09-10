@@ -14,14 +14,54 @@ edge.json ─┘                     选子图 → 按故障     ├── refer
                                                     └── scripts/kg_query.py
 ```
 
-## 装这个 skill
+## 装这个 skill（三选一）
+
+### A. 一条命令安装/更新（推荐，Claude Code + opencode 通用）
 
 ```bash
-cp -r subkg-to-skill .claude/skills/subkg-to-skill          # Claude Code（项目级）
-cp -r subkg-to-skill ~/.claude/skills/subkg-to-skill        # Claude Code（全局）
-cp -r subkg-to-skill .opencode/skill/subkg-to-skill         # opencode（项目级）
+python3 install.py                    # 装到 Claude Code 用户目录
+python3 install.py --target all       # Claude Code + opencode 都装
+python3 install.py --project          # 装到当前项目（.claude/skills、.opencode/skill）
+python3 install.py --uninstall
+```
+
+**更新就是重跑同一条命令**（`git pull` 之后），目标目录整体替换——不用逐个文件比对，
+仓库里删掉的文件在目标端也会消失。加 `--dry-run` 先看会动哪些目录。
+
+### B. 软链，改完立即生效（自己开发时最省事）
+
+```bash
+python3 install.py --link             # ~/.claude/skills/subkg-to-skill → 本仓库
+```
+
+之后 `git pull` 就是更新，不用再跑安装；会话里 `/reload-plugins` 让改动即时生效。
+
+### C. 作为 Claude Code 插件安装（团队分发、带版本）
+
+仓库根目录已带 `.claude-plugin/marketplace.json`，本身就是一个插件市场：
+
+```
+/plugin marketplace add kellyCatCat/graph2skill
+/plugin install subkg-to-skill@graph2skill
+```
+
+以后更新：
+
+```
+/plugin marketplace update graph2skill
+/plugin update subkg-to-skill@graph2skill
+```
+
+本地调试插件不用装：`claude --plugin-dir ./subkg-to-skill`。
+
+<details>
+<summary>手动复制（等价于 A，但要自己处理更新）</summary>
+
+```bash
+cp -r subkg-to-skill ~/.claude/skills/subkg-to-skill
 cp -r subkg-to-skill ~/.config/opencode/skill/subkg-to-skill
 ```
+</details>
 
 零依赖，Python 3.9+ 即可。装好后跟智能体说「把这个子图变成 skill」并给出图文件路径，
 它会按 `SKILL.md` 的流程：摸底 → 列出故障入口并和你敲定英文技能名 → 生成 → 模板自检 → 给安装路径。
@@ -87,6 +127,9 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 
 | 路径 | 内容 |
 | --- | --- |
+| `install.py` | 一条命令安装/更新到 Claude Code / opencode |
+| `.claude-plugin/marketplace.json` | 插件市场清单，供 `/plugin marketplace add` 使用 |
+| `subkg-to-skill/.claude-plugin/plugin.json` | 插件清单（单技能插件，`SKILL.md` 在插件根） |
 | `subkg-to-skill/SKILL.md` | skill 入口：使用流程、硬性约束 |
 | `subkg-to-skill/reference/skill-template.md` | 产出 skill 的模板规范（硬性要求） |
 | `subkg-to-skill/reference/graph-schema.md` | 输入字段字典 |
@@ -96,7 +139,7 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `subkg-to-skill/scripts/build_skill.py` | 生成器入口 |
 | `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 模板渲染 / lint |
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
-| `tests/` | pytest 用例（177 个） |
+| `tests/` | pytest 用例（193 个） |
 
 ## 开发
 

@@ -109,6 +109,13 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 图谱字段含义见 [`reference/graph-schema.md`](reference/graph-schema.md)；
 四章节与图谱字段的对应关系见 [`reference/output-spec.md`](reference/output-spec.md)。
 
+## 本 skill 自身的更新
+
+用户问「怎么更新这个生成器」时：仓库根目录有 `install.py`，`git pull` 后重跑
+`python3 install.py`（或 `--target all` 同时更新 opencode）即整体替换，不需要逐个文件比对；
+`python3 install.py --link` 装成软链后 `git pull` 即生效。仓库也带 `.claude-plugin/marketplace.json`，
+可 `/plugin marketplace add kellyCatCat/graph2skill` 后用 `/plugin update` 管理。
+
 ## 不要做的事
 
 - 不要音译或凭空生成英文技能名——让用户定，或按症状语义拟定后请用户确认。
