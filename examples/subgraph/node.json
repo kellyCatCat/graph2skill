@@ -1,0 +1,1300 @@
+[
+  {
+    "node_id": "symptom_7f1c02aa93be4d61b0c5e210",
+    "node_type": "symptom",
+    "canonical_key": "{\"name\": \"is-is邻居无法建立\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"symptom\"}",
+    "name": "IS-IS邻居无法建立",
+    "description": "两台设备之间 IS-IS 邻居长时间无法进入 Up 状态，路由不可达。",
+    "aliases": [
+      "ISIS邻居Down",
+      "IS-IS邻居未建立"
+    ],
+    "attrs": {
+      "object_type": "IS-IS邻居",
+      "abnormal_behavior": "邻居状态停留在 Down/Init，无法进入 Up",
+      "expected_behavior": "邻居状态为 Up，双方互相学习到对端路由",
+      "trigger_context": "新开通链路或接口配置变更后",
+      "required_slots": [
+        "neName",
+        "interfaceName",
+        "isisProcessId"
+      ],
+      "match_phrases": [
+        "IS-IS邻居建不起来",
+        "ISIS邻居Down",
+        "邻居停留在Init"
+      ],
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b003",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "IS-IS邻居无法建立时，首先检查两端接口的物理状态和链路层协议状态。",
+        "char_start": 0,
+        "char_end": 35,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "symptom_2ad4471b8c0f4e2ab7d31f55",
+    "node_type": "symptom",
+    "canonical_key": "{\"name\": \"承载业务中断\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"symptom\"}",
+    "name": "承载业务中断",
+    "description": "IGP 路由不可达导致上层业务中断。",
+    "aliases": [],
+    "attrs": {
+      "object_type": "承载业务",
+      "abnormal_behavior": "业务流量中断",
+      "expected_behavior": "业务正常转发",
+      "trigger_context": "IGP 邻居异常之后",
+      "required_slots": [
+        "serviceName",
+        "neName"
+      ],
+      "match_phrases": [
+        "业务不通",
+        "业务中断"
+      ],
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "4.3.3",
+        "title": "4.3.3 通过查询命令行采集故障信息"
+      }
+    ],
+    "scope_context_ids": [
+      "4.3.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 64,
+        "printed_page": 24,
+        "section": "4.3.3",
+        "block_id": "p0064_b010",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "IGP 路由不可达会导致上层业务中断。",
+        "char_start": 0,
+        "char_end": 19,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "cause_9c11a5d7f2be40e18a726d33",
+    "node_type": "cause",
+    "canonical_key": "{\"name\": \"两端接口 mtu 配置不一致\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"cause\"}",
+    "name": "两端接口 MTU 配置不一致",
+    "description": "链路两端接口 MTU 不一致，导致 IS-IS Hello 或 LSP 报文无法正常交互。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "affected_object": "互联接口",
+      "fault_mechanism": "MTU 不一致时，超过较小 MTU 的 LSP 报文被丢弃，邻居无法进入 Up。",
+      "granularity": "具体原因",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1149,
+        "printed_page": 1109,
+        "section": "28.21.3",
+        "block_id": "p1149_b001",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "两端接口 MTU 不一致会导致 IS-IS 邻居无法建立。",
+        "char_start": 0,
+        "char_end": 29,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "cause_43be7c0951fa4a8d92e0bb17",
+    "node_type": "cause",
+    "canonical_key": "{\"name\": \"两端区域地址（area id）配置不一致\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"cause\"}",
+    "name": "两端区域地址（Area ID）配置不一致",
+    "description": "Level-1 邻居要求两端区域地址相同，配置不一致时邻居无法建立。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "configuration",
+      "affected_object": "IS-IS 进程",
+      "fault_mechanism": "Level-1 邻居校验区域地址，区域地址不同则丢弃 Hello 报文。",
+      "granularity": "具体原因",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1150,
+        "printed_page": 1110,
+        "section": "28.21.3",
+        "block_id": "p1150_b002",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "Level-1邻居要求两端的区域地址必须相同。",
+        "char_start": 0,
+        "char_end": 23,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "cause_1e6f88b30cd2492ca0117d94",
+    "node_type": "cause",
+    "canonical_key": "{\"name\": \"物理链路或光模块异常\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"cause\"}",
+    "name": "物理链路或光模块异常",
+    "description": "光模块收发光异常、光纤衰耗过大或链路层协议 Down。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "hardware_failure",
+      "affected_object": "互联接口/光模块",
+      "fault_mechanism": "收光功率低于灵敏度门限时链路层不稳定，Hello 报文无法可靠收发。",
+      "granularity": "原因类别",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "technote_specific_scope_required"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b005",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "检查接口物理状态，确认光模块收发光是否正常。",
+        "char_start": 0,
+        "char_end": 22,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [
+      "verify_technote_product_and_version"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "cause_5d90ab2247c1436f8ee2f001",
+    "node_type": "cause",
+    "canonical_key": "{\"name\": \"光纤接头污染或弯折\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"cause\"}",
+    "name": "光纤接头污染或弯折",
+    "description": "光纤接头污染、弯曲半径过小导致衰耗增大。",
+    "aliases": [],
+    "attrs": {
+      "cause_kind": "environment",
+      "affected_object": "光纤链路",
+      "fault_mechanism": "接头污染使插入损耗增大，收光功率下降。",
+      "granularity": "具体原因",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1151,
+        "printed_page": 1111,
+        "section": "28.21.3",
+        "block_id": "p1151_b004",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "光纤接头污染会导致收光功率下降。",
+        "char_start": 0,
+        "char_end": 16,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "check_0b73f9e1a4d24c6b8f5210cc",
+    "node_type": "check",
+    "canonical_key": "{\"name\": \"查看 is-is 邻居状态\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"check\"}",
+    "name": "查看 IS-IS 邻居状态",
+    "description": "在两端设备上查看 IS-IS 邻居状态与停留阶段。",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "target_object": "IS-IS 进程",
+      "intent": "确认邻居当前状态，判断卡在 Init 还是 Down",
+      "procedure": [
+        "在用户视图下执行命令查看邻居状态",
+        "在对端设备上执行同样的命令比对"
+      ],
+      "command_templates": [
+        "display isis peer",
+        "display isis peer verbose"
+      ],
+      "execution_context": "用户视图",
+      "parameters": [],
+      "collection_spec": {},
+      "execution_effect": "只读命令，不影响业务",
+      "example_specific": false,
+      "execution_policy": "knowledge_template_requires_context_binding"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b006",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "执行display isis peer命令，查看IS-IS邻居状态。",
+        "char_start": 0,
+        "char_end": 34,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "check_a51d3c8e67b04f92ae0c7731",
+    "node_type": "check",
+    "canonical_key": "{\"name\": \"比对两端 is-is 接口配置\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"check\"}",
+    "name": "比对两端 IS-IS 接口配置",
+    "description": "比对两端接口的 MTU、区域地址、Level 类型与认证配置。",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "target_object": "互联接口与 IS-IS 进程",
+      "intent": "找出两端不一致的配置项",
+      "procedure": [
+        "查看本端接口配置",
+        "查看对端接口配置",
+        "逐项比对 MTU、区域地址、Level、认证"
+      ],
+      "command_templates": [
+        "display current-configuration interface {interface-type}{interface-number}",
+        "display isis brief"
+      ],
+      "execution_context": "用户视图",
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ],
+      "execution_effect": "只读命令，不影响业务",
+      "example_specific": false,
+      "preconditions": [
+        "具备两端设备的登录权限"
+      ]
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1150,
+        "printed_page": 1110,
+        "section": "28.21.3",
+        "block_id": "p1150_b003",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "比对两端接口的MTU与区域地址配置。",
+        "char_start": 0,
+        "char_end": 18,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "check_c7e2604fb98a4d13b5ac09e8",
+    "node_type": "check",
+    "canonical_key": "{\"name\": \"查看接口与光模块状态\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"check\"}",
+    "name": "查看接口与光模块状态",
+    "description": "查看接口物理状态、CRC 错包与光模块收发光功率。",
+    "aliases": [],
+    "attrs": {
+      "check_kind": "cli",
+      "target_object": "互联接口/光模块",
+      "intent": "确认物理层与链路层是否正常",
+      "procedure": [
+        "查看接口状态与错包统计",
+        "查看光模块收发光功率并与门限比较"
+      ],
+      "command_templates": [
+        "display interface {interface-type}{interface-number}",
+        "display transceiver interface {interface-type}{interface-number} verbose"
+      ],
+      "execution_context": "用户视图",
+      "parameters": [
+        "interface-type",
+        "interface-number"
+      ],
+      "collection_spec": {
+        "interval_seconds": 1,
+        "count": "5-10"
+      },
+      "execution_effect": "只读命令，不影响业务",
+      "operational_context": [
+        {
+          "document": "NE40E 维护宝典.pdf",
+          "document_version": "07",
+          "page": 1148,
+          "printed_page": 1108,
+          "section": "28.21.3",
+          "block_id": "p1148_b009",
+          "bbox": [
+            185.5,
+            223.9,
+            448.5,
+            248.8
+          ],
+          "quote": "光功率需要连续采样多次以排除瞬时波动。",
+          "char_start": 0,
+          "char_end": 19,
+          "source_kind": "pdf_text",
+          "anchor_method": "direct",
+          "source_key": "ne40e_baseline"
+        }
+      ],
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b005",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "检查接口物理状态，确认光模块收发光是否正常。",
+        "char_start": 0,
+        "char_end": 22,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "observation_31c88f0ad7e94b5aa9207e64",
+    "node_type": "observation",
+    "canonical_key": "{\"name\": \"邻居状态停留在 init\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"observation\"}",
+    "name": "邻居状态停留在 Init",
+    "description": "display isis peer 显示邻居状态为 Init 且长时间不变化。",
+    "aliases": [],
+    "attrs": {
+      "object_type": "IS-IS邻居",
+      "field": "邻居状态",
+      "operator": "eq",
+      "value": "Init",
+      "unit": null,
+      "aggregation": "all",
+      "window_seconds": 60,
+      "sample_count": 3,
+      "normalized_expression": "邻居状态 == 'Init' 且持续 60s 无变化",
+      "knowledge_mode": "possible_check_result",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1149,
+        "printed_page": 1109,
+        "section": "28.21.3",
+        "block_id": "p1149_b002",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "邻居状态停留在Init，说明本端收到对端Hello但对端未收到本端Hello。",
+        "char_start": 0,
+        "char_end": 39,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "observation_6b40d9c1e5824f7f8a13ba22",
+    "node_type": "observation",
+    "canonical_key": "{\"name\": \"两端区域地址不同\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"observation\"}",
+    "name": "两端区域地址不同",
+    "description": "比对结果显示两端配置的区域地址不同。",
+    "aliases": [],
+    "attrs": {
+      "object_type": "IS-IS 进程",
+      "field": "区域地址",
+      "operator": "ne",
+      "value": "对端区域地址",
+      "unit": null,
+      "aggregation": null,
+      "window_seconds": null,
+      "sample_count": null,
+      "normalized_expression": "本端区域地址 != 对端区域地址",
+      "knowledge_predicate": {
+        "type": "text",
+        "expression": "两端network-entity配置的区域地址不一致"
+      },
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1150,
+        "printed_page": 1110,
+        "section": "28.21.3",
+        "block_id": "p1150_b005",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "两端network-entity配置的区域地址不一致。",
+        "char_start": 0,
+        "char_end": 27,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "observation_c0f5a7bd21e34c8e9d6f4a30",
+    "node_type": "observation",
+    "canonical_key": "{\"name\": \"收光功率低于门限\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"observation\"}",
+    "name": "收光功率低于门限",
+    "description": "光模块收光功率低于该模块的接收灵敏度门限。",
+    "aliases": [],
+    "attrs": {
+      "object_type": "光模块",
+      "field": "收光功率",
+      "operator": "lt",
+      "value": -18,
+      "unit": "dBm",
+      "aggregation": "all",
+      "window_seconds": 10,
+      "sample_count": 5,
+      "normalized_expression": "收光功率 < 接收灵敏度门限（示例门限 -18dBm）",
+      "example_specific": true
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1151,
+        "printed_page": 1111,
+        "section": "28.21.3",
+        "block_id": "p1151_b001",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "收光功率低于接收灵敏度门限时，需检查光纤链路。",
+        "char_start": 0,
+        "char_end": 23,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [
+      "non_executable_knowledge"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "observation_ee2143c6b70d4f97a5c8be15",
+    "node_type": "observation",
+    "canonical_key": "{\"name\": \"接口 up 且无 crc 错包\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"observation\"}",
+    "name": "接口 Up 且无 CRC 错包",
+    "description": "接口物理与协议状态均为 Up，错包统计为 0。",
+    "aliases": [],
+    "attrs": {
+      "object_type": "互联接口",
+      "field": "接口状态",
+      "operator": "eq",
+      "value": "Up",
+      "unit": null,
+      "aggregation": "all",
+      "window_seconds": 60,
+      "sample_count": 3,
+      "normalized_expression": "接口状态 == 'Up' 且 CRC 错包 == 0",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b008",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "接口状态Up且无错包统计，说明物理层正常。",
+        "char_start": 0,
+        "char_end": 21,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "repair_84f0cb1927de4a63b81c05df",
+    "node_type": "repair",
+    "canonical_key": "{\"name\": \"统一两端接口 mtu\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"repair\"}",
+    "name": "统一两端接口 MTU",
+    "description": "将链路两端接口 MTU 修改为一致取值。",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration_change",
+      "target_object": "互联接口",
+      "procedure": [
+        "进入接口视图",
+        "配置与对端一致的 MTU",
+        "重启接口使配置生效"
+      ],
+      "command_templates": [
+        "interface {interface-type}{interface-number}",
+        "mtu {mtu-value}",
+        "shutdown",
+        "undo shutdown"
+      ],
+      "execution_context": "接口视图",
+      "parameters": [
+        "interface-type",
+        "interface-number",
+        "mtu-value"
+      ],
+      "preconditions": [
+        "确认对端 MTU 取值",
+        "已获得变更窗口"
+      ],
+      "expected_effect": "两端 MTU 一致后邻居可正常建立",
+      "service_impact": "重启接口会导致该接口业务短暂中断",
+      "rollback": "恢复原 MTU 取值并重启接口",
+      "example_specific": false,
+      "execution_policy": "knowledge_template_requires_context_binding"
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1149,
+        "printed_page": 1109,
+        "section": "28.21.3",
+        "block_id": "p1149_b006",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "将两端接口MTU修改为一致后，邻居可以正常建立。",
+        "char_start": 0,
+        "char_end": 24,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "repair_f3a6208d4b1c49e7ab90cc21",
+    "node_type": "repair",
+    "canonical_key": "{\"name\": \"修改区域地址使两端一致\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"repair\"}",
+    "name": "修改区域地址使两端一致",
+    "description": "修改 network-entity 配置，使两端区域地址一致。",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "configuration",
+      "target_object": "IS-IS 进程",
+      "procedure": [
+        "进入 IS-IS 进程视图",
+        "配置与对端一致的 network-entity",
+        "确认邻居状态"
+      ],
+      "command_templates": [
+        "isis {process-id}",
+        "network-entity {nsap-address}"
+      ],
+      "execution_context": "IS-IS 进程视图",
+      "parameters": [
+        "process-id",
+        "nsap-address"
+      ],
+      "preconditions": [
+        "确认规划的区域地址"
+      ],
+      "expected_effect": "区域地址一致后 Level-1 邻居可建立",
+      "service_impact": "修改 NET 会导致本进程邻居重建",
+      "rollback": "恢复原 network-entity 配置",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1150,
+        "printed_page": 1110,
+        "section": "28.21.3",
+        "block_id": "p1150_b007",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "修改network-entity使两端区域地址一致。",
+        "char_start": 0,
+        "char_end": 26,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "repair_2c9d7e40a8b34f16bd52f7e3",
+    "node_type": "repair",
+    "canonical_key": "{\"name\": \"清洁或更换光纤与光模块\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"repair\"}",
+    "name": "清洁或更换光纤与光模块",
+    "description": "清洁光纤接头、更换光纤或更换光模块。",
+    "aliases": [],
+    "attrs": {
+      "repair_kind": "replace",
+      "target_object": "光纤/光模块",
+      "procedure": [
+        "清洁光纤接头并重新插拔",
+        "复测收光功率",
+        "仍不达标则更换光模块"
+      ],
+      "command_templates": [],
+      "execution_context": null,
+      "parameters": [],
+      "preconditions": [
+        "现场具备备件与清洁工具"
+      ],
+      "expected_effect": "收光功率恢复到门限以上",
+      "service_impact": "更换期间该链路中断",
+      "rollback": "恢复原光模块",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1151,
+        "printed_page": 1111,
+        "section": "28.21.3",
+        "block_id": "p1151_b006",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "清洁光纤接头或更换光模块后复测收光功率。",
+        "char_start": 0,
+        "char_end": 20,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  },
+  {
+    "node_id": "escalation_bd7f14a209e34c5eb0a6d382",
+    "node_type": "escalation",
+    "canonical_key": "{\"name\": \"收集信息并转技术支持\", \"scope\": {\"vendor\": \"Huawei\"}, \"type\": \"escalation\"}",
+    "name": "收集信息并转技术支持",
+    "description": "以上检查均无异常时，收集信息转技术支持处理。",
+    "aliases": [],
+    "attrs": {
+      "destination_role": "华为技术支持",
+      "collection_requirements": [
+        "两端 display current-configuration",
+        "display isis peer verbose",
+        "接口与光模块状态",
+        "故障发生时间与变更记录"
+      ],
+      "handoff_template": "设备型号/版本 + 组网说明 + 上述采集件 + 已执行的排查步骤",
+      "instructions": "按格式整理后随工单提交",
+      "example_specific": false
+    },
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "status": "candidate",
+    "review_status": "machine_checked",
+    "diagnostic_contexts": [
+      {
+        "section": "28.21.3",
+        "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+      }
+    ],
+    "scope_context_ids": [
+      "28.21.3"
+    ],
+    "provenance": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1152,
+        "printed_page": 1112,
+        "section": "28.21.3",
+        "block_id": "p1152_b001",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "若以上检查均正常，请收集信息并联系技术支持。",
+        "char_start": 0,
+        "char_end": 22,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "quality_flags": [],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo"
+    },
+    "source_keys": [
+      "ne40e_baseline"
+    ]
+  }
+]

@@ -1,0 +1,1222 @@
+[
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b01",
+    "edge_type": "has_cause",
+    "source": "symptom_7f1c02aa93be4d61b0c5e210",
+    "target": "cause_9c11a5d7f2be40e18a726d33",
+    "condition": {
+      "type": "atomic",
+      "object": "互联接口",
+      "field": "MTU",
+      "operator": "ne",
+      "value": "对端MTU"
+    },
+    "condition_status": "parsed",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1149,
+        "printed_page": 1109,
+        "section": "28.21.3",
+        "block_id": "p1149_b001",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "两端接口 MTU 不一致会导致 IS-IS 邻居无法建立。",
+        "char_start": 0,
+        "char_end": 29,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b01"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b02",
+    "edge_type": "has_cause",
+    "source": "symptom_7f1c02aa93be4d61b0c5e210",
+    "target": "cause_43be7c0951fa4a8d92e0bb17",
+    "condition": {
+      "type": "text",
+      "expression": "邻居类型为 Level-1"
+    },
+    "condition_status": "text_only",
+    "rank": 2,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1150,
+        "printed_page": 1110,
+        "section": "28.21.3",
+        "block_id": "p1150_b002",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "Level-1邻居要求两端的区域地址必须相同。",
+        "char_start": 0,
+        "char_end": 23,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b02"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b03",
+    "edge_type": "has_cause",
+    "source": "symptom_7f1c02aa93be4d61b0c5e210",
+    "target": "cause_1e6f88b30cd2492ca0117d94",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 3,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b005",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "检查接口物理状态，确认光模块收发光是否正常。",
+        "char_start": 0,
+        "char_end": 22,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b03"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b04",
+    "edge_type": "diagnosed_by",
+    "source": "symptom_7f1c02aa93be4d61b0c5e210",
+    "target": "check_0b73f9e1a4d24c6b8f5210cc",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [
+      {
+        "document": "NE40E 维护宝典.pdf",
+        "document_version": "07",
+        "page": 1148,
+        "printed_page": 1108,
+        "section": "28.21.3",
+        "block_id": "p1148_b006",
+        "bbox": [
+          185.5,
+          223.9,
+          448.5,
+          248.8
+        ],
+        "quote": "执行display isis peer命令，查看IS-IS邻居状态。",
+        "char_start": 0,
+        "char_end": 34,
+        "source_kind": "pdf_text",
+        "anchor_method": "direct",
+        "source_key": "ne40e_baseline"
+      }
+    ],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b04"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b05",
+    "edge_type": "diagnosed_by",
+    "source": "cause_9c11a5d7f2be40e18a726d33",
+    "target": "check_a51d3c8e67b04f92ae0c7731",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b05"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b06",
+    "edge_type": "diagnosed_by",
+    "source": "cause_43be7c0951fa4a8d92e0bb17",
+    "target": "check_a51d3c8e67b04f92ae0c7731",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b06"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b07",
+    "edge_type": "diagnosed_by",
+    "source": "cause_1e6f88b30cd2492ca0117d94",
+    "target": "check_c7e2604fb98a4d13b5ac09e8",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b07"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b08",
+    "edge_type": "observes",
+    "source": "check_0b73f9e1a4d24c6b8f5210cc",
+    "target": "observation_31c88f0ad7e94b5aa9207e64",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b08"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b09",
+    "edge_type": "observes",
+    "source": "check_a51d3c8e67b04f92ae0c7731",
+    "target": "observation_6b40d9c1e5824f7f8a13ba22",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b09"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b10",
+    "edge_type": "observes",
+    "source": "check_c7e2604fb98a4d13b5ac09e8",
+    "target": "observation_c0f5a7bd21e34c8e9d6f4a30",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b10"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b11",
+    "edge_type": "observes",
+    "source": "check_c7e2604fb98a4d13b5ac09e8",
+    "target": "observation_ee2143c6b70d4f97a5c8be15",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b11"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b12",
+    "edge_type": "supports",
+    "source": "observation_31c88f0ad7e94b5aa9207e64",
+    "target": "cause_9c11a5d7f2be40e18a726d33",
+    "condition": {
+      "type": "text",
+      "expression": "对端接口未收到本端Hello"
+    },
+    "condition_status": "text_only",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "unreviewed",
+    "status": "candidate",
+    "quality_flags": [
+      "semantic_review_pending"
+    ],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b12"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b13",
+    "edge_type": "confirms",
+    "source": "observation_6b40d9c1e5824f7f8a13ba22",
+    "target": "cause_43be7c0951fa4a8d92e0bb17",
+    "condition": {
+      "type": "and",
+      "conditions": [
+        {
+          "type": "atomic",
+          "object": "IS-IS邻居",
+          "field": "Level类型",
+          "operator": "eq",
+          "value": "Level-1"
+        },
+        {
+          "type": "text",
+          "expression": "两端接口物理状态正常"
+        }
+      ]
+    },
+    "condition_status": "parsed",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b13"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b14",
+    "edge_type": "supports",
+    "source": "observation_c0f5a7bd21e34c8e9d6f4a30",
+    "target": "cause_1e6f88b30cd2492ca0117d94",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b14"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b15",
+    "edge_type": "excludes",
+    "source": "observation_ee2143c6b70d4f97a5c8be15",
+    "target": "cause_1e6f88b30cd2492ca0117d94",
+    "condition": {
+      "type": "text",
+      "expression": "连续采样期间接口无 Down 记录"
+    },
+    "condition_status": "text_only",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b15"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b16",
+    "edge_type": "repaired_by",
+    "source": "cause_9c11a5d7f2be40e18a726d33",
+    "target": "repair_84f0cb1927de4a63b81c05df",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b16"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b17",
+    "edge_type": "repaired_by",
+    "source": "cause_43be7c0951fa4a8d92e0bb17",
+    "target": "repair_f3a6208d4b1c49e7ab90cc21",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b17"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b18",
+    "edge_type": "repaired_by",
+    "source": "cause_1e6f88b30cd2492ca0117d94",
+    "target": "repair_2c9d7e40a8b34f16bd52f7e3",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b18"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b19",
+    "edge_type": "repaired_by",
+    "source": "cause_5d90ab2247c1436f8ee2f001",
+    "target": "repair_2c9d7e40a8b34f16bd52f7e3",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b19"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b20",
+    "edge_type": "next_step",
+    "source": "check_0b73f9e1a4d24c6b8f5210cc",
+    "target": "check_a51d3c8e67b04f92ae0c7731",
+    "condition": {
+      "type": "text",
+      "expression": "邻居状态非 Up"
+    },
+    "condition_status": "text_only",
+    "rank": 2,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b20"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b21",
+    "edge_type": "next_step",
+    "source": "observation_c0f5a7bd21e34c8e9d6f4a30",
+    "target": "repair_2c9d7e40a8b34f16bd52f7e3",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": 1,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b21"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b22",
+    "edge_type": "next_step",
+    "source": "check_c7e2604fb98a4d13b5ac09e8",
+    "target": "escalation_bd7f14a209e34c5eb0a6d382",
+    "condition": {
+      "type": "not",
+      "condition": {
+        "type": "text",
+        "expression": "发现物理层异常"
+      }
+    },
+    "condition_status": "requires_interpretation",
+    "rank": 9,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b22"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b23",
+    "edge_type": "refines",
+    "source": "cause_1e6f88b30cd2492ca0117d94",
+    "target": "cause_5d90ab2247c1436f8ee2f001",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b23"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b24",
+    "edge_type": "leads_to",
+    "source": "cause_1e6f88b30cd2492ca0117d94",
+    "target": "symptom_2ad4471b8c0f4e2ab7d31f55",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b24"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b25",
+    "edge_type": "refers_to",
+    "source": "symptom_7f1c02aa93be4d61b0c5e210",
+    "target": "escalation_bd7f14a209e34c5eb0a6d382",
+    "condition": {
+      "type": "text",
+      "expression": "上述检查均无异常"
+    },
+    "condition_status": "text_only",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "28.21.3",
+      "title": "28.21.3 IS-IS邻居无法建立的故障处理"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b25"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  },
+  {
+    "edge_id": "edge_a1b2c3d4e5f60718293a4b26",
+    "edge_type": "diagnosed_by",
+    "source": "symptom_2ad4471b8c0f4e2ab7d31f55",
+    "target": "check_0b73f9e1a4d24c6b8f5210cc",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "4.3.3",
+      "title": "4.3.3 通过查询命令行采集故障信息"
+    },
+    "evidence": [],
+    "origin": "semantic_extract",
+    "normalizations": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {},
+    "extraction_edge_ids": [
+      "edge_a1b2c3d4e5f60718293a4b26"
+    ],
+    "original_condition": null,
+    "source_keys": [
+      "ne40e_baseline"
+    ],
+    "semantic_review": {
+      "method": "independent_llm_node_review",
+      "verdict": "accept",
+      "human_reviewed": false,
+      "job_id": "job_isis_demo",
+      "candidate_index": 0
+    }
+  }
+]

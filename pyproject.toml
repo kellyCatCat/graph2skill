@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subkg2skill"
+version = "0.1.0"
+description = "Compile an IP-RAN fault-diagnosis knowledge-graph subgraph (node.json / edge.json) into a portable agent skill."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "subkg2skill contributors" }]
+keywords = ["knowledge-graph", "skill", "fault-diagnosis", "ip-ran", "agent"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+subkg2skill = "subkg2skill.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+subkg2skill = ["resources/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
