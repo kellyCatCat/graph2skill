@@ -177,16 +177,52 @@ class RootCause:
 
 
 @dataclass
+class RoutingRow:
+    """One line of the 场景跳转表 after the shared collection phase."""
+
+    precheck: str  # “步骤 N（`command`）”, resolved once the precheck list is final
+    criterion: str
+    scenario: str
+
+
+@dataclass
+class DocScenario:
+    """One fault inside a document that covers several."""
+
+    label: str  # A / B / C …
+    name: str
+    symptom: Node
+    steps: List[Step] = field(default_factory=list)
+    root_causes: List[RootCause] = field(default_factory=list)
+    routing: List[RoutingRow] = field(default_factory=list)
+
+    @property
+    def title(self) -> str:
+        return f"场景{self.label}：{self.name}"
+
+
+@dataclass
 class SkillDoc:
     symptom: Node
     params: List[Param]
     prechecks: List[Precheck]
-    steps: List[Step]
-    root_causes: List[RootCause]
+    scenarios: List[DocScenario] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
     #: Causes left out of the steps, with the reason — reported, never silently dropped.
     omitted: List[Tuple[str, str]] = field(default_factory=list)
     unit: str = ""
+
+    @property
+    def multi(self) -> bool:
+        return len(self.scenarios) > 1
+
+    @property
+    def steps(self) -> List[Step]:
+        return [step for scenario in self.scenarios for step in scenario.steps]
+
+    @property
+    def root_causes(self) -> List[RootCause]:
+        return [cause for scenario in self.scenarios for cause in scenario.root_causes]
 
 
 def _collect_line(check: Node, outcomes: Sequence) -> str:
@@ -267,22 +303,125 @@ def _usable(node: Node, policy: BuildPolicy) -> bool:
     return policy.include_example_specific or not node.example_specific
 
 
+SCENARIO_LABELS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def scenario_label(index: int) -> str:
+    if index < len(SCENARIO_LABELS):
+        return SCENARIO_LABELS[index]
+    return f"{SCENARIO_LABELS[index // len(SCENARIO_LABELS) - 1]}{index % len(SCENARIO_LABELS) + 1}"
+
+
+@dataclass
+class _Shared:
+    """Collection phase shared by every scenario in one document."""
+
+    prechecks: List[Precheck] = field(default_factory=list)
+    by_signature: Dict[str, int] = field(default_factory=dict)
+    of_check: Dict[str, int] = field(default_factory=dict)
+    producing_check: Dict[str, str] = field(default_factory=dict)
+
+
 def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = None) -> SkillDoc:
     """Turn one symptom playbook into the template's four sections."""
+    return build_multi_doc(graph, [(playbook.symptom.name, playbook)], policy)
+
+
+def build_multi_doc(
+    graph: Graph,
+    scenarios: Sequence[Tuple[str, Playbook]],
+    policy: Optional[BuildPolicy] = None,
+) -> SkillDoc:
+    """Build one document covering several faults off a shared collection phase.
+
+    The prechecks are pooled and deduplicated across scenarios — the same
+    ``display isis peer`` serves all of them — and a routing table after them
+    says which scenario each reading leads to.  Steps are numbered inside their
+    own scenario.
+    """
+    if not scenarios:
+        raise ValueError("至少需要一个场景")
     policy = policy or BuildPolicy()
-    producing_check: Dict[str, str] = {}
+    shared = _Shared()
     for node in graph.iter_nodes():
         if node.node_type == "check":
             for observation, _edge in graph.targets(node.node_id, "observes"):
-                producing_check.setdefault(observation.node_id, node.node_id)
+                shared.producing_check.setdefault(observation.node_id, node.node_id)
 
+    omitted: List[Tuple[str, str]] = []
+    repair_commands: List[str] = []
+    built: List[DocScenario] = []
+    for index, (name, playbook) in enumerate(scenarios):
+        built.append(
+            _build_scenario(
+                graph,
+                playbook,
+                policy,
+                shared,
+                omitted,
+                repair_commands,
+                label=scenario_label(index),
+                name=name or playbook.symptom.name,
+                single=len(scenarios) == 1,
+            )
+        )
+
+    # A precheck nobody reads from and that decides nothing is just noise.
+    referenced: Set[str] = set()
+    any_steps = False
+    for scenario in built:
+        any_steps = any_steps or bool(scenario.steps)
+        for step in scenario.steps:
+            referenced.update(REUSE_RE.findall(step.reuse_note))
+        for row in scenario.routing:
+            referenced.update(REUSE_RE.findall(row.precheck))
+    shared.prechecks = [
+        precheck
+        for precheck in shared.prechecks
+        if precheck.verdicts
+        or not any_steps
+        or any(node_id in referenced for node_id in precheck.node_ids)
+    ]
+    _resolve_references(shared.prechecks, built)
+
+    primary = scenarios[0][1]
+    doc = SkillDoc(
+        symptom=primary.symptom,
+        params=_build_params(primary, shared.prechecks, doc_steps(built), repair_commands),
+        prechecks=shared.prechecks,
+        scenarios=built,
+        omitted=omitted,
+    )
+    if not shared.prechecks:
+        doc.notes.append("子图中没有可用的入口检查，前置检查为空。")
+    if not any_steps:
+        doc.notes.append("子图中没有可展开的候选原因，排查步骤为空。")
+    if omitted:
+        doc.notes.append(f"{len(omitted)} 个原因/检查未进入正文，明细见 reference/evidence.md。")
+    return doc
+
+
+def doc_steps(scenarios: Sequence[DocScenario]) -> List[Step]:
+    return [step for scenario in scenarios for step in scenario.steps]
+
+
+def _build_scenario(
+    graph: Graph,
+    playbook: Playbook,
+    policy: BuildPolicy,
+    shared: _Shared,
+    omitted: List[Tuple[str, str]],
+    repair_commands: List[str],
+    *,
+    label: str,
+    name: str,
+    single: bool,
+) -> DocScenario:
+    scenario = DocScenario(label=label, name=name, symptom=playbook.symptom)
     branch_causes = {branch.cause.node_id for branch in playbook.causes}
     branch_keys = {fault_key(branch.cause.name) for branch in playbook.causes}
-    prechecks: List[Precheck] = []
-    precheck_causes: Dict[str, Tuple[List[str], str]] = {}  # 根因名 -> (现象们, cause node_id)
-    by_signature: Dict[str, int] = {}  # 命令签名 -> 前置检查序号
-    precheck_of_check: Dict[str, int] = {}
-    omitted: List[Tuple[str, str]] = []
+    precheck_causes: Dict[str, Tuple[List[str], str]] = {}
+    routing_seen: Set[str] = set()
 
     for step in playbook.entry_checks:
         check = step.check
@@ -293,9 +432,9 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
         signature = command_signature(commands)
         # One command, one collection step: a graph holds many check nodes that
         # run the same thing, and repeating it is what bloats the document.
-        index = by_signature.get(signature) if signature else None
+        index = shared.by_signature.get(signature) if signature else None
         if index is not None:
-            precheck = prechecks[index - 1]
+            precheck = shared.prechecks[index - 1]
             precheck.collect = _merge_collect(precheck.collect, _collect_line(check, step.outcomes))
             precheck.node_ids.append(check.node_id)
         else:
@@ -307,15 +446,29 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
                 node_ids=[check.node_id],
                 literals=case_literals(" ".join(commands)),
             )
-            prechecks.append(precheck)
-            index = len(prechecks)
+            shared.prechecks.append(precheck)
+            index = len(shared.prechecks)
             if signature:
-                by_signature[signature] = index
-        precheck_of_check[check.node_id] = index
+                shared.by_signature[signature] = index
+        shared.of_check[check.node_id] = index
+
+        # What this reading tells the reader to open next.
+        if not single:
+            for outcome in step.outcomes:
+                expression = observation_expression(outcome.observation)
+                if expression and expression not in routing_seen and len(scenario.routing) < 3:
+                    routing_seen.add(expression)
+                    scenario.routing.append(
+                        RoutingRow(
+                            precheck=f"步骤 @@{precheck.node_ids[0]}@@"
+                            + (f"（`{commands[0]}`）" if commands else ""),
+                            criterion=f"`{expression}`",
+                            scenario=f"场景{label}：{name}",
+                        )
+                    )
 
         for observation, verdict in _decisive(step):
             # Causes that get their own step are judged there, once, not twice.
-            # A merged document may judge the cause under another source's node.
             if verdict.kind == "excludes" or verdict.cause.node_id in branch_causes:
                 continue
             if fault_key(verdict.cause.name) in branch_keys:
@@ -324,14 +477,15 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
                 continue
             strength = _verdict_strength(verdict.kind)
             precheck.verdicts.append(
-                f"若 {_criterion(observation)}，判定根因为“{verdict.cause.name}”{strength}，结束排查。"
+                f"若 {_criterion(observation)}，判定根因为“{verdict.cause.name}”{strength}"
+                + (f"（{scenario.title}）" if not single else "")
+                + "，结束排查。"
             )
             entry = precheck_causes.setdefault(verdict.cause.name, ([], verdict.cause.node_id))
             criterion = f"{_criterion(observation)}{strength}"
             if criterion not in entry[0]:
                 entry[0].append(criterion)
 
-    steps: List[Step] = []
     # Indexed by fault identity, not node id: when sources are merged the cause
     # that a verdict points at may be another source's node for the same fault,
     # while the repairs hang off the one we kept.
@@ -349,17 +503,17 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
             for pair in _branch_decisive(branch)
             if _usable(pair[0], policy) and _usable(pair[1].cause, policy)
         ]
-        has_repair = bool(branch.repairs)
-        if not decisive and not has_repair and not policy.keep_undecidable:
+        if not decisive and not branch.repairs and not policy.keep_undecidable:
             # A step with no criterion and no fix tells the reader nothing.
             omitted.append((branch.cause.name, "既无判定观测也无修复动作"))
             continue
-        if policy.max_steps and len(steps) >= policy.max_steps:
+        if policy.max_steps and len(scenario.steps) >= policy.max_steps:
             omitted.append((branch.cause.name, f"超出 --max-steps {policy.max_steps} 限制"))
             continue
 
         commands, reuse_note = _step_commands(
-            branch, decisive, producing_check, precheck_of_check, by_signature, prechecks
+            branch, decisive, shared.producing_check, shared.of_check, shared.by_signature,
+            shared.prechecks,
         )
         branches: List[Branch] = []
         causes: List[str] = []
@@ -389,9 +543,9 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
                 (["本子图未给出判定观测（无 `confirms` / `supports` 关系）"], branch.cause.node_id),
             )
 
-        steps.append(
+        scenario.steps.append(
             Step(
-                index=len(steps) + 1,
+                index=len(scenario.steps) + 1,
                 name=f"检查{branch.cause.name}",
                 commands=commands,
                 reuse_note=reuse_note,
@@ -402,8 +556,8 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
         )
 
     # Fall-through wording: every step but the last hands over to the next one.
-    for step in steps:
-        if step.index < len(steps):
+    for step in scenario.steps:
+        if step.index < len(scenario.steps):
             following = f"顺序执行步骤 {step.index + 1}。"
         else:
             following = f"判定“{NOT_FOUND}”，输出已执行的全部检查步骤及结果摘要，结束排查。"
@@ -411,22 +565,20 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
             branch.outcome = branch.outcome.replace("{next}", following)
         step.branches.append(Branch("以上判据均不命中", following))
 
-    root_causes: List[RootCause] = []
-    repair_commands: List[str] = []
-    for name, (criteria, node_id) in {**precheck_causes, **step_causes}.items():
+    for cause_name, (criteria, node_id) in {**precheck_causes, **step_causes}.items():
         cause_node = graph.get(node_id)
-        branch = branch_by_cause.get(fault_key(name))
+        branch = branch_by_cause.get(fault_key(cause_name))
         fix, recheck, commands = _repair_fix(graph, cause_node, branch)
         repair_commands.extend(commands)
-        root_causes.append(
+        scenario.root_causes.append(
             RootCause(
-                name=name,
+                name=cause_name,
                 evidence=cell("；".join(criteria)),
                 fix=cell(fix),
                 recheck=cell(recheck),
             )
         )
-    root_causes.append(
+    scenario.root_causes.append(
         RootCause(
             name=NOT_FOUND,
             evidence="全部步骤走完仍未命中任何故障特征",
@@ -435,54 +587,47 @@ def build_doc(graph: Graph, playbook: Playbook, policy: Optional[BuildPolicy] = 
         )
     )
 
-    # A precheck nobody reads from and that decides nothing is just noise.
-    referenced = {ref for step in steps for ref in REUSE_RE.findall(step.reuse_note)}
-    prechecks = [
-        precheck
-        for precheck in prechecks
-        if precheck.verdicts
-        or not steps
-        or any(node_id in referenced for node_id in precheck.node_ids)
-    ]
-    _resolve_references(prechecks, steps)
-
-    doc = SkillDoc(
-        symptom=playbook.symptom,
-        params=_build_params(playbook, prechecks, steps, repair_commands),
-        prechecks=prechecks,
-        steps=steps,
-        root_causes=root_causes,
-        omitted=omitted,
-    )
-    if not prechecks:
-        doc.notes.append("该症状在子图中没有可用的入口检查，前置检查为空。")
-    if not steps:
-        doc.notes.append("该症状在子图中没有可展开的候选原因，排查步骤为空。")
-    if omitted:
-        doc.notes.append(f"{len(omitted)} 个原因/检查未进入正文，明细见 reference/evidence.md。")
-    return doc
+    if not single and not scenario.routing:
+        # No reading in the graph separates this scenario from the others.
+        triggers = "、".join(playbook.trigger_terms()[:3])
+        scenario.routing.append(
+            RoutingRow(
+                precheck="（来源未给出可判定的回显判据）",
+                criterion=f"按现象与告警匹配：{triggers}" if triggers else "按现象与告警匹配",
+                scenario=f"场景{label}：{name}",
+            )
+        )
+    return scenario
 
 
 #: Steps cite the precheck they read from by node id until the list is final.
 REUSE_RE = re.compile(r"@@([^@]+)@@")
 
 
-def _resolve_references(prechecks: List[Precheck], steps: List[Step]) -> None:
+def _resolve_references(prechecks: List[Precheck], scenarios: Sequence[DocScenario]) -> None:
     """Turn the ``@@node_id@@`` placeholders into final precheck numbers.
 
-    Steps are built before it is known which prechecks survive pruning, so they
-    cite the collection step by identity and get their number here.
+    Steps and routing rows are built before it is known which prechecks survive
+    pruning, so they cite the collection step by identity and get their number
+    here.
     """
     number: Dict[str, int] = {}
     for index, precheck in enumerate(prechecks, start=1):
         for node_id in precheck.node_ids:
             number[node_id] = index
-    for step in steps:
-        step.reuse_note = REUSE_RE.sub(
-            lambda match: str(number.get(match.group(1), "?")), step.reuse_note
-        )
-        if "步骤 ?" in step.reuse_note:  # the precheck it cited did not survive
-            step.reuse_note = "复用前置检查回显"
+
+    def resolve(text: str) -> str:
+        return REUSE_RE.sub(lambda match: str(number.get(match.group(1), "?")), text)
+
+    for scenario in scenarios:
+        for step in scenario.steps:
+            step.reuse_note = resolve(step.reuse_note)
+            if "步骤 ?" in step.reuse_note:  # the precheck it cited did not survive
+                step.reuse_note = "复用前置检查回显"
+        for row in scenario.routing:
+            row.precheck = resolve(row.precheck)
+            if "步骤 ?" in row.precheck:
+                row.precheck = "（对应采集步骤已合并，见前置检查）"
 
 
 def _merge_collect(existing: str, addition: str) -> str:
@@ -605,6 +750,41 @@ def _build_params(
 
 
 # ------------------------------------------------------------------ render
+def _render_step(step: Step, *, heading: str) -> List[str]:
+    lines = [f"{heading} 步骤{step.index}：{step.name}", ""]
+    lines.append(f"1. **步骤名称**：{step.name}")
+    if step.commands:
+        if len(step.commands) == 1:
+            lines.append(f"2. **CLI 命令**：`{step.commands[0]}`")
+        else:
+            lines.append("2. **CLI 命令**：")
+            lines += [f"   - `{command}`" for command in step.commands]
+    else:
+        lines.append(f"2. **CLI 命令**：{step.reuse_note or '复用前置检查回显'}")
+    if step.literals:
+        lines.append(
+            "   - 注意：命令含案例字面量（" + "、".join(step.literals[:4]) + "），执行前替换为现场对象"
+        )
+    lines.append("3. **跳转信息**：")
+    for branch in step.branches:
+        lines.append(f"   - {branch.criterion}：{branch.outcome}")
+    lines.append("4. **根因定位**：")
+    if step.causes:
+        lines += [f"   - {cause}" for cause in step.causes]
+    else:
+        lines.append("   - 无")
+    lines.append("")
+    return lines
+
+
+def _render_cause_table(causes: Sequence[RootCause]) -> List[str]:
+    lines = ["| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |", "| --- | --- | --- | --- |"]
+    for cause in causes:
+        lines.append(f"| {cause.name} | {cause.evidence} | {cause.fix} | {cause.recheck} |")
+    lines.append("")
+    return lines
+
+
 def render_doc(doc: SkillDoc, *, name: str, description: str, lead: str = "") -> str:
     lines = ["---", f"name: {name}", f"description: {description}", "---", ""]
     if lead:
@@ -644,40 +824,40 @@ def render_doc(doc: SkillDoc, *, name: str, description: str, lead: str = "") ->
     else:
         lines += ["本子图未给出该症状的入口检查动作，直接进入排查步骤。", ""]
 
+    if doc.multi:
+        lines += ["## 场景跳转表", ""]
+        lines.append("公共采集做完后，按下表判据进入对应场景；判据都不命中时逐个场景排查。")
+        lines.append("")
+        lines += ["| 前置检查步骤 | 判据 | 跳转场景 |", "| --- | --- | --- |"]
+        for scenario in doc.scenarios:
+            for row in scenario.routing:
+                lines.append(f"| {row.precheck} | {row.criterion} | → **{row.scenario}** |")
+        lines.append("")
+
     lines += ["# 排查步骤", ""]
-    if doc.steps:
+    if not doc.steps:
+        lines += ["本子图未给出该症状的候选原因，无法展开排查步骤。", ""]
+    elif doc.multi:
+        lines.append("按场景跳转表进入对应场景；每个场景内的步骤从 1 开始，默认顺序执行。")
+        lines.append("")
+        for scenario in doc.scenarios:
+            lines += [f"### {scenario.title}", ""]
+            if not scenario.steps:
+                lines += ["本场景在子图中没有可展开的候选原因。", ""]
+                continue
+            for step in scenario.steps:
+                lines += _render_step(step, heading="####")
+    else:
         lines.append("默认按顺序执行；判据来自前置检查回显的步骤不重复下发命令。")
         lines.append("")
-        for step in doc.steps:
-            lines.append(f"## 步骤{step.index}：{step.name}")
-            lines.append("")
-            lines.append(f"1. **步骤名称**：{step.name}")
-            if step.commands:
-                if len(step.commands) == 1:
-                    lines.append(f"2. **CLI 命令**：`{step.commands[0]}`")
-                else:
-                    lines.append("2. **CLI 命令**：")
-                    lines += [f"   - `{command}`" for command in step.commands]
-            else:
-                lines.append(f"2. **CLI 命令**：{step.reuse_note or '复用前置检查回显'}")
-            if step.literals:
-                lines.append(
-                    "   - 注意：命令含案例字面量（" + "、".join(step.literals[:4]) + "），执行前替换为现场对象"
-                )
-            lines.append("3. **跳转信息**：")
-            for branch in step.branches:
-                lines.append(f"   - {branch.criterion}：{branch.outcome}")
-            lines.append("4. **根因定位**：")
-            if step.causes:
-                lines += [f"   - {cause}" for cause in step.causes]
-            else:
-                lines.append("   - 无")
-            lines.append("")
-    else:
-        lines += ["本子图未给出该症状的候选原因，无法展开排查步骤。", ""]
+        for step in doc.scenarios[0].steps:
+            lines += _render_step(step, heading="##")
 
-    lines += ["# 根因对照表", "", "| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |", "| --- | --- | --- | --- |"]
-    for cause in doc.root_causes:
-        lines.append(f"| {cause.name} | {cause.evidence} | {cause.fix} | {cause.recheck} |")
-    lines.append("")
+    lines += ["# 根因对照表", ""]
+    if doc.multi:
+        for scenario in doc.scenarios:
+            lines += [f"### {scenario.title}", ""]
+            lines += _render_cause_table(scenario.root_causes)
+    else:
+        lines += _render_cause_table(doc.scenarios[0].root_causes)
     return "\n".join(lines)

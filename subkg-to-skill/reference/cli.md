@@ -70,6 +70,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--entry VALUE` | 入口症状：`node_id`、id 前缀或名称关键词。**可重复**，多个即合并成一份 |
 | `--unit SECTION` | 诊断单元（章节号如 `28.21`，或案例 ID 如 `case:loop-001`，前缀匹配）。**可重复**；单症状横跨多个单元时必填 |
 | `--merge-same-name` | 把其他来源里同名（拼写差异归一后）的症状及其单元一并合并进来 |
+| `--scenarios FILE` | 场景清单 JSON：一份 skill 覆盖多个故障，公共前置检查 + 场景跳转表 + `### 场景X` 分节。给了它就忽略 `--entry`/`--unit` |
 | `--all-units` | 合并该症状的全部诊断单元；会把多个故障场景写进一份文档，仅在用户明确要求时用 |
 | `--name SLUG` | **必填**，英文技能名（`^[a-z0-9-]+$`）。模板硬性要求，中文名会报错 |
 | `--description TEXT` | frontmatter 描述；不给则由症状的名称、别名、`match_phrases`、`trigger_context` 生成 |
@@ -92,6 +93,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--min-causes N` | 至少几个候选原因才算一个场景（默认 1） |
 | `--no-merge` | 不按故障跨来源归并，逐场景列出 |
 | `--all-units` | 不按诊断单元拆分 |
+| `--export-scenarios FILE` | 把当前分组导出成场景清单 JSON，编辑后交给 `build --scenarios` 生成一份多场景 skill |
 | `--show-causes` | 按来源列出每组的根因清单——判断一个合并组是不是混了两类故障（例如"中断"和"震荡"），最直接的依据 |
 | `--suggest-merge` | 额外报告名字不同但根因高度重叠的故障（默认阈值：共享 ≥2 个根因且重叠度 ≥34%），并给出可直接执行的合并命令。**只建议，不自动合并** |
 
@@ -118,6 +120,23 @@ python3 scripts/build_skill.py build-all /data/node.json /data/edge.json \
 
 # 自检
 python3 scripts/build_skill.py lint out/isis-neighbor-down
+```
+
+`scenarios.json` 形如：
+
+```json
+{
+  "name": "isis-troubleshooting",
+  "description": "",
+  "scenarios": [
+    {
+      "name": "IS-IS 邻居无法建立",
+      "entries": ["symptom_manual", "symptom_tree", "symptom_case"],
+      "units": ["17.4.1", "ipran_battle_tree:s0:r159", "ipran_icase"]
+    },
+    { "name": "IS-IS 邻居震荡", "entries": ["symptom_flap"], "units": ["17.4.3"] }
+  ]
+}
 ```
 
 `names.json` 形如（键可以是 `node_id`，也可以是 `node_id@诊断单元` 以区分同一症状的不同场景）：

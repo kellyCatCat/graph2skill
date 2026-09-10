@@ -92,6 +92,22 @@ python3 scripts/build_skill.py build <图文件或目录> \
 python3 scripts/build_skill.py build-all <图文件或目录> --out out/ --names names.json
 ```
 
+**多个故障合成一份（公共前置检查 + 场景跳转表）**：用户想要"一个 ISIS skill"而不是八份时用这个。
+先导出场景清单，改好中文场景名和英文技能名，再按清单生成：
+
+```bash
+python3 scripts/build_skill.py list <图> --export-scenarios scenarios.json
+# 编辑 scenarios.json：填 name（英文 slug）、按需调整每个场景的 name/entries/units、删掉不要的场景
+python3 scripts/build_skill.py build <图> --scenarios scenarios.json --out out/isis-troubleshooting
+```
+
+产物形态：公共前置检查（跨场景按命令去重）→ `## 场景跳转表` → 每个场景
+`### 场景A：xxx` + `#### 步骤1…`（**场景内从 1 计数**）→ 根因对照表按场景分节。
+细则见 [`reference/skill-template.md`](reference/skill-template.md)。
+
+**什么时候用哪种**：场景之间共用大量前置检查、用户希望一个入口 → 合成一份；
+场景之间几乎不共用命令、或合并后步骤超过 25 步 → 各自一份。
+
 子图大、只想要其中一块时，先用 `--root` / `--section` / `--vendor` / `--query` / `--depth`
 把范围收窄（见 [`reference/cli.md`](reference/cli.md)）。先加 `--dry-run` 看会写出什么。
 

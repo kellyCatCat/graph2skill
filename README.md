@@ -97,6 +97,14 @@ python3 $S build-all examples/subgraph --out out/ --names names.json
 | `# 排查步骤` | `## 步骤N：名称` + 步骤名称 / CLI 命令 / 跳转信息 / 根因定位 | 每条 `has_cause` 一步，判据来自 `confirms` / `supports` / `excludes` |
 | `# 根因对照表` | 根因 / 现象 / 修复CLI和方法 / 复检命令 | `repaired_by` 的命令模板或文字说法 |
 
+一份 skill 也可以覆盖多个故障场景：公共前置检查 + `## 场景跳转表` + 每个场景
+`### 场景X：xxx`（步骤在场景内从 1 计数）+ 按场景分节的根因对照表。
+
+```bash
+python3 $S list  kg/ --export-scenarios scenarios.json   # 导出分组，改名字/删场景
+python3 $S build kg/ --scenarios scenarios.json --out out/isis-troubleshooting
+```
+
 出处不塞进四章节，全部集中在 `reference/evidence.md`；
 `scripts/kg_query.py` 用来回查子图切片：
 
@@ -156,7 +164,7 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
 | `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
 | `tests/data/multisource/` | 同一故障被手册 / 作战树 / 案例库各写一遍的子图，用于验证跨来源合并 |
-| `tests/` | pytest 用例（247 个） |
+| `tests/` | pytest 用例（267 个） |
 
 ## 开发
 

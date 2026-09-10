@@ -18,7 +18,10 @@ from subkg2skill.template import NOT_FOUND, PARAM_RE, case_literals, command_sig
 
 SECTIONS = ("入参列表", "前置检查", "排查步骤", "根因对照表")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-STEP_RE = re.compile(r"^##\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
+#: ``## 步骤N`` in a single-fault document, ``#### 步骤N`` inside a scenario.
+STEP_RE = re.compile(r"^(#{2,4})\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
+SCENARIO_RE = re.compile(r"^###\s*场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
+ROUTING_HEADING = "场景跳转表"
 #: “步骤 N” as a jump target — “前置检查步骤 N” is a back-reference, not a jump.
 JUMP_RE = re.compile(r"(?<!前置检查)步骤\s*(\d+)")
 CODE_RE = re.compile(r"`([^`]+)`")
@@ -174,10 +177,20 @@ def lint_text(text: str) -> LintResult:
 
     # -- 前置检查 -------------------------------------------------------
     precheck_lines = sections["前置检查"]
-    if any(JUMP_RE.search(line) and "顺序" not in line for line in precheck_lines):
+    # 场景跳转表就在这一节里，但它是分流表不是采集步骤，两类检查要分开
+    routing_start = next(
+        (
+            index
+            for index, line in enumerate(precheck_lines)
+            if line.strip().startswith("##") and ROUTING_HEADING in line
+        ),
+        len(precheck_lines),
+    )
+    collection_lines = precheck_lines[:routing_start]
+    if any(JUMP_RE.search(line) and "顺序" not in line for line in collection_lines):
         issues.append(LintIssue("error", "前置检查不允许跳转到其他步骤"))
     precheck_params: Set[str] = set()
-    for command in _commands_in(precheck_lines):
+    for command in _commands_in(collection_lines):
         for token in PARAM_RE.findall(command):
             key = param_key(token)
             precheck_params.add(key)
@@ -190,72 +203,179 @@ def lint_text(text: str) -> LintResult:
 
     # -- 排查步骤 -------------------------------------------------------
     step_lines = sections["排查步骤"]
-    step_numbers: List[int] = []
-    step_bodies: Dict[int, List[str]] = {}
-    current: Optional[int] = None
+    scenarios: List[str] = []          # 场景标题，按出现顺序
+    step_bodies: Dict[str, Dict[int, List[str]]] = {}   # 场景 -> 步骤号 -> 正文
+    order: Dict[str, List[int]] = {}
+    current_scenario = ""
+    current_step: Optional[int] = None
+    step_bodies[""] = {}
+    order[""] = []
     for line in step_lines:
+        scenario_match = SCENARIO_RE.match(line)
+        if scenario_match:
+            current_scenario = f"场景{scenario_match.group(1)}：{scenario_match.group(2)}"
+            scenarios.append(current_scenario)
+            step_bodies.setdefault(current_scenario, {})
+            order.setdefault(current_scenario, [])
+            current_step = None
+            continue
         match = STEP_RE.match(line)
         if match:
-            current = int(match.group(1))
-            step_numbers.append(current)
-            step_bodies[current] = []
+            level, number = match.group(1), int(match.group(2))
+            if scenarios and level != "####":
+                issues.append(
+                    LintIssue("error", f"分场景时步骤标题应为四级（`#### 步骤{number}：…`），当前为 `{level}`")
+                )
+            if not scenarios and level != "##":
+                issues.append(
+                    LintIssue("error", f"未分场景时步骤标题应为二级（`## 步骤{number}：…`），当前为 `{level}`")
+                )
+            current_step = number
+            step_bodies[current_scenario][number] = []
+            order[current_scenario].append(number)
             continue
-        if current is not None:
-            step_bodies[current].append(line)
-    if step_numbers and step_numbers != list(range(1, len(step_numbers) + 1)):
-        issues.append(LintIssue("error", f"步骤编号必须从 1 起连续，当前为 {step_numbers}"))
+        if current_step is not None:
+            step_bodies[current_scenario][current_step].append(line)
 
-    declared_causes: Set[str] = set()
-    for number, body in step_bodies.items():
-        joined = "\n".join(body)
-        for item in STEP_ITEMS:
-            if item not in joined:
-                issues.append(LintIssue("error", f"步骤{number} 缺少「{item}」"))
-        for target in JUMP_RE.findall("\n".join(_jump_lines(body))):
-            if int(target) not in step_bodies:
-                issues.append(LintIssue("error", f"步骤{number} 跳转到不存在的步骤 {target}"))
-        for command in _commands_in(body):
-            for token in PARAM_RE.findall(command):
-                if param_key(token) not in declared:
-                    issues.append(LintIssue("error", f"步骤{number} 用了未在入参列表声明的参数 <{token}>"))
-        in_causes = False
-        for line in body:
-            if "根因定位" in line:
-                in_causes = True
-                continue
-            if in_causes:
-                stripped = line.strip()
-                if stripped.startswith("-"):
-                    cause = stripped.lstrip("-").strip()
-                    if cause and cause != "无":
-                        declared_causes.add(cause)
-                elif stripped:
-                    in_causes = False
-    if step_bodies:
-        last = "\n".join(step_bodies[max(step_bodies)])
-        if NOT_FOUND not in last:
-            issues.append(LintIssue("error", f"最后一步必须写清全部判据不命中时判定“{NOT_FOUND}”"))
+    if scenarios and step_bodies[""]:
+        issues.append(LintIssue("error", "分场景时所有步骤都必须落在某个 `### 场景X：…` 下"))
 
-    # 前置检查里判定的根因也要进对照表
-    for line in precheck_lines:
-        for match in re.finditer(r"判定根因为[“\"]([^”\"]+)[”\"]", line):
-            declared_causes.add(match.group(1))
+    declared_causes: Dict[str, Set[str]] = {}
+    for scenario in scenarios or [""]:
+        numbers = order.get(scenario, [])
+        if numbers and numbers != list(range(1, len(numbers) + 1)):
+            where = f"{scenario} " if scenario else ""
+            issues.append(LintIssue("error", f"{where}步骤编号必须从 1 起连续，当前为 {numbers}"))
+        bodies = step_bodies.get(scenario, {})
+        found: Set[str] = set()
+        for number, body in bodies.items():
+            joined = "\n".join(body)
+            for item in STEP_ITEMS:
+                if item not in joined:
+                    where = f"{scenario} " if scenario else ""
+                    issues.append(LintIssue("error", f"{where}步骤{number} 缺少「{item}」"))
+            for target in JUMP_RE.findall("\n".join(_jump_lines(body))):
+                if int(target) not in bodies:
+                    where = f"{scenario} " if scenario else ""
+                    issues.append(
+                        LintIssue("error", f"{where}步骤{number} 跳转到不存在的步骤 {target}")
+                    )
+            for command in _commands_in(body):
+                for token in PARAM_RE.findall(command):
+                    if param_key(token) not in declared:
+                        where = f"{scenario} " if scenario else ""
+                        issues.append(
+                            LintIssue("error", f"{where}步骤{number} 用了未在入参列表声明的参数 <{token}>")
+                        )
+            in_causes = False
+            for line in body:
+                if "根因定位" in line:
+                    in_causes = True
+                    continue
+                if in_causes:
+                    stripped = line.strip()
+                    if stripped.startswith("-"):
+                        cause = stripped.lstrip("-").strip()
+                        if cause and cause != "无":
+                            found.add(cause)
+                    elif stripped:
+                        in_causes = False
+        if bodies:
+            last = "\n".join(bodies[max(bodies)])
+            if NOT_FOUND not in last:
+                where = f"{scenario} 的" if scenario else ""
+                issues.append(
+                    LintIssue("error", f"{where}最后一步必须写清全部判据不命中时判定“{NOT_FOUND}”")
+                )
+        declared_causes[scenario] = found
+
+    total_steps = sum(len(bodies) for bodies in step_bodies.values())
+    if total_steps > MAX_REASONABLE_STEPS and not scenarios:
+        issues.append(
+            LintIssue(
+                "warning",
+                f"共 {total_steps} 个排查步骤，超出可读范围（>{MAX_REASONABLE_STEPS}）；"
+                "多半是把多个故障场景合成了一份，建议按诊断单元拆分（build --unit）或分场景（### 场景X）",
+            )
+        )
+
+    repeats: Dict[str, int] = {}
+    for command in _commands_in(collection_lines):
+        signature = command_signature([command])
+        repeats[signature] = repeats.get(signature, 0) + 1
+    for signature, count in repeats.items():
+        if count > MAX_COMMAND_REPEATS:
+            issues.append(
+                LintIssue("warning", f"前置检查里 `{signature}` 重复了 {count} 次，应合并为一条采集步骤")
+            )
+
+    # -- 场景跳转表 -----------------------------------------------------
+    routing_rows: List[List[str]] = []
+    if scenarios:
+        routing_rows = _table_rows(precheck_lines[routing_start:])[1:]
+        if not routing_rows:
+            issues.append(
+                LintIssue("error", f"分场景时前置检查后必须有「{ROUTING_HEADING}」，说明每条判据进入哪个场景")
+            )
+        routed = {
+            re.sub(r"[*→\s]", "", row[2]) for row in routing_rows if len(row) >= 3
+        }
+        for scenario in scenarios:
+            if re.sub(r"\s", "", scenario) not in routed:
+                issues.append(LintIssue("error", f"{scenario} 没有出现在{ROUTING_HEADING}里"))
+        known = {re.sub(r"\s", "", scenario) for scenario in scenarios}
+        for target in routed:
+            if target not in known:
+                issues.append(
+                    LintIssue("error", f"{ROUTING_HEADING}指向了不存在的场景：{target}")
+                )
+        by_precheck: Dict[str, List[str]] = {}
+        for row in routing_rows:
+            if len(row) >= 3:
+                by_precheck.setdefault(row[0].strip(), []).append(row[1].strip())
+        for precheck, criteria in by_precheck.items():
+            if len(criteria) != len(set(criteria)):
+                issues.append(
+                    LintIssue(
+                        "warning",
+                        f"{ROUTING_HEADING}里 {precheck} 有完全相同的判据指向不同场景，无法据此分流",
+                    )
+                )
 
     # -- 根因对照表 -----------------------------------------------------
-    table_rows = _table_rows(sections["根因对照表"])[1:]
+    table_lines = sections["根因对照表"]
+    per_scenario: Dict[str, List[List[str]]] = {}
+    if scenarios:
+        current = ""
+        buckets: Dict[str, List[str]] = {"": []}
+        for line in table_lines:
+            match = SCENARIO_RE.match(line)
+            if match:
+                current = f"场景{match.group(1)}：{match.group(2)}"
+                buckets[current] = []
+                continue
+            buckets.setdefault(current, []).append(line)
+        per_scenario = {name: _table_rows(lines)[1:] for name, lines in buckets.items()}
+    table_rows = _table_rows(table_lines)[1:]
     listed = {row[0].strip() for row in table_rows if row}
     for row in table_rows:
         if len(row) < 4:
             issues.append(LintIssue("error", f"根因对照表行格式不对（需要 4 列）：{row}"))
-    for cause in sorted(declared_causes):
-        if cause not in listed:
-            issues.append(LintIssue("error", f"根因“{cause}”没有在根因对照表里逐字出现"))
+
+    for scenario, causes in declared_causes.items():
+        scope = {row[0].strip() for row in per_scenario.get(scenario, [])} if scenarios else listed
+        for cause in sorted(causes):
+            if cause not in (scope or listed):
+                where = f"{scenario} 的" if scenario else ""
+                issues.append(LintIssue("error", f"{where}根因“{cause}”没有在根因对照表里逐字出现"))
+    if NOT_FOUND not in listed:
+        issues.append(LintIssue("error", f"根因对照表缺少「{NOT_FOUND}」行"))
 
     names = [row[0].strip() for row in table_rows if row and row[0].strip() != NOT_FOUND]
     for index, left in enumerate(names):
         for right in names[index + 1 :]:
             left_key, right_key = fault_key(left), fault_key(right)
-            if not left_key or not right_key:
+            if not left_key or not right_key or left_key == right_key:
                 continue
             contained = left_key in right_key or right_key in left_key
             ratio = SequenceMatcher(None, left_key, right_key).ratio()
@@ -267,8 +387,6 @@ def lint_text(text: str) -> LintResult:
                         "确认是否该合并（修复动作不同就别合）",
                     )
                 )
-    if NOT_FOUND not in listed:
-        issues.append(LintIssue("error", f"根因对照表缺少「{NOT_FOUND}」行"))
 
     # -- 全文格式 -------------------------------------------------------
     for command in _commands_in(text.splitlines()):
@@ -297,7 +415,7 @@ def lint_text(text: str) -> LintResult:
         )
 
     repeats: Dict[str, int] = {}
-    for command in _commands_in(precheck_lines):
+    for command in _commands_in(collection_lines):
         signature = command_signature([command])
         repeats[signature] = repeats.get(signature, 0) + 1
     for signature, count in repeats.items():

@@ -17,7 +17,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import __version__, schema
 from subkg2skill.graph import Graph, Node, ValidationReport
@@ -40,6 +40,7 @@ from subkg2skill.render import (
     normalise_name,
     suggested_slug,
 )
+from subkg2skill.template import scenario_label
 
 
 def _add_input_arguments(parser: argparse.ArgumentParser) -> None:
@@ -311,6 +312,26 @@ def cmd_list(args) -> int:
     if skipped:
         print(f"  另有 {skipped} 个场景候选原因少于 {args.min_causes} 个，已跳过（--min-causes 0 可包含）")
 
+    if args.export_scenarios:
+        manifest = {
+            "name": "<english-slug>",
+            "description": "",
+            "scenarios": [
+                {
+                    "name": group.name,
+                    "entries": [node.node_id for node in group.symptoms],
+                    "units": list(group.units),
+                }
+                for group in groups
+            ],
+        }
+        path = Path(args.export_scenarios)
+        path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(
+            f"\n已导出 {len(groups)} 个场景到 {path}；改好场景名与技能名后："
+            f"\n  build <图> --scenarios {path} --out <目录>"
+        )
+
     if args.suggest_merge:
         suggestions = suggest_merges(graph, groups)
         print()
@@ -460,6 +481,89 @@ def _build_one(
     return 0 if result.ok else 1
 
 
+def _load_manifest(path: Path) -> Dict:
+    if not path.exists():
+        raise RenderError(f"{path}: 场景清单文件不存在")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("scenarios"), list):
+        raise RenderError(f"{path}: 应为 {{name, description, scenarios: [...]}} 的对象")
+    if not manifest["scenarios"]:
+        raise RenderError(f"{path}: scenarios 是空的")
+    return manifest
+
+
+def cmd_build_scenarios(args, graph: Graph, sources) -> int:
+    """One document covering several faults off a shared collection phase."""
+    manifest = _load_manifest(Path(args.scenarios))
+    name = args.name or manifest.get("name") or ""
+    if not name or name.startswith("<"):
+        raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
+
+    units: List[str] = []
+    for entry in manifest["scenarios"]:
+        units += [unit for unit in entry.get("units") or [] if unit]
+    scoped = graph.scope_to_units(list(dict.fromkeys(units))) if units else graph
+
+    named: List[Tuple[str, object]] = []
+    for index, entry in enumerate(manifest["scenarios"]):
+        ids = entry.get("entries") or []
+        if not ids:
+            raise RenderError(f"第 {index + 1} 个场景没有 entries")
+        symptoms = [_resolve_entry(scoped, node_id) for node_id in ids]
+        unit_scope = [unit for unit in entry.get("units") or [] if unit]
+        playbook = build_merged_playbook(
+            scoped.scope_to_units(unit_scope) if unit_scope else scoped, symptoms, unit_scope
+        )
+        named.append((entry.get("name") or symptoms[0].name, playbook))
+
+    options = BuildOptions(
+        name=name,
+        description=args.description or manifest.get("description", ""),
+        evidence_limit=args.evidence,
+        data_mode=args.data,
+        include_script=not args.no_script,
+        include_lead=not args.no_lead,
+        sources=sources,
+        unit="、".join(dict.fromkeys(units)),
+        include_example_specific=args.include_example_specific,
+        keep_undecidable=args.keep_undecidable,
+        max_steps=args.max_steps,
+    )
+    package = build_package(scoped, named, options)
+    result = lint_text(package.files["SKILL.md"])
+    out_dir = Path(args.out)
+
+    if args.dry_run:
+        print(f"技能名：{normalise_name(name)}｜场景 {len(named)} 个")
+        for index, (scenario_name, playbook) in enumerate(named):
+            print(f"  场景{scenario_label(index)}：{scenario_name}（{len(playbook.causes)} 个原因）")
+        print("将写出：")
+        for relative in sorted(package.files):
+            print(f"  {relative}  ({len(package.files[relative])} 字符)")
+        _print_lint(result)
+        return 0 if result.ok else 1
+
+    written = package.write(out_dir, force=args.force)
+    print(f"技能已生成：{out_dir}")
+    print(f"  技能名：{normalise_name(name)}")
+    stats = package.stats
+    print(
+        f"  场景 {len(named)} 个；公共前置检查 {stats.get('prechecks', 0)} 条；"
+        f"排查步骤 {stats.get('steps', 0)} 步；根因 {stats.get('root_causes', 0)} 个；"
+        f"文件 {len(written)} 个"
+    )
+    for index, (scenario_name, playbook) in enumerate(named):
+        print(f"    场景{scenario_label(index)}：{scenario_name}")
+    for note in package.notes:
+        print(f"  提示：{note}")
+    _print_lint(result)
+    _install_hint(out_dir, normalise_name(name))
+    return 0 if result.ok else 1
+
+
 def cmd_build(args) -> int:
     graph, report, sources = _load_graph(args)
     if args.strict and report.errors:
@@ -467,6 +571,8 @@ def cmd_build(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
+    if args.scenarios:
+        return cmd_build_scenarios(args, graph, sources)
     entries = args.entry or [""]
     symptoms = [_resolve_entry(graph, entry) for entry in entries]
     if args.merge_same_name and len(symptoms) == 1:
@@ -592,6 +698,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-merge", action="store_true", help="不按故障归并同名症状，逐个场景列出"
     )
     listing.add_argument(
+        "--export-scenarios",
+        default="",
+        help="把当前分组导出成场景清单 JSON，编辑后交给 build --scenarios 生成一份多场景 skill",
+    )
+    listing.add_argument(
         "--show-causes",
         action="store_true",
         help="按来源列出每组的根因清单，用来判断一个组是不是混了两类故障",
@@ -613,6 +724,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     build.add_argument(
         "--unit", action="append", default=[], help="诊断单元（章节号/案例 ID），可重复"
+    )
+    build.add_argument(
+        "--scenarios",
+        default="",
+        help="场景清单 JSON（list --export-scenarios 生成）：一份 skill 含公共前置检查 + 多个场景",
     )
     build.add_argument(
         "--merge-same-name",

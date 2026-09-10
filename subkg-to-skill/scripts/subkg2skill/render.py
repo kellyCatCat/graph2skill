@@ -17,13 +17,13 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from subkg2skill import describe, schema
 from subkg2skill.condition import describe_edge_condition
 from subkg2skill.graph import Graph, Node, _text
 from subkg2skill.playbook import Playbook
-from subkg2skill.template import BuildPolicy, build_doc, render_doc
+from subkg2skill.template import BuildPolicy, build_multi_doc, render_doc
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 MAX_DESCRIPTION = 1024
@@ -111,6 +111,23 @@ def suggested_slug(symptom: Node, unit: str = "") -> str:
     return normalise_name(f"{base}-{unit_hint}" if unit_hint else base)
 
 
+def _multi_description(scenarios: Sequence[Tuple[str, Playbook]]) -> str:
+    """Phenomenon + when to use, across every scenario the document covers."""
+    if len(scenarios) == 1:
+        name, playbook = scenarios[0]
+        return default_description(playbook.symptom, playbook)
+    names = "、".join(name for name, _book in scenarios[:6])
+    triggers: List[str] = []
+    for _name, playbook in scenarios:
+        for term in playbook.trigger_terms():
+            if term not in triggers:
+                triggers.append(term)
+    when = "、".join(triggers[:8])
+    text = f"覆盖 {len(scenarios)} 个故障场景：{names}。出现 {when} 等现象或告警时使用；"
+    text += "先做公共前置采集，再按场景跳转表进入对应场景。"
+    return text[: MAX_DESCRIPTION - 1]
+
+
 def default_description(symptom: Node, playbook: Optional[Playbook] = None) -> str:
     """``故障现象 + 适用时机``, as the template's example does it.
 
@@ -165,6 +182,7 @@ def render_evidence(
     playbook: Playbook,
     options: BuildOptions,
     omitted: Sequence = (),
+    playbooks: Sequence[Playbook] = (),
 ) -> str:
     """Everything the four sections deliberately leave out: sources and caveats."""
     lines = [
@@ -182,13 +200,20 @@ def render_evidence(
         "## 症状",
         "",
     ]
-    if len(playbook.symptoms) > 1:
+    books = list(playbooks) or [playbook]
+    symptoms = [node for book in books for node in book.symptoms]
+    if len(books) > 1:
         lines += [
-            f"本 skill 合并了 {len(playbook.symptoms)} 个来源对同一故障的描述："
-            + "、".join(f"{node.name}（`{node.node_id}`）" for node in playbook.symptoms),
+            f"本 skill 覆盖 {len(books)} 个故障场景，共用同一套前置检查。",
             "",
         ]
-    for node in playbook.symptoms:
+    if len(symptoms) > 1:
+        lines += [
+            f"本 skill 合并了 {len(symptoms)} 个来源对同一故障的描述："
+            + "、".join(f"{node.name}（`{node.node_id}`）" for node in symptoms),
+            "",
+        ]
+    for node in symptoms:
         lines += _node_evidence_block(node, options.evidence_limit)
 
     checks: List[Node] = []
@@ -302,15 +327,36 @@ def _query_script() -> str:
 
 
 # ----------------------------------------------------------------- build
-def build_package(graph: Graph, playbook: Playbook, options: BuildOptions) -> SkillPackage:
-    """Render one fault entry into a template-conformant skill package."""
-    name = normalise_name(options.name or suggested_slug(playbook.symptom))
-    description = options.description or default_description(playbook.symptom, playbook)
+def build_package(
+    graph: Graph,
+    playbook: Union[Playbook, Sequence[Tuple[str, Playbook]]],
+    options: BuildOptions,
+) -> SkillPackage:
+    """Render one skill package: a single fault, or several as scenarios.
+
+    A sequence of ``(场景名, playbook)`` produces one document with a shared
+    collection phase, a routing table and ``### 场景X`` sections.
+    """
+    scenarios: List[Tuple[str, Playbook]]
+    if isinstance(playbook, Playbook):
+        scenarios = [(playbook.symptom.name, playbook)]
+        primary = playbook
+    else:
+        scenarios = [(name, book) for name, book in playbook]
+        if not scenarios:
+            raise RenderError("至少需要一个场景")
+        primary = scenarios[0][1]
+
+    name = normalise_name(options.name or suggested_slug(primary.symptom))
+    description = options.description or _multi_description(scenarios)
     if len(description) > MAX_DESCRIPTION:
         description = description[: MAX_DESCRIPTION - 1]
 
-    slice_graph = graph.subgraph(playbook.covered)
-    doc = build_doc(slice_graph, playbook, options.policy())
+    covered: Set[str] = set()
+    for _label, book in scenarios:
+        covered |= book.covered
+    slice_graph = graph.subgraph(covered)
+    doc = build_multi_doc(slice_graph, scenarios, options.policy())
     doc.unit = options.unit
     package = SkillPackage(
         notes=list(doc.notes),
@@ -325,7 +371,7 @@ def build_package(graph: Graph, playbook: Playbook, options: BuildOptions) -> Sk
         doc, name=name, description=description, lead=LEAD if options.include_lead else ""
     )
     package.files["reference/evidence.md"] = render_evidence(
-        slice_graph, playbook, options, doc.omitted
+        slice_graph, primary, options, doc.omitted, [book for _name, book in scenarios]
     )
     if options.data_mode != "none":
         package.files["reference/subgraph.json"] = render_data(slice_graph, options)
