@@ -439,7 +439,7 @@ class Graph:
         roots: Iterable[str],
         *,
         depth: Optional[int] = None,
-        edge_types: Sequence[str] = schema.FORWARD_EDGES,
+        edge_types: Sequence[str] = schema.WITHIN_FAULT_EDGES,
         pull_evidence: bool = True,
     ) -> Set[str]:
         """Forward closure from *roots*, optionally pulling verdict evidence back in.
@@ -447,6 +447,11 @@ class Graph:
         Diagnosis reads forward (symptom → cause → check → observation), but the
         observation that confirms a cause points *backwards* into it, so those
         in-edges are pulled in as well unless ``pull_evidence`` is off.
+
+        ``refers_to`` and ``leads_to`` are left out by default: both mean “this
+        is now a different fault”, and following them drags an unrelated
+        entry's whole subtree into the selection.  Pass
+        ``edge_types=schema.FORWARD_EDGES`` to walk them anyway.
         """
         wanted = set(edge_types)
         seen: Set[str] = set()
@@ -515,6 +520,38 @@ class Graph:
             if self.unit_matches(edge.section, unit) or (include_unscoped and not edge.section)
         ]
         return Graph(self.nodes.values(), kept)
+
+    def resolve_exclusions(self, specs: Sequence[str]) -> Tuple[Set[str], List[Tuple[str, Node]]]:
+        """Turn ``node_id`` / name-keyword exclusions into node ids.
+
+        A keyword matches on the node's **name** only — matching descriptions or
+        provenance would quietly take out far more than the reader intended.
+        """
+        removed: Set[str] = set()
+        matched: List[Tuple[str, Node]] = []
+        for spec in specs:
+            spec = spec.strip()
+            if not spec:
+                continue
+            if spec in self.nodes:
+                removed.add(spec)
+                matched.append((spec, self.nodes[spec]))
+                continue
+            needle = spec.lower()
+            for node in self.nodes.values():
+                if needle in node.name.lower() and node.node_id not in removed:
+                    removed.add(node.node_id)
+                    matched.append((spec, node))
+        return removed, matched
+
+    def without(self, node_ids: Iterable[str]) -> "Graph":
+        """Drop these nodes and every relation touching them."""
+        drop = {node_id for node_id in node_ids if node_id in self.nodes}
+        if not drop:
+            return self
+        nodes = [node for node in self.nodes.values() if node.node_id not in drop]
+        edges = [e for e in self.edges if e.source not in drop and e.target not in drop]
+        return Graph(nodes, edges)
 
     def subgraph(self, node_ids: Iterable[str]) -> "Graph":
         keep = {nid for nid in node_ids if nid in self.nodes}

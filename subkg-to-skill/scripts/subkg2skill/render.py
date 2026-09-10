@@ -56,6 +56,8 @@ class BuildOptions:
     include_example_specific: bool = False
     keep_undecidable: bool = False
     max_steps: int = 0
+    #: 人工剔除的条目：(匹配到它的 exclude 写法, 节点名)
+    excluded: Sequence[Tuple[str, str]] = ()
 
     def policy(self) -> BuildPolicy:
         return BuildPolicy(
@@ -358,6 +360,8 @@ def build_package(
     slice_graph = graph.subgraph(covered)
     doc = build_multi_doc(slice_graph, scenarios, options.policy())
     doc.unit = options.unit
+    for spec, node_name in options.excluded:
+        doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     package = SkillPackage(
         notes=list(doc.notes),
         stats={

@@ -69,6 +69,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--include-example-specific` | 关 | 保留 `example_specific` 条目（含案例地址、设备名与组网）；默认剔除并记进 evidence.md |
 | `--keep-undecidable` | 关 | 保留既无判定观测也无修复动作的原因（默认剔除，这类步骤没有信息量） |
 | `--max-steps N` | 0（不限） | 排查步骤上限；被截掉的原因会记进 evidence.md，不会静默丢失 |
+| `--exclude VALUE` | 无 | 剔除与本场景无关的节点：`node_id` 或名称关键词（如 `MPLS`），可重复。整条链一起走（原因带着它的检查、观测、修复），并记进 evidence.md；**匹配不到任何节点会报错**，避免写错静默漏掉 |
 | `--force` | 关 | 覆盖已有目录 |
 | `--dry-run` | 关 | 只打印将写出的文件与模板检查结果，不落盘 |
 
@@ -113,7 +114,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--scenarios FILE` | 按场景清单规划；不给则用自动分组 |
 | `--limit N` | 提示最多列出多少条（默认 20） |
 | `--min-causes N` / `--no-merge` | 自动分组时的分组参数，与 `list` 同义 |
-| `--include-example-specific` / `--keep-undecidable` / `--max-steps N` | 与 `build` 同义，用来预演剔除策略的效果 |
+| `--include-example-specific` / `--keep-undecidable` / `--max-steps N` / `--exclude VALUE` | 与 `build` 同义，用来预演剔除策略的效果 |
 
 输出的「步骤 / 根因 / 修复命令」是**文档里实际会有的量**（已算进剔除、命令去重、根因折叠），
 不是图上的原始计数；「复用的公共前置检查」列出该场景的步骤读了哪几条采集步骤。
@@ -153,12 +154,15 @@ python3 scripts/build_skill.py lint out/isis-neighbor-down
     {
       "name": "IS-IS 邻居无法建立",
       "entries": ["symptom_manual", "symptom_tree", "symptom_case"],
-      "units": ["17.4.1", "ipran_battle_tree:s0:r159", "ipran_icase"]
+      "units": ["17.4.1", "ipran_battle_tree:s0:r159", "ipran_icase"],
+      "exclude": ["MPLS", "cause_bgp_loop_1a2b"]
     },
     { "name": "IS-IS 邻居震荡", "entries": ["symptom_flap"], "units": ["17.4.3"] }
   ]
 }
 ```
+
+每个场景的 `exclude` 只作用于该场景；命令行 `--exclude` 对所有场景生效。
 
 `names.json` 形如（键可以是 `node_id`，也可以是 `node_id@诊断单元` 以区分同一症状的不同场景）：
 

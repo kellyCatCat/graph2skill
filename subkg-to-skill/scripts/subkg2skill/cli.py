@@ -86,6 +86,12 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
         "--keep-undecidable", action="store_true", help="保留既无判据也无修复动作的原因"
     )
     parser.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="剔除与本场景无关的节点：node_id 或名称关键词（如 MPLS），可重复",
+    )
 
 
 def _load_graph(args):
@@ -322,6 +328,8 @@ def cmd_list(args) -> int:
                     "name": group.name,
                     "entries": [node.node_id for node in group.symptoms],
                     "units": list(group.units),
+                    # 与本场景无关的节点：写 node_id 或名称关键词，生成时整条剔除
+                    "exclude": [],
                 }
                 for group in groups
             ],
@@ -423,6 +431,8 @@ def _build_one(
 ) -> int:
     symptoms = list(symptoms)
     units = [unit for unit in units if unit]
+    excluded: List[Tuple[str, str]] = []
+    excluded_ids: Set[str] = set()
     unit_key = "|".join(sorted(units))
     if cache is None or unit_key not in cache:
         scoped = graph.scope_to_units(units) if units else graph
@@ -430,6 +440,7 @@ def _build_one(
             cache[unit_key] = scoped
     else:
         scoped = cache[unit_key]
+    scoped = _apply_exclusions(scoped, getattr(args, "exclude", []), excluded, excluded_ids)
     playbook = build_merged_playbook(scoped, symptoms, units)
     symptom = playbook.symptom
     options = BuildOptions(
@@ -444,6 +455,7 @@ def _build_one(
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
+        excluded=excluded,
     )
     package = build_package(scoped, playbook, options)
     result = lint_text(package.files["SKILL.md"])
@@ -496,8 +508,38 @@ def _load_manifest(path: Path) -> Dict:
     return manifest
 
 
-def _scenarios_from_manifest(graph: Graph, path: Path) -> Tuple[str, str, List[Tuple[str, object]], List[str]]:
-    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元)."""
+def _apply_exclusions(
+    graph: Graph,
+    specs: Sequence[str],
+    removed: List[Tuple[str, str]],
+    removed_ids: Set[str],
+) -> Graph:
+    """Drop nodes a person judged unrelated, recording what went.
+
+    An exclusion that matches nothing is an error, not a no-op: a typo would
+    otherwise silently leave the unrelated material in the document.
+    """
+    specs = [spec for spec in specs if spec]
+    if not specs:
+        return graph
+    ids, matched = graph.resolve_exclusions(specs)
+    unmatched = set(specs) - {spec for spec, _node in matched}
+    if unmatched:
+        raise RenderError(
+            "以下 --exclude / exclude 没有匹配到任何节点（写错了会静默漏掉内容）："
+            + "、".join(sorted(unmatched))
+        )
+    for spec, node in matched:
+        if node.node_id not in removed_ids:
+            removed_ids.add(node.node_id)
+            removed.append((spec, node.name))
+    return graph.without(ids)
+
+
+def _scenarios_from_manifest(
+    graph: Graph, path: Path, extra_exclude: Sequence[str] = (), removed_ids: Optional[Set[str]] = None
+) -> Tuple[str, str, List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
+    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元, 剔除记录)."""
     manifest = _load_manifest(path)
     units: List[str] = []
     for entry in manifest["scenarios"]:
@@ -505,6 +547,8 @@ def _scenarios_from_manifest(graph: Graph, path: Path) -> Tuple[str, str, List[T
     units = list(dict.fromkeys(units))
     scoped = graph.scope_to_units(units) if units else graph
 
+    removed: List[Tuple[str, str]] = []
+    removed_ids = removed_ids if removed_ids is not None else set()
     named: List[Tuple[str, object]] = []
     for index, entry in enumerate(manifest["scenarios"]):
         ids = entry.get("entries") or []
@@ -512,14 +556,25 @@ def _scenarios_from_manifest(graph: Graph, path: Path) -> Tuple[str, str, List[T
             raise RenderError(f"第 {index + 1} 个场景没有 entries")
         symptoms = [_resolve_entry(scoped, node_id) for node_id in ids]
         unit_scope = [unit for unit in entry.get("units") or [] if unit]
-        playbook = build_merged_playbook(
-            scoped.scope_to_units(unit_scope) if unit_scope else scoped, symptoms, unit_scope
+        base = scoped.scope_to_units(unit_scope) if unit_scope else scoped
+        # 全局 --exclude 对所有场景生效，清单里的 exclude 只作用于本场景
+        base = _apply_exclusions(
+            base, list(extra_exclude) + list(entry.get("exclude") or []), removed, removed_ids
         )
+        playbook = build_merged_playbook(base, symptoms, unit_scope)
         named.append((entry.get("name") or symptoms[0].name, playbook))
-    return manifest.get("name", ""), manifest.get("description", ""), named, units
+    return (
+        manifest.get("name", ""),
+        manifest.get("description", ""),
+        named,
+        units,
+        removed,
+    )
 
 
-def _scenarios_from_groups(graph: Graph, args) -> Tuple[List[Tuple[str, object]], List[str]]:
+def _scenarios_from_groups(
+    graph: Graph, args, removed_ids: Optional[Set[str]] = None
+) -> Tuple[List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
     """Fall back to the automatic grouping when no manifest is given."""
     groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
     if args.limit:
@@ -528,6 +583,9 @@ def _scenarios_from_groups(graph: Graph, args) -> Tuple[List[Tuple[str, object]]
         raise RenderError("子图里没有可生成的故障场景")
     units = list(dict.fromkeys(unit for group in groups for unit in group.units))
     scoped = graph.scope_to_units(units) if units else graph
+    removed: List[Tuple[str, str]] = []
+    removed_ids = removed_ids if removed_ids is not None else set()
+    scoped = _apply_exclusions(scoped, getattr(args, "exclude", []), removed, removed_ids)
     named = [
         (
             group.name,
@@ -539,21 +597,25 @@ def _scenarios_from_groups(graph: Graph, args) -> Tuple[List[Tuple[str, object]]
         )
         for group in groups
     ]
-    return named, units
+    return named, units, removed
 
 
 def cmd_plan(args) -> int:
     """Phase 3: what would actually be written, and what could still be folded."""
     graph, report, sources = _load_graph(args)
     graph = _select(graph, args)
+    removed_ids: Set[str] = set()
     if args.scenarios:
-        name, _description, named, units = _scenarios_from_manifest(graph, Path(args.scenarios))
+        name, _description, named, units, removed = _scenarios_from_manifest(
+            graph, Path(args.scenarios), args.exclude, removed_ids
+        )
         source = f"场景清单 {args.scenarios}"
     else:
-        named, units = _scenarios_from_groups(graph, args)
+        named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
         name = ""
         source = "自动分组（未用场景清单）"
     scoped = graph.scope_to_units(units) if units else graph
+    scoped = scoped.without(removed_ids)
 
     policy = BuildOptions(
         include_example_specific=args.include_example_specific,
@@ -561,6 +623,8 @@ def cmd_plan(args) -> int:
         max_steps=args.max_steps,
     ).policy()
     doc = build_multi_doc(scoped, named, policy)
+    for spec, node_name in removed:
+        doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     plan = plan_document(doc)
 
     print(f"输入：{'、'.join(sources)}")
@@ -580,13 +644,14 @@ def cmd_plan(args) -> int:
 
 def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     """One document covering several faults off a shared collection phase."""
-    manifest_name, manifest_description, named, units = _scenarios_from_manifest(
-        graph, Path(args.scenarios)
+    removed_ids: Set[str] = set()
+    manifest_name, manifest_description, named, units, removed = _scenarios_from_manifest(
+        graph, Path(args.scenarios), args.exclude, removed_ids
     )
     name = args.name or manifest_name or ""
     if not name or name.startswith("<"):
         raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
-    scoped = graph.scope_to_units(units) if units else graph
+    scoped = (graph.scope_to_units(units) if units else graph).without(removed_ids)
 
     options = BuildOptions(
         name=name,
@@ -600,6 +665,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
+        excluded=removed,
     )
     package = build_package(scoped, named, options)
     result = lint_text(package.files["SKILL.md"])
@@ -849,6 +915,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.add_argument("--keep-undecidable", action="store_true", help="保留既无判据也无修复的原因")
     plan.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
+    plan.add_argument(
+        "--exclude", action="append", default=[], help="剔除无关节点：node_id 或名称关键词，可重复"
+    )
     plan.set_defaults(func=cmd_plan)
 
     lint = sub.add_parser("lint", help="检查已生成的 skill 是否符合模板")

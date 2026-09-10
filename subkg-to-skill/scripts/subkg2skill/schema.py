@@ -123,6 +123,18 @@ FORWARD_EDGES: Tuple[str, ...] = (
     "leads_to",
 )
 
+#: Forward edges that stay inside one fault — ``refers_to`` and ``leads_to``
+#: both hand over to a different fault entry, so a selection that follows them
+#: pulls in unrelated scenarios.
+WITHIN_FAULT_EDGES: Tuple[str, ...] = (
+    "has_cause",
+    "diagnosed_by",
+    "observes",
+    "repaired_by",
+    "refines",
+    "next_step",
+)
+
 #: Observation -> cause verdicts, strongest first.
 VERDICT_EDGES: Tuple[str, ...] = ("confirms", "supports", "excludes")
 

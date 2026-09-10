@@ -287,3 +287,92 @@ def test_plan_writes_nothing(tmp_path):
     before = set(tmp_path.iterdir())
     main(["plan", str(MULTI)])
     assert set(tmp_path.iterdir()) == before
+
+
+# -- 剔除无关内容 --------------------------------------------------------
+def test_exclude_by_keyword_removes_the_whole_chain(capsys):
+    assert main(["plan", str(MULTI), "--exclude", "认证"]) == 0
+    output = capsys.readouterr().out
+    # 原因、检查、观测、修复整条链都被剔除，并逐条说明原因
+    assert "按 exclude 剔除（匹配 '认证'）" in output
+    assert "两端认证方式不匹配" in output and "查看接口认证配置" in output
+
+
+def test_exclude_shrinks_the_plan(capsys):
+    main(["plan", str(MULTI)])
+    before = capsys.readouterr().out
+    main(["plan", str(MULTI), "--exclude", "认证"])
+    after = capsys.readouterr().out
+    assert "| **合计** | **7** |" in before
+    assert "| **合计** | **5** |" in after
+
+
+def test_exclude_by_node_id(capsys):
+    assert main(["plan", str(MULTI), "--exclude", "cause_sysid"]) == 0
+    assert "按 exclude 剔除（匹配 'cause_sysid'）" in capsys.readouterr().out
+
+
+def test_an_exclusion_that_matches_nothing_is_an_error(capsys):
+    assert main(["plan", str(MULTI), "--exclude", "MPLS"]) == 2
+    assert "没有匹配到任何节点" in capsys.readouterr().err
+
+
+def test_build_records_exclusions_in_the_evidence(tmp_path):
+    out = tmp_path / "skill"
+    code = main(
+        ["build", str(MULTI), "--entry", "symptom_manual", "--merge-same-name",
+         "--exclude", "认证", "--name", "isis", "--out", str(out)]
+    )
+    assert code == 0
+    evidence = (out / "reference" / "evidence.md").read_text(encoding="utf-8")
+    assert "按 exclude 剔除" in evidence
+    assert "认证" not in (out / "SKILL.md").read_text(encoding="utf-8")
+
+
+def test_manifest_carries_a_per_scenario_exclude(tmp_path, capsys):
+    manifest = tmp_path / "scenarios.json"
+    main(["list", str(MULTI), "--export-scenarios", str(manifest)])
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert payload["scenarios"][0]["exclude"] == []  # 导出时就留好位置
+    payload["name"] = "isis-troubleshooting"
+    payload["scenarios"][0]["exclude"] = ["认证"]
+    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+
+    out = tmp_path / "skill"
+    assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
+    text = (out / "SKILL.md").read_text(encoding="utf-8")
+    # 只在场景A剔除，场景B不受影响
+    section_a = text.split("### 场景B")[0]
+    assert "认证" not in section_a
+
+
+def test_selection_does_not_cross_a_fault_boundary():
+    """refers_to / leads_to 指向另一个故障入口，不该把它的下游拉进来。"""
+    from subkg2skill.graph import Graph
+    from subkg2skill.loader import RawBundle
+    from tests.conftest import make_edge, make_node
+
+    nodes = [
+        make_node("symptom_a", "symptom", "本故障"),
+        make_node("cause_a", "cause", "本故障原因"),
+        make_node("symptom_b", "symptom", "另一个故障"),
+        make_node("cause_b", "cause", "另一个故障的原因"),
+        make_node("escalation_x", "escalation", "转技术支持"),
+    ]
+    edges = [
+        make_edge("e1", "has_cause", "symptom_a", "cause_a"),
+        make_edge("e2", "refers_to", "symptom_a", "symptom_b"),
+        make_edge("e3", "has_cause", "symptom_b", "cause_b"),
+        make_edge("e4", "leads_to", "cause_a", "symptom_b"),
+        make_edge("e5", "refers_to", "symptom_a", "escalation_x"),
+    ]
+    graph, _ = Graph.from_bundle(RawBundle(nodes=nodes, edges=edges, sources=["t"]))
+    reached = graph.reachable(["symptom_a"])
+    assert reached == {"symptom_a", "cause_a"}
+    assert "cause_b" not in reached  # 另一个故障的下游没有被拖进来
+
+    from subkg2skill import schema
+
+    everything = graph.reachable(["symptom_a"], edge_types=schema.FORWARD_EDGES)
+    assert "cause_b" in everything  # 需要时仍可显式跨越

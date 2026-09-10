@@ -142,7 +142,7 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | 同一条命令重复几十次 | 前置检查按命令合并，步骤写“复用前置检查步骤 N 回显” |
 | 步骤里出现 IP、设备名、拓扑 | `example_specific` 条目默认剔除并记录；保留时标出案例字面量 |
 | 几十个步骤、长度爆炸 | 按诊断单元切分场景；`--max-steps` 兜底；>25 步 lint 告警 |
-| 场景杂糅（ISIS 里混进 MPLS/BGP） | `--unit` 只保留该单元的关系；无判据又无修复的原因不进正文 |
+| 场景杂糅（ISIS 里混进 MPLS/BGP） | `--unit` 按诊断单元收窄；选图不跨 `refers_to`/`leads_to`（那是另一个故障）；剩下的用 `--exclude` 人工剔除，逐条记账 |
 | 同一故障被拆成几份薄 skill | 按故障跨来源归并（手册 + 作战树 + 案例库），同名根因折成一步、判据与修复取并集 |
 | 名字不同实为一事 | `list --suggest-merge` 按根因重叠度找出候选并给出合并命令——只建议，合不合由人判断 |
 
@@ -183,7 +183,7 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
 | `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
 | `tests/data/multisource/` | 同一故障被手册 / 作战树 / 案例库各写一遍的子图，用于验证跨来源合并 |
-| `tests/` | pytest 用例（276 个） |
+| `tests/` | pytest 用例（283 个） |
 
 ## 开发
 
