@@ -24,7 +24,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
-from subkg2skill import schema
+from subkg2skill import hygiene, schema
 from subkg2skill.describe import observation_expression
 from subkg2skill.graph import Graph, Node, _string_list, _text
 from subkg2skill.playbook import CauseBranch, CheckStep, Playbook, Verdict, fault_key
@@ -72,6 +72,33 @@ def command_signature(commands: Sequence[str]) -> str:
     return "\n".join(sorted(re.sub(r"\s+", " ", command).strip() for command in commands))
 
 
+def same_command_set(left: Sequence[str], right: Sequence[str]) -> bool:
+    """True when two steps collect the same thing, abbreviations folded.
+
+    ``display current-config config bgp`` and its spelled-out twin produce one
+    screen; collecting both is the repetition that makes a document unreadable.
+    """
+    if not left or len(left) != len(right):
+        return False
+    unmatched = list(right)
+    for command in left:
+        for index, candidate in enumerate(unmatched):
+            if hygiene.same_command(command, candidate):
+                unmatched.pop(index)
+                break
+        else:
+            return False
+    return True
+
+
+def _equivalent_precheck(prechecks: Sequence["Precheck"], commands: Sequence[str]) -> Optional[int]:
+    """1-based index of the collection step already running *commands*."""
+    for index, precheck in enumerate(prechecks, start=1):
+        if same_command_set(commands, precheck.commands):
+            return index
+    return None
+
+
 def cell(text: str, *, limit: int = 300) -> str:
     """Make *text* safe for a markdown table cell.
 
@@ -86,7 +113,29 @@ def cell(text: str, *, limit: int = 300) -> str:
 
 
 def command_templates(node: Node) -> List[str]:
-    return [normalise_command(cmd) for cmd in _string_list(node.attrs.get("command_templates")) if _text(cmd)]
+    """Usable command templates of *node*, with extraction noise removed."""
+    return command_templates_with_rejections(node)[0]
+
+
+def command_templates_with_rejections(node: Node) -> Tuple[List[str], List[hygiene.Rejection]]:
+    """Commands of *node* plus what was rejected as echo / table data / prose.
+
+    Extraction turns screen output into ``command_templates`` often enough that
+    taking the field at face value puts ``Peer : <ip>`` in a document as
+    something to type.
+    """
+    raw = [normalise_command(cmd) for cmd in _string_list(node.attrs.get("command_templates")) if _text(cmd)]
+    # A check node may only ever read; a repair legitimately configures.
+    kept, rejected = hygiene.filter_commands(raw, allow_config=node.node_type != "check")
+    forms = hygiene.merge_forms(kept)
+    return [form.command for form in forms], rejected
+
+
+def command_variants(node: Node) -> List[Tuple[str, List[str]]]:
+    """Commands of *node* whose sources disagreed on spelling, longest form first."""
+    raw = [normalise_command(cmd) for cmd in _string_list(node.attrs.get("command_templates")) if _text(cmd)]
+    kept, _rejected = hygiene.filter_commands(raw, allow_config=node.node_type != "check")
+    return [(form.command, form.variants) for form in hygiene.merge_forms(kept) if form.has_conflict]
 
 
 def parameters_in(commands: Iterable[str]) -> List[str]:
@@ -143,6 +192,10 @@ class Precheck:
     node_id: str = ""
     node_ids: List[str] = field(default_factory=list)
     literals: List[str] = field(default_factory=list)
+    #: Other spellings sources gave for these commands — registered, never chosen between.
+    variants: List[str] = field(default_factory=list)
+    #: Example values (``slot 3``) that break on the next device.
+    hardcoded: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -317,7 +370,6 @@ class _Shared:
     """Collection phase shared by every scenario in one document."""
 
     prechecks: List[Precheck] = field(default_factory=list)
-    by_signature: Dict[str, int] = field(default_factory=dict)
     of_check: Dict[str, int] = field(default_factory=dict)
     producing_check: Dict[str, str] = field(default_factory=dict)
 
@@ -428,15 +480,18 @@ def _build_scenario(
         if not _usable(check, policy):
             omitted.append((check.name, "检查动作带案例特定背景（example_specific）"))
             continue
-        commands = command_templates(check)
-        signature = command_signature(commands)
+        commands, rejected = command_templates_with_rejections(check)
+        for rejection in rejected:
+            omitted.append((f"{check.name}：`{rejection.text}`", rejection.reason))
         # One command, one collection step: a graph holds many check nodes that
         # run the same thing, and repeating it is what bloats the document.
-        index = shared.by_signature.get(signature) if signature else None
+        # Abbreviated and spelled-out forms are the same thing.
+        index = _equivalent_precheck(shared.prechecks, commands) if commands else None
         if index is not None:
             precheck = shared.prechecks[index - 1]
             precheck.collect = _merge_collect(precheck.collect, _collect_line(check, step.outcomes))
             precheck.node_ids.append(check.node_id)
+            _register_variants(precheck, commands)
         else:
             precheck = Precheck(
                 title=check.name,
@@ -445,11 +500,12 @@ def _build_scenario(
                 node_id=check.node_id,
                 node_ids=[check.node_id],
                 literals=case_literals(" ".join(commands)),
+                hardcoded=hygiene.hardcoded_literals(" ".join(commands)),
             )
+            for _command, variants in command_variants(check):
+                precheck.variants.extend(variants)
             shared.prechecks.append(precheck)
             index = len(shared.prechecks)
-            if signature:
-                shared.by_signature[signature] = index
         shared.of_check[check.node_id] = index
 
         # What this reading tells the reader to open next.
@@ -498,6 +554,11 @@ def _build_scenario(
         if not _usable(branch.cause, policy):
             omitted.append((branch.cause.name, "原因带案例特定背景（example_specific）"))
             continue
+        noise = hygiene.looks_like_cause_name(branch.cause.name)
+        if noise is not None:
+            # A sentence out of the surrounding text, or a row of screen output.
+            omitted.append((branch.cause.name, noise.reason))
+            continue
         decisive = [
             pair
             for pair in _branch_decisive(branch)
@@ -512,8 +573,7 @@ def _build_scenario(
             continue
 
         commands, reuse_note = _step_commands(
-            branch, decisive, shared.producing_check, shared.of_check, shared.by_signature,
-            shared.prechecks,
+            branch, decisive, shared.producing_check, shared.of_check, shared.prechecks
         )
         branches: List[Branch] = []
         causes: List[str] = []
@@ -630,6 +690,20 @@ def _resolve_references(prechecks: List[Precheck], scenarios: Sequence[DocScenar
                 row.precheck = "（对应采集步骤已合并，见前置检查）"
 
 
+def _register_variants(precheck: Precheck, commands: Sequence[str]) -> None:
+    """Record a second source's spelling of a command already collected.
+
+    Two sources writing ``advertise-routes`` and ``advertised-routes`` is not a
+    thing to silently pick a winner on — the reader is told to confirm against
+    the device version.
+    """
+    for command in commands:
+        if command in precheck.commands or command in precheck.variants:
+            continue
+        if any(hygiene.same_command(command, existing) for existing in precheck.commands):
+            precheck.variants.append(command)
+
+
 def _merge_collect(existing: str, addition: str) -> str:
     """Union of two collection descriptions, without repeating a phrase."""
     parts: List[str] = []
@@ -667,7 +741,6 @@ def _step_commands(
     decisive: Sequence[Tuple[Node, "Verdict"]],
     producing_check: Dict[str, str],
     precheck_of_check: Dict[str, int],
-    by_signature: Dict[str, int],
     prechecks: Sequence[Precheck],
 ) -> Tuple[List[str], str]:
     """Commands for a step — or a pointer to the precheck whose output decides it."""
@@ -694,8 +767,9 @@ def _step_commands(
         if index:
             return cite(index)
         commands = command_templates(step.check)
-        # The same command may already be collected under another check node.
-        same = by_signature.get(command_signature(commands)) if commands else None
+        # The same command may already be collected under another check node,
+        # possibly spelled out where this one abbreviates it.
+        same = _equivalent_precheck(prechecks, commands) if commands else None
         if same:
             return cite(same)
         if commands:
@@ -817,7 +891,17 @@ def render_doc(doc: SkillDoc, *, name: str, description: str, lead: str = "") ->
                 lines.append(
                     "   - 注意：命令含案例字面量（" + "、".join(precheck.literals[:4]) + "），执行前替换为现场对象"
                 )
+            if precheck.hardcoded:
+                lines.append(
+                    "   - 注意：命令含示例取值（" + "、".join(precheck.hardcoded[:4]) + "），按现场实际替换"
+                )
             lines.append(f"   - 采集内容：{precheck.collect}")
+            if precheck.variants:
+                lines.append(
+                    "   - 来源另有写法："
+                    + "、".join(f"`{variant}`" for variant in precheck.variants[:3])
+                    + "，按设备版本确认"
+                )
             for verdict in precheck.verdicts:
                 lines.append(f"   - 根因定位：{verdict}")
             lines.append("")
