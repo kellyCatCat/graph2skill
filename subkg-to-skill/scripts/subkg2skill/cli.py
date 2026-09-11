@@ -522,6 +522,7 @@ def _build_one(
     for note in package.notes:
         print(f"  提示：{note}")
     _print_lint(result)
+    _print_metrics(package.doc)
     return 0 if result.ok else 1
 
 
