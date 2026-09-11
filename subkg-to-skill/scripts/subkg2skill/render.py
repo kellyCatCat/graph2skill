@@ -23,7 +23,7 @@ from subkg2skill import describe, schema
 from subkg2skill.condition import describe_edge_condition
 from subkg2skill.graph import Graph, Node, _text
 from subkg2skill.playbook import Playbook
-from subkg2skill.template import BuildPolicy, build_multi_doc, render_doc
+from subkg2skill.template import BuildPolicy, SkillDoc, build_multi_doc, render_doc
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 MAX_DESCRIPTION = 1024
@@ -73,6 +73,8 @@ class SkillPackage:
     notes: List[str] = field(default_factory=list)
     #: What the finished document actually contains, after merging and pruning.
     stats: Dict[str, int] = field(default_factory=dict)
+    #: The built document, for delivery metrics the caller reports on.
+    doc: Optional["SkillDoc"] = None
 
     def write(self, out_dir: Path, *, force: bool = False) -> List[Path]:
         """Write every file under *out_dir*; refuse to clobber without ``force``."""
@@ -370,6 +372,7 @@ def build_package(
             "root_causes": len(doc.root_causes) - 1,  # 不含「未找到根因」兜底行
             "omitted": len(doc.omitted),
         },
+        doc=doc,
     )
     package.files["SKILL.md"] = render_doc(
         doc, name=name, description=description, lead=LEAD if options.include_lead else ""

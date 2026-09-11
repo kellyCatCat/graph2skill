@@ -44,7 +44,8 @@ def test_frontmatter_name_and_description(frontmatter):
 
 def test_every_referenced_file_exists(skill_text):
     for target in re.findall(r"\]\((reference/[^)]+|scripts/[^)]+)\)", skill_text):
-        assert (SKILL_DIR / target).exists(), f"SKILL.md 指向了不存在的文件：{target}"
+        path = target.split("#", 1)[0]  # 锚点指向文件内的小节，不是文件名的一部分
+        assert (SKILL_DIR / path).exists(), f"SKILL.md 指向了不存在的文件：{target}"
 
 
 def test_reference_docs_are_all_linked(skill_text):

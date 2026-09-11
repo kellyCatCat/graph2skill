@@ -40,7 +40,7 @@ from subkg2skill.render import (
     normalise_name,
     suggested_slug,
 )
-from subkg2skill.plan import plan_document, render_plan
+from subkg2skill.plan import metrics, plan_document, render_metrics, render_plan
 from subkg2skill.template import build_multi_doc, scenario_label
 
 
@@ -231,6 +231,19 @@ def _print_lint(result, *, prefix: str = "  ") -> None:
         print(f"{prefix}  {issue.render()}")
     if len(result.issues) > 20:
         print(f"{prefix}  …另有 {len(result.issues) - 20} 条")
+
+
+def _print_metrics(doc, *, prefix: str = "  ") -> None:
+    """Say which delivery numbers came out of range, so they get reported on."""
+    if doc is None:
+        return
+    off = [metric for metric in metrics(doc) if not metric.ok]
+    if not off:
+        print(f"{prefix}交付统计：全部指标在健康值内")
+        return
+    print(f"{prefix}交付统计：{len(off)} 项超出健康值，交付时要说明")
+    for metric in off:
+        print(f"{prefix}  {metric.name}：{metric.value}（期望 {metric.healthy}）")
 
 
 def _install_hint(out_dir: Path, name: str) -> None:
@@ -632,6 +645,8 @@ def cmd_plan(args) -> int:
     print()
     for line in render_plan(plan, limit=args.limit or 20):
         print(line)
+    for line in render_metrics(metrics(doc)):
+        print(line)
     if report.issues:
         print(f"载入时有 {len(report.issues)} 条告警/丢弃，生成后见 reference/evidence.md")
     if not args.scenarios:
@@ -695,6 +710,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     for note in package.notes:
         print(f"  提示：{note}")
     _print_lint(result)
+    _print_metrics(package.doc)
     _install_hint(out_dir, normalise_name(name))
     return 0 if result.ok else 1
 

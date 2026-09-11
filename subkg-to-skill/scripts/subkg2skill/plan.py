@@ -197,3 +197,104 @@ def render_plan(plan: Plan, *, limit: int = 20) -> List[str]:
             lines.append(f"  - …另有 {len(plan.omitted) - limit} 条")
         lines.append("")
     return lines
+
+
+# ------------------------------------------------------------- 交付统计
+#: Each metric's healthy range, as the delivery checklist states it.
+@dataclass
+class Metric:
+    """One delivery number, what it means, and whether it is in range."""
+
+    name: str
+    value: str
+    healthy: str
+    ok: bool
+
+    @property
+    def mark(self) -> str:
+        return "✓" if self.ok else "⚠"
+
+
+def _criteria_count(scenario: DocScenario) -> int:
+    """Deciding rows across a scenario's steps, excluding the fall-through."""
+    return sum(
+        1
+        for step in scenario.steps
+        for branch in step.branches
+        if branch.criterion not in ("以上判据均不命中",)
+    )
+
+
+def metrics(doc: SkillDoc) -> List[Metric]:
+    """Measure a built document against the delivery thresholds.
+
+    These are the numbers that say whether the optimisation actually landed.
+    A document can pass every structural check and still be unusable: one
+    command per step means nothing was merged, and a criterion count at parity
+    with the step count means most steps decide on a single reading.
+    """
+    steps = sum(len(scenario.steps) for scenario in doc.scenarios)
+    causes = sum(
+        len([c for c in scenario.root_causes if c.name != NOT_FOUND]) for scenario in doc.scenarios
+    )
+    precheck_commands = sum(len(precheck.commands) for precheck in doc.prechecks)
+    criteria = sum(_criteria_count(scenario) for scenario in doc.scenarios)
+    # A step that issues its own command is a command this document did not reuse.
+    issued = sum(1 for scenario in doc.scenarios for step in scenario.steps if step.commands)
+    required = len([param for param in doc.params if param.required])
+    with_recheck = sum(
+        1
+        for scenario in doc.scenarios
+        for cause in scenario.root_causes
+        if cause.name != NOT_FOUND and cause.recheck.strip() not in ("", "-")
+    )
+    locate_only = sum(
+        1
+        for scenario in doc.scenarios
+        for cause in scenario.root_causes
+        if cause.name != NOT_FOUND and "无直接修复CLI" in cause.fix
+    )
+    reuse = 1 - (issued / steps) if steps else 1.0
+    density = criteria / steps if steps else 0.0
+    recheck_rate = with_recheck / causes if causes else 0.0
+    sizes = [len(scenario.steps) for scenario in doc.scenarios] or [0]
+
+    found = [
+        Metric(
+            "前置检查 命令数 / 步骤数",
+            f"{precheck_commands} 条 / {len(doc.prechecks)} 步",
+            "命令数 < 步骤数 × 3",
+            precheck_commands < len(doc.prechecks) * 3 or not doc.prechecks,
+        ),
+        Metric("必填参数", f"{required} 个", "越少越好，每个都应服务多条命令", required <= 5),
+        Metric(
+            "步骤数 : 根因数", f"{steps} : {causes}", "应为 1:1", steps == causes
+        ),
+        Metric("判据 / 步骤", f"{density:.2f}", "> 1.2", density > 1.2),
+        Metric("命令复用率", f"{reuse:.0%}", "> 80%", reuse > 0.8),
+        Metric("复检覆盖率", f"{recheck_rate:.0%}", "> 70%", recheck_rate > 0.7),
+        Metric("「仅定位」根因", f"{locate_only} 个", "记录即可，反映数据完整度", True),
+    ]
+    if len(sizes) > 1:
+        # Not a defect, but the reader must not be left thinking coverage is even.
+        found.append(
+            Metric(
+                "场景规模均衡性",
+                f"最大 {max(sizes)} 步 / 最小 {min(sizes)} 步",
+                "差距悬殊时交付要说明",
+                max(sizes) <= min(sizes) * 3 or min(sizes) == 0,
+            )
+        )
+    return found
+
+
+def render_metrics(found: Sequence[Metric]) -> List[str]:
+    lines = ["交付统计：", "", "| 指标 | 本次 | 健康值 | |", "| --- | --- | --- | --- |"]
+    lines += [f"| {m.name} | {m.value} | {m.healthy} | {m.mark} |" for m in found]
+    lines.append("")
+    off = [m for m in found if not m.ok]
+    if off:
+        lines.append("超出健康值的指标要在交付时说明，或回到对应阶段再做一轮：")
+        lines += [f"  - {m.name}：{m.value}（期望 {m.healthy}）" for m in off]
+        lines.append("")
+    return lines
