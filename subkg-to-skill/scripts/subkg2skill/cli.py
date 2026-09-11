@@ -362,7 +362,8 @@ def cmd_list(args) -> int:
             return 0
         print(
             f"以下 {len(suggestions)} 组故障名字不同，但根因大量重叠，可能是同一故障的两种写法。"
-            "**要不要合并由你判断**——根因名字相近不代表修复相同：\n"
+            "**要不要合并由你判断，判断标准是修复动作是否相同，不是名字像不像**——"
+            "下面按修复列给出对比：\n"
         )
         for suggestion in suggestions[: args.limit]:
             print(f"  {suggestion.left.name}  ＋  {suggestion.right.name}")
@@ -370,9 +371,26 @@ def cmd_list(args) -> int:
                 f"    根因重叠 : {len(suggestion.shared_causes)} 个"
                 f"（重叠度 {suggestion.overlap:.0%}）— " + "、".join(suggestion.shared_causes[:4])
             )
+            print(f"    结论     : {suggestion.verdict}")
+            if suggestion.same_fix:
+                print(
+                    f"    修复相同 : {len(suggestion.same_fix)} 个 — "
+                    + "、".join(suggestion.same_fix[:4])
+                )
+            if suggestion.one_sided_fix:
+                print(
+                    f"    单边有CLI: {len(suggestion.one_sided_fix)} 个（合并时取有命令的那份）— "
+                    + "、".join(suggestion.one_sided_fix[:4])
+                )
+            if suggestion.different_fix:
+                print(
+                    f"    修复不同 : {len(suggestion.different_fix)} 个（两个动作都要保留，"
+                    "或根本是两个故障）— " + "、".join(suggestion.different_fix[:4])
+                )
             if suggestion.shared_commands:
                 print(
-                    f"    共用命令 : {len(suggestion.shared_commands)} 条 — "
+                    f"    共用命令 : {len(suggestion.shared_commands)} 条"
+                    "（仅供参考，命令是手段不是故障，别按它合并）— "
                     + "、".join(f"`{command}`" for command in suggestion.shared_commands[:3])
                 )
             command = "build " + " ".join(f"--entry {node.node_id}" for node in suggestion.entries)

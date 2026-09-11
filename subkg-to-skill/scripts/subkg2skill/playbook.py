@@ -482,6 +482,25 @@ class MergeSuggestion:
     shared_causes: List[str]
     shared_commands: List[str]
     overlap: float
+    #: Shared causes both sides repair with the same commands — merge outright.
+    same_fix: List[str] = field(default_factory=list)
+    #: Shared causes only one side gives a command for — merge, keep the CLI.
+    one_sided_fix: List[str] = field(default_factory=list)
+    #: Shared causes whose repairs differ — merge only by keeping both actions.
+    different_fix: List[str] = field(default_factory=list)
+
+    @property
+    def verdict(self) -> str:
+        """What the repair columns say about merging, which is the real test."""
+        if self.different_fix:
+            return (
+                f"{len(self.different_fix)} 个同名根因的修复动作不同，"
+                "合并前先确认是不是两个故障（名字相近不代表修复相同）"
+            )
+        if self.same_fix or self.one_sided_fix:
+            covered = len(self.same_fix) + len(self.one_sided_fix)
+            return f"{covered} 个同名根因的修复动作一致或可互补，合并后判据与修复取并集"
+        return "两边都没有修复动作可比，只能按根因名判断，务必人工确认"
 
     @property
     def entries(self) -> List[Node]:
@@ -492,24 +511,61 @@ class MergeSuggestion:
         return list(dict.fromkeys(self.left.units + self.right.units))
 
 
-def _group_signature(graph: Graph, group: "FaultGroup") -> Tuple[Dict[str, str], Set[str]]:
-    """Cause names and check commands this fault is described by."""
+@dataclass
+class _Signature:
+    """How one fault is described: its causes, their repairs, its commands."""
+
+    causes: Dict[str, str] = field(default_factory=dict)  # fault_key -> 原名
+    repairs: Dict[str, Set[str]] = field(default_factory=dict)  # fault_key -> 修复命令
+    commands: Set[str] = field(default_factory=set)
+
+
+def _group_signature(graph: Graph, group: "FaultGroup") -> _Signature:
+    """Cause names, the repair each one carries, and the commands used to reach it."""
     scoped = graph.scope_to_units(group.units) if group.units else graph
-    causes: Dict[str, str] = {}
-    commands: Set[str] = set()
+    signature = _Signature()
     for symptom in group.symptoms:
         for cause, _edge in scoped.targets(symptom.node_id, "has_cause"):
-            causes[fault_key(cause.name)] = cause.name
+            key = fault_key(cause.name)
+            signature.causes[key] = cause.name
+            fixes = signature.repairs.setdefault(key, set())
+            for repair, _r in scoped.targets(cause.node_id, "repaired_by"):
+                fixes.update(_commands_of(repair))
             for check, _e in scoped.targets(cause.node_id, "diagnosed_by"):
-                commands.update(_commands_of(check))
+                signature.commands.update(_commands_of(check))
         for check, _edge in scoped.targets(symptom.node_id, "diagnosed_by"):
-            commands.update(_commands_of(check))
-    return causes, commands
+            signature.commands.update(_commands_of(check))
+    return signature
 
 
-def _commands_of(check: Node) -> Set[str]:
-    raw = check.attrs.get("command_templates") or []
+def _commands_of(node: Node) -> Set[str]:
+    raw = node.attrs.get("command_templates") or []
     return {re.sub(r"\s+", " ", str(command)).strip() for command in raw if str(command).strip()}
+
+
+def _compare_fixes(
+    shared: Set[str],
+    names: Dict[str, str],
+    left: Dict[str, Set[str]],
+    right: Dict[str, Set[str]],
+) -> Tuple[List[str], List[str], List[str]]:
+    """Split shared causes by what their repair columns say.
+
+    The repair action is the only reliable test for whether two faults are one
+    thing: two causes named alike but fixed differently (「放行179端口」 against
+    「删除整个策略」) are not one row, and merging them loses the difference.
+    """
+    same: List[str] = []
+    one_sided: List[str] = []
+    different: List[str] = []
+    for key in sorted(shared):
+        name = names.get(key, key)
+        left_fix, right_fix = left.get(key) or set(), right.get(key) or set()
+        if left_fix and right_fix:
+            (same if left_fix == right_fix else different).append(name)
+        elif left_fix or right_fix:
+            one_sided.append(name)
+    return same, one_sided, different
 
 
 def suggest_merges(
@@ -521,15 +577,19 @@ def suggest_merges(
 ) -> List[MergeSuggestion]:
     """Faults worth a human look before they are generated as separate skills.
 
-    Names differ, but the causes (and the commands used to tell them apart)
-    largely coincide — usually one fault written from two angles.  This only
-    ever *suggests*: two causes named alike can still need different fixes,
-    so the decision stays with a person.
+    Names differ, but the causes largely coincide — usually one fault written
+    from two angles.  Overlap only nominates the pair; what settles it is
+    whether the shared causes are *repaired* the same way, so each suggestion
+    carries that comparison.  This still only ever suggests: two causes named
+    alike can need different fixes, and the decision stays with a person.
+
+    Commands are reported but are never the reason to merge — ``display isis
+    peer`` spans a dozen faults, and clustering on it mixes scenarios.
     """
     signatures = {id(group): _group_signature(graph, group) for group in groups}
     by_cause: Dict[str, List["FaultGroup"]] = defaultdict(list)
     for group in groups:
-        for key in signatures[id(group)][0]:
+        for key in signatures[id(group)].causes:
             by_cause[key].append(group)
 
     seen: Set[Tuple[int, int]] = set()
@@ -541,8 +601,9 @@ def suggest_merges(
                 if pair in seen or fault_key(left.name) == fault_key(right.name):
                     continue
                 seen.add(pair)
-                left_causes, left_commands = signatures[id(left)]
-                right_causes, right_commands = signatures[id(right)]
+                left_signature = signatures[id(left)]
+                right_signature = signatures[id(right)]
+                left_causes, right_causes = left_signature.causes, right_signature.causes
                 shared = set(left_causes) & set(right_causes)
                 union = set(left_causes) | set(right_causes)
                 if len(shared) < min_shared_causes or not union:
@@ -550,16 +611,27 @@ def suggest_merges(
                 overlap = len(shared) / len(union)
                 if overlap < min_overlap:
                     continue
+                same, one_sided, different = _compare_fixes(
+                    shared, left_causes, left_signature.repairs, right_signature.repairs
+                )
                 suggestions.append(
                     MergeSuggestion(
                         left=left,
                         right=right,
                         shared_causes=sorted(left_causes[key] for key in shared),
-                        shared_commands=sorted(left_commands & right_commands),
+                        shared_commands=sorted(
+                            left_signature.commands & right_signature.commands
+                        ),
                         overlap=overlap,
+                        same_fix=same,
+                        one_sided_fix=one_sided,
+                        different_fix=different,
                     )
                 )
-    suggestions.sort(key=lambda s: (-s.overlap, -len(s.shared_causes), s.left.name))
+    # Agreeing repairs come first: that is the evidence a merge is safe.
+    suggestions.sort(
+        key=lambda s: (-len(s.same_fix) - len(s.one_sided_fix), -s.overlap, s.left.name)
+    )
     return suggestions
 
 

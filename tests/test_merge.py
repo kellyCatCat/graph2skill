@@ -15,6 +15,7 @@ from subkg2skill.playbook import (
     build_playbook,
     fault_groups,
     fault_key,
+    suggest_merges,
 )
 from subkg2skill.render import BuildOptions, build_package, default_description
 from subkg2skill.template import build_doc
@@ -305,3 +306,40 @@ def test_list_show_causes_breaks_a_group_down_by_source(capsys):
     assert "[17.4.1] IS-IS邻居无法建立" in output
     assert "[ipran_icase] ISIS邻居无法建立" in output
     assert "- 两端认证方式不匹配" in output
+
+
+# -- 合并判断的依据是修复动作，不是名字 ------------------------------------
+def test_suggestion_compares_the_repair_columns(multi_graph):
+    groups = fault_groups(multi_graph)
+    suggestion = suggest_merges(multi_graph, groups)[0]
+    covered = suggestion.same_fix + suggestion.one_sided_fix + suggestion.different_fix
+    assert sorted(covered) == sorted(suggestion.shared_causes)
+
+
+def test_one_side_without_a_command_is_a_merge_that_keeps_the_cli(multi_graph):
+    """手册给了修复 CLI、另一份只给方向：合并时取有命令的那份。"""
+    suggestion = suggest_merges(multi_graph, fault_groups(multi_graph))[0]
+    assert suggestion.one_sided_fix
+    assert "取有命令的那份" in suggestion.verdict or "可互补" in suggestion.verdict
+
+
+def test_differing_repairs_hold_the_merge_back():
+    """「放行179端口」与「删除整个策略」都叫策略问题，修复不同就不是一条根因。"""
+    from subkg2skill.playbook import _compare_fixes
+
+    same, one_sided, different = _compare_fixes(
+        {"a", "b", "c"},
+        {"a": "策略拦截", "b": "MTU不一致", "c": "认证不匹配"},
+        {"a": {"undo ip ip-prefix <name>"}, "b": {"mtu <mtu-value>"}, "c": set()},
+        {"a": {"rule permit tcp destination-port eq 179"}, "b": {"mtu <mtu-value>"}, "c": {"undo isis authentication-mode"}},
+    )
+    assert same == ["MTU不一致"]
+    assert one_sided == ["认证不匹配"]
+    assert different == ["策略拦截"]
+
+
+def test_commands_are_reported_but_never_the_reason(multi_graph):
+    """命令是手段不是故障；共用命令不该把两个故障判成一个。"""
+    suggestion = suggest_merges(multi_graph, fault_groups(multi_graph))[0]
+    assert "别按它合并" not in suggestion.verdict  # 结论只谈修复
+    assert suggestion.shared_commands  # 但仍如实列出

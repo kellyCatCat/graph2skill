@@ -51,14 +51,14 @@ python3 scripts/build_skill.py validate <图文件或目录>    # 结构校验�
 ```bash
 python3 scripts/build_skill.py list <图>                    # 故障分组（默认已跨来源归并）
 python3 scripts/build_skill.py list <图> --show-causes      # 每组的根因按来源列出 → 判断该不该拆
-python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但根因高度重叠 → 判断该不该合
+python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但根因重叠 → 按修复动作判断该不该合
 ```
 
 要做的三类决策：
 
 | 决策 | 依据 | 怎么落实 |
 | --- | --- | --- |
-| **合并**：同一故障被多来源各写一遍 | `list` 已自动归并同名；`--suggest-merge` 给名字不同但根因重叠的候选 | 多个 `--entry`，或把它们写进同一个场景 |
+| **合并**：同一故障被多来源各写一遍 | `list` 已自动归并同名；`--suggest-merge` 给候选并比对双方的修复动作 | 多个 `--entry`，或把它们写进同一个场景 |
 | **拆分**：一组里混了两类故障（如"中断"和"震荡"） | `--show-causes` 看根因是否分属两个技术域 | 拆成两个场景，各自 `--unit` / `--entry` |
 | **剔除（自动）**：案例特定内容、没有判据也没有修复的原因 | 默认就剔除并记录；`plan` 会列出剔除清单 | 需要保留时才加 `--include-example-specific` / `--keep-undecidable` |
 | **剔除（人工）**：同一单元里混进来的跨领域内容（查 ISIS 却混进 MPLS/BGP/组播） | `list --show-causes` 看根因清单，挑出不属于本场景的 | 场景清单的 `exclude`（只作用于该场景）或 `--exclude`（全局），写 `node_id` 或名称关键词 |
