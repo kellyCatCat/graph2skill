@@ -342,9 +342,14 @@ def test_manifest_carries_a_per_scenario_exclude(tmp_path, capsys):
     out = tmp_path / "skill"
     assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
     text = (out / "SKILL.md").read_text(encoding="utf-8")
-    # 只在场景A剔除，场景B不受影响
-    section_a = text.split("### 场景B")[0]
-    assert "认证" not in section_a
+    # 只在场景A剔除，场景B不受影响。前置检查是两个场景共用的一次采集，
+    # 场景B要读的字段留在那里是对的，所以只看场景A自己的步骤与根因分节。
+    blocks = [
+        block.split("### 场景B")[0]
+        for block in text.split("### 场景A")[1:]
+    ]
+    assert blocks, "场景A 的分节没有生成"
+    assert all("认证" not in block for block in blocks)
 
 
 def test_selection_does_not_cross_a_fault_boundary():

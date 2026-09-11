@@ -300,6 +300,22 @@ def command_group_key(command: str, known: Sequence[str]) -> str:
     return command
 
 
+#: ``device B`` / ``设备C`` — the letter labels of a documentation topology diagram.
+TOPOLOGY_LABEL_RE = re.compile(
+    r"^(?:device|router|switch|设备|路由器)[\s_\-]?[a-z]$", re.I
+)
+
+
+def is_topology_label(name: str) -> bool:
+    """True for a parameter that only names a box in the source's diagram.
+
+    The field engineer has real hostnames in front of them; ``device B`` is
+    unfillable, and a document that asks for it stalls before the first command.
+    The criterion that used it has to name the device by its role instead.
+    """
+    return bool(TOPOLOGY_LABEL_RE.match((name or "").strip()))
+
+
 def hardcoded_literals(command: str) -> List[str]:
     """Example values left in a command that break on the next device."""
     found: List[str] = []

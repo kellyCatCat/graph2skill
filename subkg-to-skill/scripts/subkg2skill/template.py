@@ -437,9 +437,13 @@ def build_multi_doc(
     _resolve_references(shared.prechecks, built)
 
     primary = scenarios[0][1]
+    params, dropped_params = _build_params(
+        primary, shared.prechecks, doc_steps(built), repair_commands
+    )
+    omitted.extend(dropped_params)
     doc = SkillDoc(
         symptom=primary.symptom,
-        params=_build_params(primary, shared.prechecks, doc_steps(built), repair_commands),
+        params=params,
         prechecks=shared.prechecks,
         scenarios=built,
         omitted=omitted,
@@ -783,14 +787,24 @@ def _build_params(
     prechecks: Sequence[Precheck],
     steps: Sequence[Step],
     repair_commands: Sequence[str] = (),
-) -> List[Param]:
-    """Required slots plus every ``<token>`` the document's commands actually use."""
+) -> Tuple[List[Param], List[Tuple[str, str]]]:
+    """Required slots plus every ``<token>`` the document's commands actually use.
+
+    Returns the parameters and the slots that were dropped with the reason —
+    a slot the document never references is a barrier to entry, not an input.
+    """
     params: Dict[str, Param] = {}
+    dropped: List[Tuple[str, str]] = []
 
     for slot in playbook.required_slots():
         key = param_key(slot)
-        if key:
-            params[key] = Param(slot, param_display(slot), True, "现场提供")
+        if not key:
+            continue
+        if hygiene.is_topology_label(slot):
+            # A letter off the source's topology diagram; nobody can fill it in.
+            dropped.append((slot, "伪参数：来源示意图的设备编号，现场没有这个名字"))
+            continue
+        params[key] = Param(slot, param_display(slot), True, "现场提供")
 
     precheck_tokens: Set[str] = set()
     for index, precheck in enumerate(prechecks, start=1):
@@ -820,7 +834,7 @@ def _build_params(
         key = param_key(token)
         if key not in params:
             params[key] = Param(token, param_display(token), False, "修复动作参数，按现场规划或回显确定")
-    return list(params.values())
+    return list(params.values()), dropped
 
 
 # ------------------------------------------------------------------ render

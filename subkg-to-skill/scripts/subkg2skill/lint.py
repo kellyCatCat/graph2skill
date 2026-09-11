@@ -13,6 +13,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from subkg2skill import hygiene
 from subkg2skill.playbook import fault_key
 from subkg2skill.template import NOT_FOUND, PARAM_RE, case_literals, command_signature, param_key
 
@@ -33,6 +34,14 @@ MAX_REASONABLE_STEPS = 25
 MAX_COMMAND_REPEATS = 2
 #: Root-cause names this similar are usually one cause written twice.
 NEAR_DUPLICATE_RATIO = 0.8
+#: A criterion shared by more than this many steps is restating the entry condition.
+MAX_CRITERION_REUSE = 2
+#: ``- `判据`：定位根因“X”`` — the deciding half of a 跳转信息 row.
+CRITERION_RE = re.compile(r"^\s*[-*]\s*(?P<criterion>.+?)\s*[：:]\s*(?P<outcome>.+?)\s*$")
+#: A parameter the engineer brings with them, rather than reads off a screen.
+FIELD_SUPPLIED_RE = re.compile(r"现场|用户提供|人工提供")
+#: Wording the generator uses for a branch that decides nothing on its own.
+FALLTHROUGH_CRITERIA = ("以上判据均不命中", "本子图未给出该原因的判定观测")
 SHORT_INTERFACE_RE = re.compile(r"\b(?:\d+)?(?:GE|XGE|FE|Eth)\d+/\d+", re.I)
 STEP_ITEMS = ("步骤名称", "CLI 命令", "跳转信息", "根因定位")
 
@@ -134,6 +143,76 @@ def _jump_lines(body: Sequence[str]) -> List[str]:
     return lines
 
 
+def _criteria(body: Sequence[str]) -> List[Tuple[str, str]]:
+    """The (判据, 结论) pairs of one step's 跳转信息 block."""
+    pairs: List[Tuple[str, str]] = []
+    for line in _jump_lines(body):
+        match = CRITERION_RE.match(line)
+        if not match:
+            continue
+        criterion = match.group("criterion").strip()
+        if criterion and criterion not in FALLTHROUGH_CRITERIA:
+            pairs.append((criterion, match.group("outcome").strip()))
+    return pairs
+
+
+def _criterion_issues(step_bodies: Dict[int, List[str]], *, scenario: str = "") -> List[LintIssue]:
+    """Criteria that cannot tell one root cause from another.
+
+    Three shapes, all invisible to a section-structure check and all leaving an
+    agent to guess:
+
+    * one criterion repeated across many steps of one scenario — it is the
+      condition for entering that scenario at all (``BGP邻居状态 !=
+      Established``), so it contributes nothing to telling those steps apart;
+    * a criterion and its negation leading to the same place, which is a row
+      that can be deleted without changing anything;
+    * a step whose every criterion is a restatement of its own name, with no
+      field from a command's output bound to it.
+    """
+    issues: List[LintIssue] = []
+    where = f"{scenario} " if scenario else ""
+    seen: Dict[str, List[int]] = {}
+    for number in sorted(step_bodies):
+        pairs = _criteria(step_bodies[number])
+        for criterion, outcome in pairs:
+            seen.setdefault(criterion, []).append(number)
+        # A criterion and its negation that land in the same place decide nothing.
+        for index, (criterion, outcome) in enumerate(pairs):
+            for other, other_outcome in pairs[index + 1 :]:
+                if outcome != other_outcome:
+                    continue
+                if _is_negation(criterion, other):
+                    issues.append(
+                        LintIssue(
+                            "error",
+                            f"{where}步骤{number} 的「{criterion}」与「{other}」互为正反却跳到同一处，"
+                            "这一行删掉不影响任何判断",
+                        )
+                    )
+    for criterion, numbers in seen.items():
+        if len(numbers) > MAX_CRITERION_REUSE:
+            issues.append(
+                LintIssue(
+                    "error",
+                    f"{where}判据「{criterion}」被步骤 {'、'.join(map(str, numbers))} 共用，"
+                    "对区分根因没有贡献（多半是入场条件的重述）；每步应绑定回显里的一个具体字段",
+                )
+            )
+    return issues
+
+
+def _is_negation(left: str, right: str) -> bool:
+    """True when two criteria are the same statement with opposite polarity."""
+    negations = (("存在", "不存在"), ("有", "没有"), ("==", "!="), ("是", "不是"), ("为", "不为"))
+    for positive, negative in negations:
+        if negative in left and positive in right and left.replace(negative, positive) == right:
+            return True
+        if negative in right and positive in left and right.replace(negative, positive) == left:
+            return True
+    return False
+
+
 def _table_rows(lines: Sequence[str]) -> List[List[str]]:
     rows: List[List[str]] = []
     for line in lines:
@@ -174,6 +253,35 @@ def lint_text(text: str) -> LintResult:
             issues.append(LintIssue("error", f"入参列表行格式不对：{row}"))
             continue
         declared[param_key(row[0])] = row[1].strip() in ("是", "必填", "Y", "yes")
+        if hygiene.is_topology_label(row[0]):
+            issues.append(
+                LintIssue(
+                    "error",
+                    f"入参「{row[0]}」是来源示意图的设备编号，现场填不出来；"
+                    "删掉它，把用到它的判据改成角色描述（如“发生错误优选的设备”）",
+                )
+            )
+
+    # A parameter nobody references is a barrier to entry, not an input.
+    # Repairs live in a table, so every code span counts, not just command lines.
+    body_params = {
+        param_key(token) for span in CODE_RE.findall(text) for token in PARAM_RE.findall(span)
+    }
+    for row in param_rows:
+        if len(row) < 3 or param_key(row[0]) in body_params:
+            continue
+        if hygiene.is_topology_label(row[0]):
+            continue  # already reported, with a better reason
+        if FIELD_SUPPLIED_RE.search(row[2]):
+            # Which device, which interface — brought by the engineer, and not
+            # every source spells it the way its own commands do.
+            continue
+        issues.append(
+            LintIssue(
+                "warning",
+                f"入参「{row[0]}」在正文的任何命令里都没有被引用；确认它是排查真正需要的信息，否则删掉",
+            )
+        )
 
     # -- 前置检查 -------------------------------------------------------
     precheck_lines = sections["前置检查"]
@@ -287,6 +395,7 @@ def lint_text(text: str) -> LintResult:
                 issues.append(
                     LintIssue("error", f"{where}最后一步必须写清全部判据不命中时判定“{NOT_FOUND}”")
                 )
+        issues += _criterion_issues(bodies, scenario=scenario)
         declared_causes[scenario] = found
 
     total_steps = sum(len(bodies) for bodies in step_bodies.values())
@@ -405,6 +514,15 @@ def lint_text(text: str) -> LintResult:
             )
         if SHORT_INTERFACE_RE.search(command):
             issues.append(LintIssue("warning", f"接口名疑似缩写，应使用全称：`{command}`"))
+        hardcoded = hygiene.hardcoded_literals(command)
+        if hardcoded:
+            issues.append(
+                LintIssue(
+                    "warning",
+                    f"命令里留着示例取值（{'、'.join(hardcoded[:3])}）：`{command}`；"
+                    "换台设备就是错的，应参数化或在采集内容里注明按实际替换",
+                )
+            )
     if len(step_bodies) > MAX_REASONABLE_STEPS:
         issues.append(
             LintIssue(

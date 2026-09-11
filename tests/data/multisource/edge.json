@@ -676,6 +676,84 @@
     "attrs": {}
   },
   {
+    "edge_id": "g21",
+    "edge_type": "observes",
+    "source": "check_iface_generic",
+    "target": "observation_mtu_generic",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "16.7.1",
+      "title": "16.7.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "g22",
+    "edge_type": "observes",
+    "source": "check_iface_generic",
+    "target": "observation_level_generic",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "16.7.1",
+      "title": "16.7.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "g23",
+    "edge_type": "observes",
+    "source": "check_iface_generic",
+    "target": "observation_auth_generic",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "16.7.1",
+      "title": "16.7.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
     "edge_id": "g3",
     "edge_type": "has_cause",
     "source": "symptom_generic",
@@ -756,7 +834,7 @@
   {
     "edge_id": "g6",
     "edge_type": "supports",
-    "source": "observation_generic",
+    "source": "observation_mtu_generic",
     "target": "cause_mtu_generic",
     "condition": null,
     "condition_status": "unconditional",
@@ -782,7 +860,7 @@
   {
     "edge_id": "g7",
     "edge_type": "supports",
-    "source": "observation_generic",
+    "source": "observation_level_generic",
     "target": "cause_level_generic",
     "condition": null,
     "condition_status": "unconditional",
@@ -808,8 +886,34 @@
   {
     "edge_id": "g8",
     "edge_type": "supports",
-    "source": "observation_generic",
+    "source": "observation_auth_generic",
     "target": "cause_auth_generic",
+    "condition": null,
+    "condition_status": "unconditional",
+    "rank": null,
+    "scope": {
+      "vendor": "Huawei",
+      "product_family": "NetEngine40E",
+      "software_version": null,
+      "component_type": null,
+      "scenario": null,
+      "scope_basis": "document_product"
+    },
+    "diagnostic_context": {
+      "section": "16.7.1",
+      "title": "16.7.1 场景"
+    },
+    "evidence": [],
+    "review_status": "machine_checked",
+    "status": "candidate",
+    "quality_flags": [],
+    "attrs": {}
+  },
+  {
+    "edge_id": "g24",
+    "edge_type": "diagnosed_by",
+    "source": "symptom_generic",
+    "target": "check_iface_generic",
     "condition": null,
     "condition_status": "unconditional",
     "rank": null,

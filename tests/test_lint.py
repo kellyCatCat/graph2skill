@@ -155,3 +155,108 @@ def test_lint_path_reads_a_directory(tmp_path):
 
 def test_lint_path_reports_a_missing_file(tmp_path):
     assert "文件不存在" in lint_path(tmp_path / "nope").issues[0].message
+
+
+# -- 判据治理：lint 漏掉最多、对 agent 影响最大的一环 ----------------------
+def _with_steps(*steps: str) -> str:
+    """GOOD 的四章节骨架，排查步骤换成给定的几步。"""
+    head = GOOD[: GOOD.index("# 排查步骤")]
+    tail = GOOD[GOOD.index("# 根因对照表") :]
+    return head + "# 排查步骤\n\n" + "\n".join(steps) + "\n" + tail
+
+
+def _step(number: int, name: str, branches: str, cause: str) -> str:
+    return (
+        f"## 步骤{number}：{name}\n\n"
+        f"1. **步骤名称**：{name}\n"
+        f"2. **CLI 命令**：复用前置检查步骤 1 回显\n"
+        f"3. **跳转信息**：\n{branches}\n"
+        f"4. **根因定位**：\n   - {cause}\n"
+    )
+
+
+def test_a_criterion_shared_by_many_steps_is_an_error():
+    """入场条件的重述：三步共用一条判据，对区分根因贡献为零。"""
+    shared = "`BGP邻居状态 != Established`"
+    steps = [
+        _step(
+            index,
+            f"检查{name}",
+            f"   - {shared}：定位根因“{name}”，结束排查。\n"
+            f"   - 以上判据均不命中：顺序执行步骤 {index + 1}。",
+            name,
+        )
+        for index, name in enumerate(("被 shutdown", "BFD 检测 Down", "MD5 不一致"), start=1)
+    ]
+    result = lint_text(_with_steps(*steps))
+    messages = [issue.message for issue in result.errors]
+    assert any("对区分根因没有贡献" in message for message in messages)
+    assert any(shared in message for message in messages)
+
+
+def test_two_steps_may_share_a_criterion():
+    """两步共用还可能是真的；三步起才是入场条件。"""
+    shared = "`Policy State` 为 `Down`"
+    steps = [
+        _step(
+            index,
+            f"检查{name}",
+            f"   - {shared}：定位根因“{name}”，结束排查。\n"
+            f"   - 以上判据均不命中：顺序执行步骤 {index + 1}。",
+            name,
+        )
+        for index, name in enumerate(("被 shutdown", "BFD 检测 Down"), start=1)
+    ]
+    assert not [i for i in lint_text(_with_steps(*steps)).errors if "对区分根因" in i.message]
+
+
+def test_a_criterion_and_its_negation_going_the_same_way_is_an_error():
+    step = _step(
+        1,
+        "检查下一跳路由",
+        "   - `存在到下一跳的路由`：顺序执行步骤 2。\n"
+        "   - `不存在到下一跳的路由`：顺序执行步骤 2。\n"
+        "   - 以上判据均不命中：顺序执行步骤 2。",
+        "下一跳不可达",
+    )
+    result = lint_text(_with_steps(step, _step(2, "检查 BFD", "   - 以上判据均不命中：判定“未找到根因”。", "BFD 检测 Down")))
+    assert any("互为正反却跳到同一处" in issue.message for issue in result.errors)
+
+
+def test_the_generated_fallthrough_wording_is_not_counted_as_a_criterion():
+    """“以上判据均不命中”出现在每一步，它不是判据。"""
+    assert not [i for i in lint_text(GOOD).errors if "对区分根因" in i.message]
+
+
+# -- 参数治理 -------------------------------------------------------------
+def test_a_topology_label_parameter_is_an_error():
+    text = GOOD.replace(
+        "| endpoint IPv6 | 是 |",
+        "| device B | 是 | 现场提供 |\n| endpoint IPv6 | 是 |",
+    )
+    result = lint_text(text)
+    assert any("现场填不出来" in issue.message for issue in result.errors)
+
+
+def test_an_unreferenced_parameter_is_a_warning():
+    text = GOOD.replace(
+        "| segment list id | 否 |",
+        "| qos profile name | 否 | 无人引用 |\n| segment list id | 否 |",
+    )
+    assert any("都没有被引用" in issue.message for issue in lint_text(text).warnings)
+
+
+def test_a_field_supplied_slot_is_not_flagged_as_unused():
+    """neName 这类槽位不出现在命令里，但它是现场必须提供的信息。"""
+    text = GOOD.replace(
+        "| segment list id | 否 |", "| neName | 是 | 现场提供 |\n| segment list id | 否 |"
+    )
+    assert not [i for i in lint_text(text).warnings if "都没有被引用" in i.message]
+
+
+def test_a_hardcoded_example_value_is_a_warning():
+    text = GOOD.replace(
+        "`display policy endpoint <endpoint-ipv6>`",
+        "`display cpu-defend statistics-all slot 3`",
+    )
+    assert any("示例取值" in issue.message for issue in lint_text(text).warnings)
