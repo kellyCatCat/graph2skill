@@ -153,8 +153,8 @@ def test_merged_document_passes_the_linter(multi_graph, merged):
 
 def test_evidence_names_every_merged_source(multi_graph, merged):
     scoped = multi_graph.scope_to_units(merged.units)
-    package = build_package(scoped, merged, BuildOptions(name="isis"))
-    evidence = package.files["reference/evidence.md"]
+    package = build_package(scoped, merged, BuildOptions(name="isis", emit_evidence=True))
+    evidence = package.internal["evidence.md"]
     assert "合并了 3 个来源" in evidence
     for node_id in ("symptom_manual", "symptom_tree", "symptom_case"):
         assert node_id in evidence

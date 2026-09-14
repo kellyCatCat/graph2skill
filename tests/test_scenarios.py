@@ -168,9 +168,11 @@ def test_generated_document_has_no_case_literal_warnings(messy_graph, tmp_path):
 def test_evidence_file_explains_every_omission(messy_graph):
     scoped = messy_graph.scope_to_unit("28.21.3")
     package = build_package(
-        scoped, build_playbook(scoped, scoped.nodes[SYMPTOM]), BuildOptions(name="isis")
+        scoped,
+        build_playbook(scoped, scoped.nodes[SYMPTOM]),
+        BuildOptions(name="isis", emit_evidence=True),
     )
-    evidence = package.files["reference/evidence.md"]
+    evidence = package.internal["evidence.md"]
     assert "未进入正文的条目" in evidence and "疑似底层故障" in evidence
 
 

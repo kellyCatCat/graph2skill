@@ -84,7 +84,7 @@ def evidence_line(item: Dict[str, Any]) -> str:
 def evidence_lines(items: Sequence[Dict[str, Any]], limit: int = EVIDENCE_DEFAULT_LIMIT) -> List[str]:
     lines = [evidence_line(item) for item in items[:limit] if isinstance(item, dict)]
     if len(items) > limit:
-        lines.append(f"（另有 {len(items) - limit} 条来源未展开，见 data/subgraph.json）")
+        lines.append(f"（另有 {len(items) - limit} 条来源未展开，回原图按 node_id 查 provenance）")
     return lines
 
 

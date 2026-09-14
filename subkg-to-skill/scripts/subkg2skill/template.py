@@ -453,7 +453,7 @@ def build_multi_doc(
     if not any_steps:
         doc.notes.append("子图中没有可展开的候选原因，排查步骤为空。")
     if omitted:
-        doc.notes.append(f"{len(omitted)} 个原因/检查未进入正文，明细见 reference/evidence.md。")
+        doc.notes.append(f"{len(omitted)} 个原因/检查未进入正文，（构建输出逐条列出原因）。")
     return doc
 
 
@@ -873,11 +873,13 @@ def _render_cause_table(causes: Sequence[RootCause]) -> List[str]:
     return lines
 
 
-def render_doc(doc: SkillDoc, *, name: str, description: str, lead: str = "") -> str:
-    lines = ["---", f"name: {name}", f"description: {description}", "---", ""]
-    if lead:
-        lines += [lead, ""]
+def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
+    """Render the document that ships — four sections, nothing else.
 
+    No pointer to the graph: the subgraph is build-time material and is not
+    delivered with the skill, so a reference to it would dangle.
+    """
+    lines = ["---", f"name: {name}", f"description: {description}", "---", ""]
     lines += ["# 入参列表", ""]
     if doc.params:
         lines += ["| 信息 | 是否必填 | 说明 |", "| --- | --- | --- |"]

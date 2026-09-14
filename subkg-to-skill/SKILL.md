@@ -1,6 +1,6 @@
 ---
 name: subkg-to-skill
-description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成符合模板的排障 skill：一个故障入口一份，文档为「入参列表 / 前置检查 / 排查步骤 / 根因对照表」四章节，配 reference/ 出处与 scripts/ 查询脚本，Claude Code、opencode 拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包”，或手里有 node.json、edge.json 想变成智能体能用的排障文档时使用。Turns a fault-diagnosis knowledge-graph subgraph into template-conformant agent skills."
+description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成符合模板的排障 skill：一个故障入口一份，交付物就是一个 SKILL.md，文档为「入参列表 / 前置检查 / 排查步骤 / 根因对照表」四章节，生成后逐条回查原图、删除没有来源的内容，Claude Code、opencode 拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包”，或手里有 node.json、edge.json 想变成智能体能用的排障文档时使用。Turns a fault-diagnosis knowledge-graph subgraph into template-conformant agent skills."
 ---
 
 # 子图 → skill 生成器
@@ -11,21 +11,16 @@ confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to�
 
 输出：**一个故障场景一份 skill**——场景 = 一个 symptom × 一个诊断单元（章节号或案例 ID）。
 知识图谱会把同一个症状在几十个章节、案例里的原因合并到一个节点上，不按诊断单元切分就会把
-互不相干的故障塞进同一份文档。`SKILL.md` 严格按四章节模板写：
+互不相干的故障塞进同一份文档。**交付物只有 `<skill>/SKILL.md` 一个文件**，
+严格按四章节模板写：入参列表 → 前置检查 → 排查步骤 → 根因对照表。
 
-```
-<skill>/
-├── SKILL.md                # 入参列表 → 前置检查 → 排查步骤 → 根因对照表
-├── reference/
-│   ├── evidence.md         # 每条判据/命令/修复的出处、证据强度、未求值条件
-│   └── subgraph.json       # 该故障的子图切片（全字段）
-└── scripts/kg_query.py     # 零依赖查询脚本
-```
+子图切片、出处清单、查询脚本是**构建期的内部产物，不对外暴露**：默认不生成，要人工核对时用
+`--with-evidence` / `--with-subgraph` / `--with-script` 导出到 `<输出目录>.internal/`，不要拷走。
 
 模板细则见 [`reference/skill-template.md`](reference/skill-template.md)，**这是硬性要求**。
 生成过程不调用大模型：内容由数据直接展开，可重复、可比对、可追溯。
 
-## 使用流程（三段，不要跳段）
+## 使用流程（四段，不要跳段）
 
 ### 阶段一 · 数据摸底
 
@@ -67,7 +62,7 @@ python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但�
 案例特定的默认剔除，跨故障的靠边语义（`refers_to` / `leads_to` 指向另一个故障入口，
 选图时默认不跨越它们展开）。剩下**同一单元里的跨领域内容**机器判不了，就是这一步的人工活：
 `exclude` 会把该节点及其所有边整条剔掉（原因带着它的检查、观测、修复一起走），
-并在 `plan` 和 `reference/evidence.md` 里逐条记账。写错的关键词会直接报错，
+并在 `plan` 与构建输出里逐条记账（`--with-evidence` 可导出完整清单）。写错的关键词会直接报错，
 不会静默漏掉内容。
 
 判断完把编排固化成场景清单，后面两段都用它：
@@ -114,7 +109,8 @@ python3 scripts/build_skill.py plan <图> --scenarios scenarios.json
 
 ```bash
 python3 scripts/build_skill.py build <图> --scenarios scenarios.json --out out/isis-troubleshooting
-python3 scripts/build_skill.py lint out/isis-troubleshooting
+python3 scripts/build_skill.py lint   out/isis-troubleshooting            # 形状
+python3 scripts/build_skill.py verify out/isis-troubleshooting --graph <图>  # 出处
 ```
 
 全部子命令与参数见 [`reference/cli.md`](reference/cli.md)。
@@ -132,13 +128,23 @@ python3 scripts/build_skill.py build <图> --entry symptom_7f1c --unit 28.21.3 \
 **必须用脚本生成，不要照着模板手写文档。** 手写会漏掉命令去重、案例内容剔除、
 跳转编号一致性这些机器保证的东西——这些恰恰是生成质量的关键。
 
+### 阶段四 · 后校验：每条内容都回查原图，删掉幻觉
+
+`lint` 查**形状**，`verify` 查**出处**：命令、根因、判据、入参逐条回原图查，查不到就是 ERROR
+（自由文本报 WARNING）——命令只认 `check` / `repair` / `escalation` 的 `command_templates`，
+根因只认 `cause` 的名字，判据只认 `observation` 的表达式/字段/取值，入参只认 `required_slots`
+与正文命令里的 `<参数>`；口径见
+[`reference/evidence-rules.md`](reference/evidence-rules.md#后校验什么算有来源)。
+
+`build` 自动跑一遍；**要手动跑的是文档被人或智能体动过之后**——润色、补一句"看起来更完整"的
+说明，幻觉就这样进来。**ERROR 只有两种处理：删掉，或改回来源原样的写法**，不要凭经验"修正"、
+不要换个说法绕过；改完重跑两道。`--graph` 要给**原图**，给生成物不叫回查。
+
 ### 交付
 
-`build` / `build-all` 会自动跑模板检查。**有 ERROR 必须修到零再交付**；
-WARNING（如"来源未给出修复命令"）如实转告用户，不要自己补命令消灭它。
-
-回报时说清楚五件事：生成了哪些 skill（场景 + 英文名）、`plan` 的规模数字、
-模板检查结果、**交付统计里超出健康值的项**、以及安装路径（构建命令末尾会打印）：
+**`lint` 与 `verify` 的 ERROR 必须都修到零**；WARNING（如"来源未给出修复命令"）如实转告用户，
+不要自己补命令消灭它。回报时说清楚六件事：生成了哪些 skill（场景 + 英文名）、`plan` 的规模数字、
+模板检查与后校验结果、**交付统计里超出健康值的项**、以及安装路径：
 
 ```bash
 cp -r <输出目录> .claude/skills/<slug>          # Claude Code（项目级）
@@ -152,10 +158,11 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 | 症状 | 成因 | 生成器的处理 |
 | --- | --- | --- |
 | **同一条命令出现几十次** | 图里多个 check 节点跑同一条命令 | 前置检查按命令合并成一条，采集内容取并集；排查步骤只写“复用前置检查步骤 N 回显”，不重复下发 |
-| **步骤里出现 IP、设备名、拓扑** | 案例节点（`example_specific`）带着某次事故的地址与组网 | 默认整体剔除，并在 `reference/evidence.md` 里说明；确需保留时 `--include-example-specific`，且命令旁会标出案例字面量 |
-| **几十个步骤、长度爆炸** | 一个症状合并了多个章节/案例的原因 | 按诊断单元切分（上面第 2、3 步）；`--max-steps` 可再设上限；超过 25 步 lint 会告警 |
+| **步骤里出现 IP、设备名、拓扑** | 案例节点（`example_specific`）带着某次事故的地址与组网 | 默认整体剔除，构建输出逐条列出剔除原因；确需保留时 `--include-example-specific`，且命令旁会标出案例字面量 |
+| **几十个步骤、长度爆炸** | 一个症状合并了多个章节/案例的原因 | 按诊断单元切分；`--max-steps` 再设上限；超过 25 步 lint 告警 |
 | **场景杂糅（ISIS 里混进 MPLS、BGP）** | 跨单元的边被一并展开 | `--unit` 只保留该单元的关系；无判据又无修复的原因不进正文 |
 | **同一故障被拆成几份薄 skill** | 手册、作战树、案例库各写一遍，节点不同名不同 | `list` 按故障归并，`--merge-same-name` 合并；同名根因折成一步，判据与修复取并集 |
+| **润色时补出图里没有的命令/根因** | 人或智能体事后编辑文档 | `verify` 逐条回查原图，没来源的报 ERROR |
 
 跑完看一眼输出里的「N 个原因/检查未进入正文」和 lint 告警，把它们如实转告用户——
 剔除了什么、为什么剔除，比假装“全都覆盖到了”有用。
@@ -172,7 +179,8 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 - **空值不是承诺**：`service_impact` / `rollback` / `preconditions` 为空写“来源未给出”。
 - **参数名沿用来源写法**，只规整分隔符（`{interface-type}` → `<interface-type>`），不翻译、不换词；
   同一参数全篇同名，接口名用全称。
-- **每条结论可回查**：出处放在 `reference/evidence.md`，四章节里不塞出处。
+- **每条结论可回查**：四章节里不塞出处，但每条内容都要能在原图里找到来源——改完用 `verify` 验，
+  不要凭印象判断；出处清单需要时用 `--with-evidence` 导出，供内部核对。
 
 完整措辞对照见 [`reference/evidence-rules.md`](reference/evidence-rules.md)；
 图谱字段含义见 [`reference/graph-schema.md`](reference/graph-schema.md)；
@@ -191,6 +199,7 @@ cp -r <输出目录> ~/.config/opencode/skill/<slug>
 - 不要为了“看起来完整”补写来源里没有的字段（预期效果、回退方法、命令参数值）。
 - 不要合并同名节点：身份以 `node_id` 为准，同名节点可能范围不同。
 - 不要在生成的 skill 里替用户执行命令；变更类操作要用户确认。
-- 不要用 `--data none` 配查询脚本：脚本会没有数据可读。
+- 不要把 `.internal/` 里的子图、出处、查询脚本跟着 skill 交付：子图不对外暴露。
+- 不要跳过后校验：过不了 `verify` 的内容就是幻觉，删掉或改回原文，不要换个说法绕过。
 - 不要为了“覆盖全”而用 `--all-units` 把多个诊断单元合成一份：那正是长度爆炸和场景杂糅的来源。
 - 不要手工把案例里的 IP、设备名改成看起来通用的值——那是编造；要么剔除该条目，要么留着并标注。

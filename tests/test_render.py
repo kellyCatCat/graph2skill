@@ -1,4 +1,4 @@
-"""The package around SKILL.md: frontmatter, evidence, data and layout."""
+"""The package around SKILL.md: frontmatter, layout, and the internal material."""
 
 import json
 
@@ -26,13 +26,24 @@ def package(example_graph):
     return build_package(example_graph, playbook, options)
 
 
-def test_layout_is_skill_md_reference_scripts(package):
-    assert set(package.files) == {
-        "SKILL.md",
-        "reference/evidence.md",
-        "reference/subgraph.json",
-        "scripts/kg_query.py",
-    }
+@pytest.fixture()
+def internal_package(example_graph):
+    """The same build, with the build-time material asked for."""
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    options = BuildOptions(
+        name="isis-neighbor-down",
+        sources=["examples/subgraph"],
+        emit_evidence=True,
+        emit_subgraph=True,
+        emit_script=True,
+    )
+    return build_package(example_graph, playbook, options)
+
+
+def test_only_skill_md_ships(package):
+    # 子图不对外暴露：交付物就是一个 SKILL.md。
+    assert set(package.files) == {"SKILL.md"}
+    assert package.internal == {}
 
 
 def test_generated_document_passes_its_own_linter(package):
@@ -55,38 +66,31 @@ def test_custom_description_wins(example_graph):
     assert "description: 自定义描述。" in package.files["SKILL.md"]
 
 
-def test_lead_line_points_at_the_reference_files(package):
-    assert "reference/evidence.md" in package.files["SKILL.md"].split("# 入参列表")[0]
+def test_document_does_not_point_at_files_it_does_not_ship(package):
+    document = package.files["SKILL.md"]
+    for gone in ("reference/evidence.md", "reference/subgraph.json", "scripts/kg_query.py"):
+        assert gone not in document
 
 
-def test_lead_line_can_be_dropped(example_graph):
-    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
-    package = build_package(
-        example_graph, playbook, BuildOptions(name="x", include_lead=False)
-    )
-    head = package.files["SKILL.md"].split("# 入参列表")[0]
-    assert "reference/evidence.md" not in head
-
-
-def test_evidence_file_carries_sources_and_caveats(package):
-    evidence = package.files["reference/evidence.md"]
+def test_evidence_file_carries_sources_and_caveats(internal_package):
+    evidence = internal_package.internal["evidence.md"]
     assert "《NE40E 维护宝典.pdf》" in evidence
     assert "候选知识" in evidence and "人工复核=否" in evidence
     assert "`symptom_7f1c02aa93be4d61b0c5e210`" in evidence
     assert "未求值" in evidence
 
 
-def test_evidence_records_verdict_strength(package):
-    evidence = package.files["reference/evidence.md"]
+def test_evidence_records_verdict_strength(internal_package):
+    evidence = internal_package.internal["evidence.md"]
     assert "**支持**" in evidence and "**确认**" in evidence and "**排除**" in evidence
 
 
-def test_evidence_flags_example_specific_content(package):
-    assert "案例特定" in package.files["reference/evidence.md"]
+def test_evidence_flags_example_specific_content(internal_package):
+    assert "案例特定" in internal_package.internal["evidence.md"]
 
 
-def test_data_file_is_the_faults_own_slice(package, example_graph):
-    data = json.loads(package.files["reference/subgraph.json"])
+def test_data_file_is_the_faults_own_slice(internal_package, example_graph):
+    data = json.loads(internal_package.internal["subgraph.json"])
     ids = {node["node_id"] for node in data["nodes"]}
     assert ISIS in ids
     # 切片只含这个故障走得到的节点
@@ -98,23 +102,31 @@ def test_data_file_is_the_faults_own_slice(package, example_graph):
 
 def test_slim_data_drops_bookkeeping_fields(example_graph):
     playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
-    package = build_package(example_graph, playbook, BuildOptions(name="x", data_mode="slim"))
-    data = json.loads(package.files["reference/subgraph.json"])
+    package = build_package(
+        example_graph, playbook, BuildOptions(name="x", emit_subgraph=True, data_mode="slim")
+    )
+    data = json.loads(package.internal["subgraph.json"])
     assert "canonical_key" not in data["nodes"][0]
     assert "semantic_review" not in data["nodes"][0]
 
 
-def test_data_none_skips_the_bundle_and_says_so(example_graph):
+def test_script_without_data_says_so(example_graph):
     playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
-    package = build_package(example_graph, playbook, BuildOptions(name="x", data_mode="none"))
-    assert "reference/subgraph.json" not in package.files
+    package = build_package(example_graph, playbook, BuildOptions(name="x", emit_script=True))
+    assert "subgraph.json" not in package.internal
     assert any("查询脚本" in note for note in package.notes)
 
 
-def test_script_can_be_omitted(example_graph):
-    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
-    package = build_package(example_graph, playbook, BuildOptions(name="x", include_script=False))
-    assert "scripts/kg_query.py" not in package.files
+def test_internal_material_is_written_beside_the_skill(tmp_path, internal_package):
+    target = tmp_path / "out" / "isis-neighbor-down"
+    internal_package.write(target)
+    assert sorted(path.name for path in target.iterdir()) == ["SKILL.md"]
+    beside = tmp_path / "out" / "isis-neighbor-down.internal"
+    assert sorted(path.name for path in beside.iterdir()) == [
+        "evidence.md",
+        "kg_query.py",
+        "subgraph.json",
+    ]
 
 
 def test_notes_report_an_empty_section(example_graph):

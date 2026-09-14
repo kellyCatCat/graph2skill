@@ -1,13 +1,19 @@
 """Assemble the skill package around one fault entry.
 
-    <skill>/
-      SKILL.md                 the four-section template document
-      reference/evidence.md    where every claim came from, and how far it is verified
-      reference/subgraph.json  this fault's slice of the graph, verbatim
-      scripts/kg_query.py      stdlib query tool over that slice
+**A delivered skill is one file: ``SKILL.md``.**  The knowledge graph is not
+handed out with it — the subgraph slice, the evidence write-up and the query
+script are build-time working material, useful while checking a generated
+document and worthless (or misleading) to whoever installs the skill.  They are
+produced only on request and written *beside* the skill, never inside it:
+
+    out/isis-neighbor-down/SKILL.md            delivered
+    out/isis-neighbor-down.internal/           build-time only, do not ship
+      evidence.md                              where every claim came from
+      subgraph.json                            this fault's slice, verbatim
+      kg_query.py                              stdlib query tool over that slice
 
 ``SKILL.md`` is written by :mod:`subkg2skill.template`; this module supplies the
-frontmatter, the supporting files and the on-disk layout.
+frontmatter, the working material and the on-disk layout.
 """
 
 from __future__ import annotations
@@ -36,7 +42,8 @@ SLIM_DROP_KEYS = (
     "concept_alignment_ids",
     "source_contexts",
 )
-LEAD = "> 出处与证据强度见 `reference/evidence.md`；子图原始数据见 `reference/subgraph.json`（可用 `scripts/kg_query.py` 查询）。"
+#: Where build-time material is written when it is asked for.
+INTERNAL_SUFFIX = ".internal"
 
 
 class RenderError(RuntimeError):
@@ -48,9 +55,11 @@ class BuildOptions:
     name: str = ""
     description: str = ""
     evidence_limit: int = 3
-    data_mode: str = "full"  # full | slim | none
-    include_script: bool = True
-    include_lead: bool = True
+    data_mode: str = "full"  # full | slim — detail of the internal subgraph dump
+    #: Build-time material, written next to the skill and never shipped with it.
+    emit_evidence: bool = False
+    emit_subgraph: bool = False
+    emit_script: bool = False
     sources: Sequence[str] = ()
     unit: str = ""
     include_example_specific: bool = False
@@ -69,25 +78,40 @@ class BuildOptions:
 
 @dataclass
 class SkillPackage:
+    #: What ships: ``SKILL.md`` and nothing else.
     files: Dict[str, str] = field(default_factory=dict)
+    #: Build-time material (evidence, subgraph slice, query script), if asked for.
+    internal: Dict[str, str] = field(default_factory=dict)
     notes: List[str] = field(default_factory=list)
     #: What the finished document actually contains, after merging and pruning.
     stats: Dict[str, int] = field(default_factory=dict)
     #: The built document, for delivery metrics the caller reports on.
     doc: Optional["SkillDoc"] = None
+    #: Causes / checks left out of the document, with the reason for each.
+    omitted: List[Tuple[str, str]] = field(default_factory=list)
+
+    def internal_dir(self, out_dir: Path) -> Path:
+        """Sibling directory for build-time material — outside the skill itself."""
+        out_dir = Path(out_dir)
+        return out_dir.parent / (out_dir.name + INTERNAL_SUFFIX)
 
     def write(self, out_dir: Path, *, force: bool = False) -> List[Path]:
-        """Write every file under *out_dir*; refuse to clobber without ``force``."""
+        """Write the skill under *out_dir*; refuse to clobber without ``force``.
+
+        Build-time material goes to ``<out_dir>.internal`` so that copying the
+        skill directory into a framework can never drag the graph along with it.
+        """
         out_dir = Path(out_dir)
         if out_dir.exists() and any(out_dir.iterdir()) and not force:
             what = "已有技能目录" if (out_dir / "SKILL.md").exists() else "非空目录"
             raise RenderError(f"{out_dir} 是{what}；确认后加 --force 覆盖")
         written: List[Path] = []
-        for relative, content in sorted(self.files.items()):
-            path = out_dir / relative
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            written.append(path)
+        for base, payload in ((out_dir, self.files), (self.internal_dir(out_dir), self.internal)):
+            for relative, content in sorted(payload.items()):
+                path = base / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                written.append(path)
         return written
 
 
@@ -373,17 +397,19 @@ def build_package(
             "omitted": len(doc.omitted),
         },
         doc=doc,
+        omitted=list(doc.omitted),
     )
-    package.files["SKILL.md"] = render_doc(
-        doc, name=name, description=description, lead=LEAD if options.include_lead else ""
-    )
-    package.files["reference/evidence.md"] = render_evidence(
-        slice_graph, primary, options, doc.omitted, [book for _name, book in scenarios]
-    )
-    if options.data_mode != "none":
-        package.files["reference/subgraph.json"] = render_data(slice_graph, options)
-    elif options.include_script:
-        package.notes.append("--data none 时不生成 reference/subgraph.json，查询脚本将无数据可读。")
-    if options.include_script:
-        package.files["scripts/kg_query.py"] = _query_script()
+    package.files["SKILL.md"] = render_doc(doc, name=name, description=description)
+    # Everything below is build-time material: it is written beside the skill,
+    # never inside it, and is not part of what gets installed.
+    if options.emit_evidence:
+        package.internal["evidence.md"] = render_evidence(
+            slice_graph, primary, options, doc.omitted, [book for _name, book in scenarios]
+        )
+    if options.emit_subgraph:
+        package.internal["subgraph.json"] = render_data(slice_graph, options)
+    if options.emit_script:
+        package.internal["kg_query.py"] = _query_script()
+        if not options.emit_subgraph:
+            package.notes.append("没有导出 subgraph.json，查询脚本将无数据可读。")
     return package

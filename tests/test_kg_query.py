@@ -1,4 +1,4 @@
-"""The query script shipped inside the skill, exercised as a subprocess."""
+"""The query script exported as build-time material, exercised as a subprocess."""
 
 import json
 import subprocess
@@ -20,15 +20,17 @@ def skill_dir(tmp_path_factory):
             "--entry", "symptom_7f1c",
             "--name", "isis-neighbor-down",
             "--out", str(out),
+            "--with-subgraph",
+            "--with-script",
         ]
     )
     assert code == 0
-    return out
+    return out.parent / (out.name + ".internal")
 
 
 def run(skill_dir, *args):
     result = subprocess.run(
-        [sys.executable, str(skill_dir / "scripts" / "kg_query.py"), *args],
+        [sys.executable, str(skill_dir / "kg_query.py"), *args],
         capture_output=True,
         text=True,
     )
@@ -97,7 +99,7 @@ def test_path_reports_unreachable(skill_dir):
 
 def test_ambiguous_prefix_lists_candidates(skill_dir):
     result = subprocess.run(
-        [sys.executable, str(skill_dir / "scripts" / "kg_query.py"), "show", "cause_"],
+        [sys.executable, str(skill_dir / "kg_query.py"), "show", "cause_"],
         capture_output=True,
         text=True,
     )
@@ -107,7 +109,7 @@ def test_ambiguous_prefix_lists_candidates(skill_dir):
 
 def test_missing_data_file_is_reported(skill_dir, tmp_path):
     result = subprocess.run(
-        [sys.executable, str(skill_dir / "scripts" / "kg_query.py"), "--data", str(tmp_path / "x.json"), "stats"],
+        [sys.executable, str(skill_dir / "kg_query.py"), "--data", str(tmp_path / "x.json"), "stats"],
         capture_output=True,
         text=True,
     )

@@ -140,8 +140,10 @@ def test_package_description_covers_every_scenario(scenarios):
 
 def test_evidence_lists_every_scenarios_sources(scenarios):
     graph, named = scenarios
-    package = build_package(graph, named, BuildOptions(name="isis-troubleshooting"))
-    evidence = package.files["reference/evidence.md"]
+    package = build_package(
+        graph, named, BuildOptions(name="isis-troubleshooting", emit_evidence=True)
+    )
+    evidence = package.internal["evidence.md"]
     assert "覆盖 2 个故障场景" in evidence
     for node_id in ("symptom_manual", "symptom_tree", "symptom_case", "symptom_generic"):
         assert node_id in evidence
@@ -321,10 +323,10 @@ def test_build_records_exclusions_in_the_evidence(tmp_path):
     out = tmp_path / "skill"
     code = main(
         ["build", str(MULTI), "--entry", "symptom_manual", "--merge-same-name",
-         "--exclude", "认证", "--name", "isis", "--out", str(out)]
+         "--exclude", "认证", "--name", "isis", "--out", str(out), "--with-evidence"]
     )
     assert code == 0
-    evidence = (out / "reference" / "evidence.md").read_text(encoding="utf-8")
+    evidence = (out.parent / (out.name + ".internal") / "evidence.md").read_text(encoding="utf-8")
     assert "按 exclude 剔除" in evidence
     assert "认证" not in (out / "SKILL.md").read_text(encoding="utf-8")
 

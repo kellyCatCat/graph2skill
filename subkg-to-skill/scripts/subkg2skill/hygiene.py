@@ -19,7 +19,7 @@ guesses a canonical spelling: the longest form wins because it is the one a
 reader can look up.
 
 Everything this module rejects is returned with a reason, never dropped
-silently — the caller records it in ``reference/evidence.md``.
+silently — the caller reports it, and records it in the exported ``evidence.md``.
 """
 
 from __future__ import annotations

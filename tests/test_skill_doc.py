@@ -54,7 +54,9 @@ def test_reference_docs_are_all_linked(skill_text):
 
 
 def test_skill_md_stays_short(skill_text):
-    assert len(skill_text.splitlines()) < 200
+    # 入口文档要能一口气读完：细则进 reference/，这里只留流程和判断依据。
+    # 上限随阶段四（后校验）从 200 提到 220，不是给正文注水留的空间。
+    assert len(skill_text.splitlines()) < 220
 
 
 def _run(*args):
@@ -77,8 +79,9 @@ def test_documented_commands_run(tmp_path, example_dir):
     assert built.returncode == 0, built.stderr
     # the install lines the skill promises are printed for the user
     assert ".claude/skills/demo" in built.stdout and ".opencode/skill/demo" in built.stdout
-    assert {path.name for path in out.iterdir()} == {"SKILL.md", "reference", "scripts"}
+    assert {path.name for path in out.iterdir()} == {"SKILL.md"}
     assert _run("lint", str(out)).returncode == 0
+    assert _run("verify", str(out), "--graph", str(example_dir)).returncode == 0
 
 
 def test_scripts_need_no_third_party_imports():

@@ -6,13 +6,15 @@
 文档为「入参列表 → 前置检查 → 排查步骤 → 根因对照表」四章节。
 
 ```
-node.json ─┐                                        <生成的 skill>/
-           ├─▶ subkg-to-skill ─▶ 载入 → 校验 →      ├── SKILL.md          四章节模板
-edge.json ─┘                     选子图 → 按故障     ├── reference/
-                                 入口展开 → 模板自检  │   ├── evidence.md   出处与证据强度
-                                                    │   └── subgraph.json 该故障的子图切片
-                                                    └── scripts/kg_query.py
+node.json ─┐                                           <生成的 skill>/
+           ├─▶ subkg-to-skill ─▶ 载入 → 校验 → 选子图  └── SKILL.md   四章节模板
+edge.json ─┘                     → 按故障入口展开
+                                 → 模板自检 lint（形状）
+                                 → 后校验 verify（出处）：逐条回查原图，没来源的不许留
 ```
+
+**交付物只有 `SKILL.md` 一个文件**：子图不对外暴露。出处清单、子图切片、查询脚本是
+构建期的内部产物，按需导出到 `<输出目录>.internal/`，不随 skill 交付。
 
 ## 装这个 skill（三选一）
 
@@ -82,10 +84,13 @@ python3 $S list examples/subgraph --show-causes      # 该不该拆
 python3 $S list examples/subgraph --suggest-merge    # 该不该合
 python3 $S list examples/subgraph --export-scenarios scenarios.json
 
-# 三 · 生成前规划 → 生成 → 自检
+# 三 · 生成前规划 → 生成
 python3 $S plan  examples/subgraph --scenarios scenarios.json
 python3 $S build examples/subgraph --scenarios scenarios.json --out out/isis
-python3 $S lint  out/isis
+
+# 四 · 交付前两道检查：形状 + 出处
+python3 $S lint   out/isis
+python3 $S verify out/isis --graph examples/subgraph
 ```
 
 单个故障一份：
@@ -95,6 +100,7 @@ python3 $S list    examples/subgraph          # 有哪些故障场景（症状 �
 python3 $S build   examples/subgraph --entry symptom_7f1c --unit 28.21.3 \
         --name isis-neighbor-down --out out/isis-neighbor-down
 python3 $S lint    out/isis-neighbor-down     # 模板符合性检查
+python3 $S verify  out/isis-neighbor-down --graph examples/subgraph   # 后校验：回查原图
 ```
 
 批量（每个入口一个子目录，用 `{node_id: slug}` 映射指定英文名）：
@@ -124,14 +130,17 @@ python3 $S list  kg/ --export-scenarios scenarios.json   # 导出分组，改名
 python3 $S build kg/ --scenarios scenarios.json --out out/isis-troubleshooting
 ```
 
-出处不塞进四章节，全部集中在 `reference/evidence.md`；
-`scripts/kg_query.py` 用来回查子图切片：
+出处不塞进四章节。需要核对时把内部产物导出到 `<输出目录>.internal/`：
 
 ```bash
-python3 <skill>/scripts/kg_query.py stats
-python3 <skill>/scripts/kg_query.py show observation_6b40      # 支持 id 前缀
-python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
+python3 $S build kg/ --entry symptom_7f1c --unit 28.21.3 --name isis-neighbor-down \
+        --out out/isis-neighbor-down --with-evidence --with-subgraph --with-script
+
+python3 out/isis-neighbor-down.internal/kg_query.py show observation_6b40   # 支持 id 前缀
+python3 out/isis-neighbor-down.internal/kg_query.py expand symptom_7f1c --depth 2
 ```
+
+这些文件写在 skill 目录**旁边**，`cp -r out/isis-neighbor-down ~/.claude/skills/` 带不走它们。
 
 ## 怎么防住四种烂输出
 
@@ -149,8 +158,9 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | 判据没有区分力 | 一条判据被同场景三步以上共用（入场条件的重述）、正反判据跳同一处 —— lint 报 ERROR |
 | 参数填不出来 | 来源示意图的设备编号（`device B`）报 ERROR；没被任何命令引用的入参告警；`slot 3` 这类示例取值提示按现场替换 |
 | 优化有没有到位说不清 | `plan` / `build` 给交付统计：步骤:根因、判据密度、命令复用率、复检覆盖率等对照健康值 |
+| 润色时补出图里没有的命令/根因 | `verify` 后校验逐条回查原图，没来源的报 ERROR，必须删掉或改回原文 |
 
-剔除了什么、为什么剔除，都写在生成物的 `reference/evidence.md` 里，不会静默丢失。
+剔除了什么、为什么剔除，构建输出里逐条列出（`--with-evidence` 导出完整清单），不会静默丢失。
 
 ## 关键取舍：不把候选知识写成结论
 
@@ -166,8 +176,25 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 完整对照表见 [`reference/evidence-rules.md`](subkg-to-skill/reference/evidence-rules.md)。
 生成过程**不调用大模型**，内容由数据直接展开，可重复、可比对、可追溯。
 
-`build` / `build-all` 会自动跑 `lint`：四章节顺序、步骤编号连续、跳转目标存在、
-根因在对照表里逐字可查、CLI 参数都在入参列表内、占位符写法、接口名缩写——有 ERROR 就不算完成。
+## 两道检查：形状 + 出处
+
+`build` / `build-all` 两道都会自动跑，有 ERROR 就不算完成。
+
+**`lint` 查形状**：四章节顺序、步骤编号连续、跳转目标存在、根因在对照表里逐字可查、
+CLI 参数都在入参列表内、占位符写法、接口名缩写。
+
+**`verify` 查出处（后校验）**：把成品 `SKILL.md` 拆开，命令、根因、判据、入参逐条回原图查——
+命令只认 `check` / `repair` / `escalation` 的 `command_templates`（`observation` 是回显，不是命令来源），
+根因只认 `cause` 的名字，判据只认 `observation` 的表达式/字段/取值，
+入参只认 `required_slots` 与正文命令里的 `<参数>`。查不到的就是幻觉，**删掉或改回来源原样的写法**；
+修复说法一类自由文本查不到原文时报 WARNING，逐条看。
+
+生成器不调模型，产物天然有来源——所以这一步真正防的是**文档被人或智能体改过之后**：
+润色、合并、补一句“看起来更完整”的说明。手工动过就必须重跑：
+
+```bash
+python3 $S verify out/isis-neighbor-down --graph examples/subgraph
+```
 
 ## 仓库结构
 
@@ -183,11 +210,11 @@ python3 <skill>/scripts/kg_query.py expand symptom_7f1c --depth 2
 | `subkg-to-skill/reference/evidence-rules.md` | 措辞对照表 |
 | `subkg-to-skill/reference/cli.md` | CLI 参数全表 |
 | `subkg-to-skill/scripts/build_skill.py` | 生成器入口 |
-| `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 编排 / 规划 / 模板渲染 / lint |
+| `subkg-to-skill/scripts/subkg2skill/` | 实现：载入 / 校验 / 选图 / 展开 / 编排 / 规划 / 模板渲染 / lint / verify |
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
 | `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
 | `tests/data/multisource/` | 同一故障被手册 / 作战树 / 案例库各写一遍的子图，用于验证跨来源合并 |
-| `tests/` | pytest 用例（330 个） |
+| `tests/` | pytest 用例（349 个） |
 
 ## 开发
 

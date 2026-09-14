@@ -26,6 +26,8 @@ ROUTING_HEADING = "场景跳转表"
 #: “步骤 N” as a jump target — “前置检查步骤 N” is a back-reference, not a jump.
 JUMP_RE = re.compile(r"(?<!前置检查)步骤\s*(\d+)")
 CODE_RE = re.compile(r"`([^`]+)`")
+#: Table cells are separated by unescaped pipes; ``\|`` is a literal one.
+CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 #: Only ``{}`` is a stray placeholder; ``[ ... ]`` is CLI optional-argument syntax.
 BAD_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z0-9_\-一-鿿]+\}")
 #: Beyond this many steps a document stops being followable; split by diagnostic unit.
@@ -214,12 +216,21 @@ def _is_negation(left: str, right: str) -> bool:
 
 
 def _table_rows(lines: Sequence[str]) -> List[List[str]]:
+    """Split markdown table rows into cells, honouring escaped pipes.
+
+    Source prose carries ``|`` characters and the renderer escapes them as
+    ``\|``; splitting on every pipe would invent an extra column and shift
+    every check that reads a cell by index.
+    """
     rows: List[List[str]] = []
     for line in lines:
         stripped = line.strip()
         if not stripped.startswith("|"):
             continue
-        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        body = stripped[1:]
+        if body.endswith("|") and not body.endswith("\\|"):
+            body = body[:-1]
+        cells = [cell.strip().replace("\\|", "|") for cell in CELL_SPLIT_RE.split(body)]
         if all(set(cell) <= set("-: ") for cell in cells):
             continue
         rows.append(cells)

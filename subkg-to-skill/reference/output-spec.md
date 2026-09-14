@@ -17,7 +17,7 @@
 | 多个 check 节点跑同一条命令 | 前置检查按命令签名合并成一条，标题取首个，采集内容取并集 |
 | 步骤的判据来自某条前置检查的回显 | 步骤不重复下发命令，写“复用前置检查步骤 N 回显（检查名，查看 `字段` 字段）” |
 | 前置检查既没人引用、又不判定根因 | 从文档里剪掉（引用编号会自动重排） |
-| 节点 `example_specific=true` | 默认剔除，记进 `reference/evidence.md` 的「未进入正文的条目」；`--include-example-specific` 可保留，保留时命令旁标出案例字面量（IP、设备名、具体接口号、System ID） |
+| 节点 `example_specific=true` | 默认剔除，在构建输出的「未进入正文的条目」里逐条说明；`--include-example-specific` 可保留，保留时命令旁标出案例字面量（IP、设备名、具体接口号、System ID） |
 | 原因既无判定观测又无修复动作 | 默认剔除并记录原因；`--keep-undecidable` 可保留 |
 | 超过 `--max-steps` | 剔除并记录，不静默丢失 |
 | 人工判定与本场景无关（`exclude`） | 该节点及其所有边整条剔除，逐条记进 evidence.md；匹配不到时报错而不是静默跳过 |
@@ -27,14 +27,20 @@
 
 ## 产物
 
+交付物只有 `SKILL.md`——**子图不对外暴露**：
+
 ```
-<skill>/
-├── SKILL.md                # 四章节，不放出处
-├── reference/
-│   ├── evidence.md         # 出处、证据强度、未求值条件、质量标记
-│   └── subgraph.json       # 该故障的切片 + meta（来源、生成时间、计数）
-└── scripts/kg_query.py     # 按相对路径读 ../reference/subgraph.json
+out/isis-neighbor-down/
+└── SKILL.md                # 四章节，不放出处
+
+out/isis-neighbor-down.internal/     # 构建期中间产物，默认不生成，不随 skill 交付
+├── evidence.md             # 出处、证据强度、未求值条件、质量标记、被剔除的条目
+├── subgraph.json           # 该故障的切片 + meta（来源、生成时间、计数）
+└── kg_query.py             # 读同目录的 subgraph.json
 ```
+
+内部产物用 `--with-evidence` / `--with-subgraph` / `--with-script` 按需导出，
+写在 skill 目录**旁边**，所以 `cp -r <skill> ~/.claude/skills/` 不会把它们带走。
 
 frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behavior`）作故障现象，
 `aliases` + `attrs.match_phrases` 作适用时机，`attrs.trigger_context` 作补充；
@@ -115,7 +121,7 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 
 多条命令在表格内用 `<br>` 分行。
 
-## `reference/evidence.md`
+## `evidence.md`（构建期中间产物）
 
 四章节里不放出处，全部集中在这里：症状、检查动作、判据（观测 → 原因，含未求值条件）、
 候选原因、修复动作、转交升级，每个节点给出 `node_id`、知识状态（`status` / `review_status` /

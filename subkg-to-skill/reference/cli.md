@@ -6,13 +6,14 @@
 python3 scripts/build_skill.py <子命令> [输入...] [参数]
 ```
 
-按三段流程使用：
+按四段流程使用：
 
 | 阶段 | 子命令 |
 | --- | --- |
 | 一 · 数据摸底 | `inspect`、`validate` |
 | 二 · 语义判断与编排 | `list`（`--show-causes` / `--suggest-merge` / `--export-scenarios`） |
-| 三 · 生成前规划与生成 | `plan` → `build` / `build-all` → `lint` |
+| 三 · 生成前规划与生成 | `plan` → `build` / `build-all` |
+| 四 · 交付前检查 | `lint`（形状）→ `verify`（出处） |
 
 | 子命令 | 用途 | 退出码 |
 | --- | --- | --- |
@@ -23,6 +24,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `inspect` | 看规模、类型分布、章节、质量标记 | 0 / 2 |
 | `validate` | 只做结构校验 | 0 无错误；1 有错误；2 输入错误 |
 | `lint` | 检查已生成的 skill 是否符合模板 | 0 通过；1 有 ERROR |
+| `verify` | 后校验：命令/根因/判据/入参逐条回查原图，报出没有来源的内容 | 0 通过；1 有 ERROR；2 输入错误 |
 
 一个 skill 对应一个**故障**：可以由多个来源（手册 / 作战树 / 案例库）的同名症状合并而成，
 但**不跨同一症状节点的多个诊断单元**。子图里有多个入口时 `build` 必须用 `--entry` 指定；
@@ -59,19 +61,30 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 ## 输出参数（`build` / `build-all` 共用）
 
+**交付物只有 `SKILL.md`**：子图不对外暴露，输出目录里不会有别的文件。
+
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
 | `--out DIR` | 必填 | 输出目录；`build-all` 在其下按 slug 建子目录 |
-| `--evidence N` | 3 | `reference/evidence.md` 里每个条目展示几条来源 |
-| `--data full\|slim\|none` | `full` | `slim` 去掉 `canonical_key`、`semantic_review` 等簿记字段并截断证据；`none` 不带数据（查询脚本会无数据可读） |
-| `--no-script` | 关 | 不生成 `scripts/kg_query.py` |
-| `--no-lead` | 关 | 不在 frontmatter 后加指向 `reference/` 的提示行 |
-| `--include-example-specific` | 关 | 保留 `example_specific` 条目（含案例地址、设备名与组网）；默认剔除并记进 evidence.md |
+| `--include-example-specific` | 关 | 保留 `example_specific` 条目（含案例地址、设备名与组网）；默认剔除，剔了什么在构建输出里逐条列出 |
 | `--keep-undecidable` | 关 | 保留既无判定观测也无修复动作的原因（默认剔除，这类步骤没有信息量） |
-| `--max-steps N` | 0（不限） | 排查步骤上限；被截掉的原因会记进 evidence.md，不会静默丢失 |
-| `--exclude VALUE` | 无 | 剔除与本场景无关的节点：`node_id` 或名称关键词（如 `MPLS`），可重复。整条链一起走（原因带着它的检查、观测、修复），并记进 evidence.md；**匹配不到任何节点会报错**，避免写错静默漏掉 |
+| `--max-steps N` | 0（不限） | 排查步骤上限；被截掉的原因会在构建输出里列出，不会静默丢失 |
+| `--exclude VALUE` | 无 | 剔除与本场景无关的节点：`node_id` 或名称关键词（如 `MPLS`），可重复。整条链一起走（原因带着它的检查、观测、修复），并逐条列出；**匹配不到任何节点会报错**，避免写错静默漏掉 |
 | `--force` | 关 | 覆盖已有目录 |
-| `--dry-run` | 关 | 只打印将写出的文件与模板检查结果，不落盘 |
+| `--dry-run` | 关 | 只打印将写出的文件、模板检查与后校验结果，不落盘 |
+
+### 构建期中间产物（默认都不生成）
+
+写到 **`<输出目录>.internal/`**，和 skill 目录并排——所以 `cp -r <skill>` 永远不会把它们带走。
+它们是内部核对用的，不要随 skill 交付。
+
+| 参数 | 说明 |
+| --- | --- |
+| `--with-evidence` | 导出 `evidence.md`：每条判据/命令/修复的出处、证据强度、未求值条件、被剔除与被拒绝的条目 |
+| `--with-subgraph` | 导出 `subgraph.json`：该故障的子图切片 + meta（来源、生成时间、计数） |
+| `--with-script` | 导出 `kg_query.py`：零依赖查询脚本，读同目录的 `subgraph.json` |
+| `--evidence N`（默认 3） | `evidence.md` 里每个条目展示几条来源 |
+| `--data full\|slim`（默认 `full`） | `subgraph.json` 的详细程度；`slim` 去掉 `canonical_key`、`semantic_review` 等簿记字段并截断证据 |
 
 ### `build` 专有
 
@@ -125,6 +138,25 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 python3 scripts/build_skill.py lint <skill 目录或 SKILL.md> [更多路径...]
 ```
 
+### `verify`
+
+```bash
+python3 scripts/build_skill.py verify <skill 目录或 SKILL.md> [更多路径...] --graph <原图>
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `--graph PATH` | 回查用的**原图**（node/edge 文件或目录），可重复。不给时去找 `<skill>.internal/subgraph.json`（需先 `build --with-subgraph`），找不到就报错 |
+
+命令只认 `check` / `repair` / `escalation` 的 `command_templates`（经与生成器相同的清洗：
+`{x}` 规整成 `<x>`、去设备提示符、缩写与全称折叠），根因只认 `cause` 的名字，
+判据只认 `observation` 的表达式/字段/取值，入参只认 `required_slots` 与正文命令里的 `<参数>`；
+查不到的报 ERROR，自由文本查不到原文报 WARNING。模板自带的固定说法不算断言，不会误报。
+判定口径见 [`evidence-rules.md`](evidence-rules.md#后校验什么算有来源)。
+
+`build` / `build-all` 会自动对自己的产物跑一遍（对照的是**剔除前**的图：`exclude` 是编排决定，
+不是"图里没有"），有 ERROR 退出码为 1。
+
 ## 例子
 
 ```bash
@@ -138,7 +170,7 @@ python3 scripts/build_skill.py build /data/kg --entry symptom_7f1c --unit 28.21.
 
 # 按章节切一块，批量生成并指定英文名
 python3 scripts/build_skill.py build-all /data/node.json /data/edge.json \
-    --section 28.21 --out out/ --names names.json --data slim
+    --section 28.21 --out out/ --names names.json
 
 # 自检
 python3 scripts/build_skill.py lint out/isis-neighbor-down

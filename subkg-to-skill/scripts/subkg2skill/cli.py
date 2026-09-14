@@ -6,6 +6,7 @@
     build_skill.py inspect  <子图>                       # 规模与分布
     build_skill.py validate <子图>                       # 只做结构校验
     build_skill.py lint     <skill 目录或 SKILL.md>      # 模板符合性检查
+    build_skill.py verify   <skill 目录或 SKILL.md> --graph <原图>   # 后校验：逐条回查原图
 
 一个 skill 对应一个故障入口（一个 symptom），文档遵循四章节模板。
 """
@@ -33,6 +34,7 @@ from subkg2skill.playbook import (
     fault_key,
     suggest_merges,
 )
+from subkg2skill.verify import VerifyResult, verify_path, verify_text
 from subkg2skill.render import (
     BuildOptions,
     RenderError,
@@ -69,12 +71,6 @@ def _add_selection_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--out", required=True, help="输出目录")
-    parser.add_argument("--evidence", type=int, default=3, help="每个条目展示的来源条数")
-    parser.add_argument(
-        "--data", choices=("full", "slim", "none"), default="full", help="随包数据的详细程度"
-    )
-    parser.add_argument("--no-script", action="store_true", help="不生成查询脚本")
-    parser.add_argument("--no-lead", action="store_true", help="不在 frontmatter 后加参考文件提示行")
     parser.add_argument("--force", action="store_true", help="覆盖已有目录")
     parser.add_argument("--dry-run", action="store_true", help="只打印将生成的内容")
     parser.add_argument(
@@ -91,6 +87,22 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         help="剔除与本场景无关的节点：node_id 或名称关键词（如 MPLS），可重复",
+    )
+    internal = parser.add_argument_group(
+        "构建期中间产物（写到 <输出目录>.internal/，不随 skill 交付）"
+    )
+    internal.add_argument(
+        "--with-evidence", action="store_true", help="导出 evidence.md：出处、证据强度、被剔除的条目"
+    )
+    internal.add_argument(
+        "--with-subgraph", action="store_true", help="导出 subgraph.json：该故障的子图切片"
+    )
+    internal.add_argument(
+        "--with-script", action="store_true", help="导出 kg_query.py（需配合 --with-subgraph）"
+    )
+    internal.add_argument("--evidence", type=int, default=3, help="evidence.md 里每个条目展示的来源条数")
+    internal.add_argument(
+        "--data", choices=("full", "slim"), default="full", help="subgraph.json 的详细程度"
     )
 
 
@@ -233,6 +245,46 @@ def _print_lint(result, *, prefix: str = "  ") -> None:
         print(f"{prefix}  …另有 {len(result.issues) - 20} 条")
 
 
+def _print_verify(result: VerifyResult, *, prefix: str = "  ") -> None:
+    """Report the grounding check: what was traced back, and what was not."""
+    checked = "、".join(f"{kind} {count}" for kind, count in result.checked.items())
+    if result.ok and not result.warnings:
+        detail = f"：{checked}" if checked else ""
+        print(f"{prefix}后校验：通过（逐条回查 {result.total_checked()} 项{detail}）")
+        return
+    print(
+        f"{prefix}后校验：{len(result.errors)} 错误 / {len(result.warnings)} 警告"
+        f"（共查 {result.total_checked()} 项）"
+    )
+    for finding in result.findings[:20]:
+        print(f"{prefix}  {finding.render()}")
+    if len(result.findings) > 20:
+        print(f"{prefix}  …另有 {len(result.findings) - 20} 条")
+    if result.errors:
+        print(f"{prefix}  以上内容在子图里没有来源，属于幻觉：删掉，或改回来源原样的写法，再重跑。")
+
+
+def _print_omitted(omitted: Sequence, *, prefix: str = "  ", limit: int = 10) -> None:
+    """List what was left out — evidence.md no longer ships, so say it here."""
+    if not omitted:
+        return
+    print(f"{prefix}未进入正文的条目（{len(omitted)} 条）：")
+    for name, reason in list(omitted)[:limit]:
+        print(f"{prefix}  {name}：{reason}")
+    if len(omitted) > limit:
+        print(f"{prefix}  …另有 {len(omitted) - limit} 条（--with-evidence 导出完整清单）")
+
+
+def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
+    if not package.internal:
+        return
+    print(
+        f"{prefix}构建期中间产物：{package.internal_dir(out_dir)}（"
+        + "、".join(sorted(package.internal))
+        + "）——内部核对用，不要随 skill 交付"
+    )
+
+
 def _print_metrics(doc, *, prefix: str = "  ") -> None:
     """Say which delivery numbers came out of range, so they get reported on."""
     if doc is None:
@@ -247,7 +299,7 @@ def _print_metrics(doc, *, prefix: str = "  ") -> None:
 
 
 def _install_hint(out_dir: Path, name: str) -> None:
-    print("\n装进框架：")
+    print("\n装进框架（交付物只有 SKILL.md，目录里没有别的文件）：")
     print(f"  cp -r {out_dir} .claude/skills/{name}          # Claude Code（项目级）")
     print(f"  cp -r {out_dir} ~/.claude/skills/{name}        # Claude Code（全局）")
     print(f"  cp -r {out_dir} .opencode/skill/{name}         # opencode（项目级）")
@@ -471,6 +523,10 @@ def _build_one(
             cache[unit_key] = scoped
     else:
         scoped = cache[unit_key]
+    # Exclusions are an editorial decision about what to document, not about
+    # what the graph contains — so the grounding check reads the graph as it
+    # stood before them, or a scenario's own material would look invented.
+    reference = scoped
     scoped = _apply_exclusions(scoped, getattr(args, "exclude", []), excluded, excluded_ids)
     playbook = build_merged_playbook(scoped, symptoms, units)
     symptom = playbook.symptom
@@ -479,8 +535,9 @@ def _build_one(
         description=args.description,
         evidence_limit=args.evidence,
         data_mode=args.data,
-        include_script=not args.no_script,
-        include_lead=not args.no_lead,
+        emit_evidence=args.with_evidence,
+        emit_subgraph=args.with_subgraph,
+        emit_script=args.with_script,
         sources=sources,
         unit="、".join(units),
         include_example_specific=args.include_example_specific,
@@ -490,6 +547,9 @@ def _build_one(
     )
     package = build_package(scoped, playbook, options)
     result = lint_text(package.files["SKILL.md"])
+    # Post-verification: every command, root cause, criterion and parameter in
+    # the finished document has to be findable in the subgraph it came from.
+    grounding = verify_text(package.files["SKILL.md"], reference.subgraph(playbook.covered))
 
     if args.dry_run:
         print(
@@ -502,10 +562,12 @@ def _build_one(
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
         for note in package.notes:
             print(f"提示：{note}")
-        _print_lint(result)
-        return 0 if result.ok else 1
+        _print_omitted(package.omitted, prefix="")
+        _print_lint(result, prefix="")
+        _print_verify(grounding, prefix="")
+        return 0 if (result.ok and grounding.ok) else 1
 
-    written = package.write(out_dir, force=args.force)
+    package.write(out_dir, force=args.force)
     print(f"技能已生成：{out_dir}")
     print(f"  技能名：{normalise_name(name)}")
     print(
@@ -517,13 +579,16 @@ def _build_one(
     stats = package.stats
     print(
         f"  前置检查 {stats.get('prechecks', 0)} 条；排查步骤 {stats.get('steps', 0)} 步；"
-        f"根因 {stats.get('root_causes', 0)} 个；文件 {len(written)} 个"
+        f"根因 {stats.get('root_causes', 0)} 个；交付文件 {len(package.files)} 个"
     )
     for note in package.notes:
         print(f"  提示：{note}")
+    _print_internal(package, out_dir)
+    _print_omitted(package.omitted)
     _print_lint(result)
+    _print_verify(grounding)
     _print_metrics(package.doc)
-    return 0 if result.ok else 1
+    return 0 if (result.ok and grounding.ok) else 1
 
 
 def _load_manifest(path: Path) -> Dict:
@@ -667,7 +732,7 @@ def cmd_plan(args) -> int:
     for line in render_metrics(metrics(doc)):
         print(line)
     if report.issues:
-        print(f"载入时有 {len(report.issues)} 条告警/丢弃，生成后见 reference/evidence.md")
+        print(f"载入时有 {len(report.issues)} 条告警/丢弃（build --with-evidence 可导出明细）")
     if not args.scenarios:
         print(
             "把编排固化下来：list --export-scenarios scenarios.json（改名/调整分组）"
@@ -685,15 +750,17 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     name = args.name or manifest_name or ""
     if not name or name.startswith("<"):
         raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
-    scoped = (graph.scope_to_units(units) if units else graph).without(removed_ids)
+    reference = graph.scope_to_units(units) if units else graph
+    scoped = reference.without(removed_ids)
 
     options = BuildOptions(
         name=name,
         description=args.description or manifest_description,
         evidence_limit=args.evidence,
         data_mode=args.data,
-        include_script=not args.no_script,
-        include_lead=not args.no_lead,
+        emit_evidence=args.with_evidence,
+        emit_subgraph=args.with_subgraph,
+        emit_script=args.with_script,
         sources=sources,
         unit="、".join(dict.fromkeys(units)),
         include_example_specific=args.include_example_specific,
@@ -703,6 +770,10 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     )
     package = build_package(scoped, named, options)
     result = lint_text(package.files["SKILL.md"])
+    covered: Set[str] = set()
+    for _label, book in named:
+        covered |= book.covered
+    grounding = verify_text(package.files["SKILL.md"], reference.subgraph(covered))
     out_dir = Path(args.out)
 
     if args.dry_run:
@@ -712,26 +783,31 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         print("将写出：")
         for relative in sorted(package.files):
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
-        _print_lint(result)
-        return 0 if result.ok else 1
+        _print_omitted(package.omitted, prefix="")
+        _print_lint(result, prefix="")
+        _print_verify(grounding, prefix="")
+        return 0 if (result.ok and grounding.ok) else 1
 
-    written = package.write(out_dir, force=args.force)
+    package.write(out_dir, force=args.force)
     print(f"技能已生成：{out_dir}")
     print(f"  技能名：{normalise_name(name)}")
     stats = package.stats
     print(
         f"  场景 {len(named)} 个；公共前置检查 {stats.get('prechecks', 0)} 条；"
         f"排查步骤 {stats.get('steps', 0)} 步；根因 {stats.get('root_causes', 0)} 个；"
-        f"文件 {len(written)} 个"
+        f"交付文件 {len(package.files)} 个"
     )
     for index, (scenario_name, playbook) in enumerate(named):
         print(f"    场景{scenario_label(index)}：{scenario_name}")
     for note in package.notes:
         print(f"  提示：{note}")
+    _print_internal(package, out_dir)
+    _print_omitted(package.omitted)
     _print_lint(result)
+    _print_verify(grounding)
     _print_metrics(package.doc)
     _install_hint(out_dir, normalise_name(name))
-    return 0 if result.ok else 1
+    return 0 if (result.ok and grounding.ok) else 1
 
 
 def cmd_build(args) -> int:
@@ -838,6 +914,18 @@ def cmd_build_all(args) -> int:
             print(f"  {line}")
         if len(unnamed) > 20:
             print(f"  …另有 {len(unnamed) - 20} 条")
+    return 1 if failures else 0
+
+
+def cmd_verify(args) -> int:
+    """Check a finished skill back against the graph it claims to come from."""
+    graph_inputs = list(args.graph)
+    failures = 0
+    for target in args.targets:
+        print(f"{target}:")
+        result = verify_path(Path(target), graph_inputs)
+        _print_verify(result)
+        failures += 1 if not result.ok else 0
     return 1 if failures else 0
 
 
@@ -954,6 +1042,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--exclude", action="append", default=[], help="剔除无关节点：node_id 或名称关键词，可重复"
     )
     plan.set_defaults(func=cmd_plan)
+
+    verify = sub.add_parser(
+        "verify", help="后校验：文档里的命令/根因/判据/入参逐条回查原图，报出没有来源的内容"
+    )
+    verify.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")
+    verify.add_argument(
+        "--graph",
+        action="append",
+        default=[],
+        help="原图（node/edge 文件或目录），可重复；不给时找 <skill>.internal/subgraph.json",
+    )
+    verify.set_defaults(func=cmd_verify)
 
     lint = sub.add_parser("lint", help="检查已生成的 skill 是否符合模板")
     lint.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")

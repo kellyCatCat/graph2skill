@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Query the knowledge subgraph bundled with this skill.
+"""Query the subgraph slice a skill was built from.
+
+This is build-time material: it is written beside the skill (never inside it)
+and is not delivered to whoever installs the skill.
 
 Standard library only (Python 3.9+).  Run it from anywhere — the data file is
 resolved relative to this script.
@@ -24,9 +27,7 @@ import sys
 from collections import Counter, deque
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-DEFAULT_DATA = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "reference", "subgraph.json"
-)
+DEFAULT_DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "subgraph.json")
 
 VERDICT_EDGES = ("confirms", "supports", "excludes")
 

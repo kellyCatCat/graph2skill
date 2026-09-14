@@ -20,13 +20,15 @@ def build(tmp_path, example_dir, *extra, name="isis-neighbor-down"):
 def test_build_writes_a_conforming_skill(tmp_path, example_dir, capsys):
     code, out = build(tmp_path, example_dir)
     assert code == 0
-    assert {path.name for path in out.iterdir()} == {"SKILL.md", "reference", "scripts"}
+    # 交付物只有 SKILL.md：子图不对外暴露
+    assert {path.name for path in out.iterdir()} == {"SKILL.md"}
     text = (out / "SKILL.md").read_text(encoding="utf-8")
     assert text.startswith("---\nname: isis-neighbor-down\n")
     for section in ("# 入参列表", "# 前置检查", "# 排查步骤", "# 根因对照表"):
         assert section in text
     output = capsys.readouterr().out
     assert "模板检查：通过" in output
+    assert "后校验：通过" in output
     assert ".claude/skills/isis-neighbor-down" in output
 
 
@@ -80,11 +82,42 @@ def test_dry_run_writes_nothing(tmp_path, example_dir, capsys):
     assert "将写出" in output and "模板检查" in output
 
 
-def test_data_and_script_switches(tmp_path, example_dir):
-    code, out = build(tmp_path, example_dir, "--data", "none", "--no-script")
+def test_internal_material_is_opt_in_and_lands_outside_the_skill(tmp_path, example_dir, capsys):
+    code, out = build(tmp_path, example_dir, "--with-evidence", "--with-subgraph")
     assert code == 0
-    assert not (out / "reference" / "subgraph.json").exists()
-    assert not (out / "scripts").exists()
+    assert {path.name for path in out.iterdir()} == {"SKILL.md"}
+    beside = out.parent / (out.name + ".internal")
+    assert {path.name for path in beside.iterdir()} == {"evidence.md", "subgraph.json"}
+    assert "不要随 skill 交付" in capsys.readouterr().out
+
+
+def test_verify_traces_every_claim_back_to_the_graph(tmp_path, example_dir, capsys):
+    code, out = build(tmp_path, example_dir)
+    assert code == 0
+    assert main(["verify", str(out), "--graph", str(example_dir)]) == 0
+    assert "后校验：通过" in capsys.readouterr().out
+
+
+def test_verify_catches_an_invented_command(tmp_path, example_dir, capsys):
+    code, out = build(tmp_path, example_dir)
+    assert code == 0
+    document = out / "SKILL.md"
+    document.write_text(
+        document.read_text(encoding="utf-8").replace(
+            "   - 采集内容：", "   - CLI 命令：`display isis hallucinated-counters`\n   - 采集内容：", 1
+        ),
+        encoding="utf-8",
+    )
+    assert main(["verify", str(out), "--graph", str(example_dir)]) == 1
+    output = capsys.readouterr().out
+    assert "display isis hallucinated-counters" in output and "没有来源" in output
+
+
+def test_verify_without_a_graph_says_what_it_needs(tmp_path, example_dir, capsys):
+    code, out = build(tmp_path, example_dir)
+    assert code == 0
+    assert main(["verify", str(out)]) == 2
+    assert "--graph" in capsys.readouterr().err
 
 
 def test_list_shows_entries_and_suggested_slugs(example_dir, capsys):

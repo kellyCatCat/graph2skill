@@ -17,7 +17,7 @@
 
 ## 2. 关系类型与允许的端点
 
-方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入产物的 `reference/coverage.md`。
+方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入构建输出（`--with-evidence` 可导出明细）。
 
 | edge_type | 允许的 source → target | 含义 |
 | --- | --- | --- |
@@ -51,7 +51,7 @@
 | `provenance` | array | 来源证据，见第 7 节。 |
 | `quality_flags` | array | 质量与待核查标记，见第 8 节。 |
 | `semantic_review` | object | 语义复核元数据；`human_reviewed` 决定手册里写“人工复核=是/否”。 |
-| `canonical_key`、`scope_context_ids`、`source_keys`、`concept_alignment_ids`、`automatic_resolution` | — | 原样保留在 `data/subgraph.json`（`--data slim` 会去掉其中的簿记字段），手册不展开。 |
+| `canonical_key`、`scope_context_ids`、`source_keys`、`concept_alignment_ids`、`automatic_resolution` | — | 原样保留在导出的 `subgraph.json` 里（`--data slim` 会去掉其中的簿记字段），手册不展开。 |
 
 ## 4. `attrs` 业务字段
 
