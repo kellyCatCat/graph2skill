@@ -39,7 +39,7 @@ def _by_name(doc):
 def test_every_threshold_is_reported():
     found = _by_name(_doc())
     for name in (
-        "前置检查 命令数 / 步骤数",
+        "采集 命令数 / 步骤数",
         "必填参数",
         "步骤数 : 根因数",
         "判据 / 步骤",

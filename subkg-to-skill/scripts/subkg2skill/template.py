@@ -196,6 +196,16 @@ class Precheck:
     variants: List[str] = field(default_factory=list)
     #: Example values (``slot 3``) that break on the next device.
     hardcoded: List[str] = field(default_factory=list)
+    #: Scenario labels that read this collection step — one label means it is
+    #: that scenario's own work, not something every reader should run.
+    owners: List[str] = field(default_factory=list)
+    #: True when a routing row is decided by this reading, which is why a
+    #: single-scenario check can still belong to the shared phase.
+    routes: bool = False
+
+    def add_owner(self, label: str) -> None:
+        if label and label not in self.owners:
+            self.owners.append(label)
 
 
 @dataclass
@@ -245,6 +255,8 @@ class DocScenario:
     label: str  # A / B / C …
     name: str
     symptom: Node
+    #: Collection only this scenario needs — not part of the shared phase.
+    collection: List[Precheck] = field(default_factory=list)
     steps: List[Step] = field(default_factory=list)
     root_causes: List[RootCause] = field(default_factory=list)
     routing: List[RoutingRow] = field(default_factory=list)
@@ -434,11 +446,21 @@ def build_multi_doc(
         or not any_steps
         or any(node_id in referenced for node_id in precheck.node_ids)
     ]
+    if len(built) > 1:
+        shared.prechecks = _split_collection(shared.prechecks, built)
     _resolve_references(shared.prechecks, built)
 
     primary = scenarios[0][1]
     params, dropped_params = _build_params(
-        primary, shared.prechecks, doc_steps(built), repair_commands
+        primary,
+        shared.prechecks,
+        doc_steps(built),
+        repair_commands,
+        [
+            (f"{scenario.title} 采集 {index}", precheck)
+            for scenario in built
+            for index, precheck in enumerate(scenario.collection, start=1)
+        ],
     )
     omitted.extend(dropped_params)
     doc = SkillDoc(
@@ -510,6 +532,7 @@ def _build_scenario(
                 precheck.variants.extend(variants)
             shared.prechecks.append(precheck)
             index = len(shared.prechecks)
+        precheck.add_owner(label)
         shared.of_check[check.node_id] = index
 
         # What this reading tells the reader to open next.
@@ -518,9 +541,10 @@ def _build_scenario(
                 expression = observation_expression(outcome.observation)
                 if expression and expression not in routing_seen and len(scenario.routing) < 3:
                     routing_seen.add(expression)
+                    precheck.routes = True
                     scenario.routing.append(
                         RoutingRow(
-                            precheck=f"步骤 @@{precheck.node_ids[0]}@@"
+                            precheck=f"@@{precheck.node_ids[0]}@@"
                             + (f"（`{commands[0]}`）" if commands else ""),
                             criterion=f"`{expression}`",
                             scenario=f"场景{label}：{name}",
@@ -666,31 +690,90 @@ def _build_scenario(
 
 #: Steps cite the precheck they read from by node id until the list is final.
 REUSE_RE = re.compile(r"@@([^@]+)@@")
+#: What a citation resolves to when the collection step it named was pruned.
+UNRESOLVED = "（已合并）"
+
+
+def _readers(precheck: Precheck, scenarios: Sequence[DocScenario]) -> List[str]:
+    """Scenario labels that actually read this collection step."""
+    labels = list(precheck.owners)
+    for scenario in scenarios:
+        if scenario.label in labels:
+            continue
+        cited = {
+            node_id
+            for step in scenario.steps
+            for node_id in REUSE_RE.findall(step.reuse_note)
+        }
+        cited.update(
+            node_id for row in scenario.routing for node_id in REUSE_RE.findall(row.precheck)
+        )
+        if cited & set(precheck.node_ids):
+            labels.append(scenario.label)
+    return labels
+
+
+def _split_collection(
+    prechecks: Sequence[Precheck], scenarios: Sequence[DocScenario]
+) -> List[Precheck]:
+    """Keep the shared collection shared; hand the rest to the scenario that needs it.
+
+    "公共前置" has to mean it: a command only one scenario reads is that
+    scenario's first move, and making every reader run it before the routing
+    table wastes commands on a live device.
+
+    Two kinds of single-scenario collection stay in the shared phase anyway,
+    because the reader runs them *before* knowing which scenario they are in:
+    one whose reading decides a routing row, and one that settles a root cause
+    during collection.  They are labelled with who they serve instead.
+    """
+    kept: List[Precheck] = []
+    for precheck in prechecks:
+        readers = _readers(precheck, scenarios)
+        precheck.owners = readers
+        if len(readers) > 1 or precheck.routes or precheck.verdicts:
+            kept.append(precheck)
+            continue
+        owner = next((s for s in scenarios if s.label in readers), None)
+        if owner is None:  # nobody reads it; the pruning pass already allowed it
+            kept.append(precheck)
+            continue
+        owner.collection.append(precheck)
+    return kept
 
 
 def _resolve_references(prechecks: List[Precheck], scenarios: Sequence[DocScenario]) -> None:
-    """Turn the ``@@node_id@@`` placeholders into final precheck numbers.
+    """Turn the ``@@node_id@@`` placeholders into final collection-step numbers.
 
     Steps and routing rows are built before it is known which prechecks survive
-    pruning, so they cite the collection step by identity and get their number
-    here.
+    pruning — and before it is known whether the one they cite ended up shared
+    or inside their own scenario — so they cite it by identity and get both the
+    phase and the number here.
     """
-    number: Dict[str, int] = {}
+    shared: Dict[str, str] = {}
     for index, precheck in enumerate(prechecks, start=1):
         for node_id in precheck.node_ids:
-            number[node_id] = index
-
-    def resolve(text: str) -> str:
-        return REUSE_RE.sub(lambda match: str(number.get(match.group(1), "?")), text)
+            shared[node_id] = f"前置检查步骤 {index}"
 
     for scenario in scenarios:
+        local: Dict[str, str] = {}
+        for index, precheck in enumerate(scenario.collection, start=1):
+            for node_id in precheck.node_ids:
+                local[node_id] = f"本场景采集 {index}"
+
+        def resolve(text: str, _local: Dict[str, str] = local) -> str:
+            return REUSE_RE.sub(
+                lambda match: shared.get(match.group(1), _local.get(match.group(1), UNRESOLVED)),
+                text,
+            )
+
         for step in scenario.steps:
             step.reuse_note = resolve(step.reuse_note)
-            if "步骤 ?" in step.reuse_note:  # the precheck it cited did not survive
+            if UNRESOLVED in step.reuse_note:  # the collection it cited did not survive
                 step.reuse_note = "复用前置检查回显"
         for row in scenario.routing:
             row.precheck = resolve(row.precheck)
-            if "步骤 ?" in row.precheck:
+            if UNRESOLVED in row.precheck:
                 row.precheck = "（对应采集步骤已合并，见前置检查）"
 
 
@@ -757,7 +840,9 @@ def _step_commands(
 
     def cite(index: int) -> Tuple[List[str], str]:
         precheck = prechecks[index - 1]
-        return [], f"复用前置检查步骤 @@{precheck.node_ids[0]}@@ 回显（{precheck.title}{field_note}）"
+        # Which phase this points at — shared or the scenario's own — is only
+        # known once every scenario is built, so cite by identity for now.
+        return [], f"复用@@{precheck.node_ids[0]}@@ 回显（{precheck.title}{field_note}）"
 
     # Prefer the precheck that actually produced the deciding observation.
     for observation, _verdict in decisive:
@@ -787,6 +872,7 @@ def _build_params(
     prechecks: Sequence[Precheck],
     steps: Sequence[Step],
     repair_commands: Sequence[str] = (),
+    scenario_collection: Sequence[Tuple[str, Precheck]] = (),
 ) -> Tuple[List[Param], List[Tuple[str, str]]]:
     """Required slots plus every ``<token>`` the document's commands actually use.
 
@@ -807,12 +893,16 @@ def _build_params(
         params[key] = Param(slot, param_display(slot), True, "现场提供")
 
     precheck_tokens: Set[str] = set()
-    for index, precheck in enumerate(prechecks, start=1):
+    collection = [(f"前置检查步骤 {index}", precheck) for index, precheck in enumerate(prechecks, start=1)]
+    # A scenario's own collection asks the field for its parameters just the
+    # same; only where it is run differs.
+    collection += [(where, precheck) for where, precheck in scenario_collection]
+    for where, precheck in collection:
         for token in parameters_in(precheck.commands):
             key = param_key(token)
             precheck_tokens.add(key)
             existing = params.get(key)
-            note = f"前置检查步骤 {index} 命令参数"
+            note = f"{where} 命令参数"
             if existing is None:
                 params[key] = Param(token, param_display(token), True, note)
             elif not existing.required:
@@ -838,6 +928,65 @@ def _build_params(
 
 
 # ------------------------------------------------------------------ render
+def _render_collection(
+    precheck: Precheck, index: int, *, indent: str = "   ", audience: str = ""
+) -> List[str]:
+    """One collection step — the same shape wherever it is rendered."""
+    lines = [f"{index}. **{precheck.title}**"]
+    if precheck.commands:
+        if len(precheck.commands) == 1:
+            lines.append(f"{indent}- CLI 命令：`{precheck.commands[0]}`")
+        else:
+            lines.append(f"{indent}- CLI 命令：")
+            lines += [f"{indent}  - `{command}`" for command in precheck.commands]
+    else:
+        lines.append(f"{indent}- CLI 命令：来源未给出命令模板，按来源步骤说明人工采集")
+    if precheck.literals:
+        lines.append(
+            f"{indent}- 注意：命令含案例字面量（"
+            + "、".join(precheck.literals[:4])
+            + "），执行前替换为现场对象"
+        )
+    if precheck.hardcoded:
+        lines.append(
+            f"{indent}- 注意：命令含示例取值（"
+            + "、".join(precheck.hardcoded[:4])
+            + "），按现场实际替换"
+        )
+    lines.append(f"{indent}- 采集内容：{precheck.collect}")
+    if audience:
+        lines.append(f"{indent}- 适用场景：{audience}")
+    if precheck.variants:
+        lines.append(
+            f"{indent}- 来源另有写法："
+            + "、".join(f"`{variant}`" for variant in precheck.variants[:3])
+            + "，按设备版本确认"
+        )
+    for verdict in precheck.verdicts:
+        lines.append(f"{indent}- 根因定位：{verdict}")
+    lines.append("")
+    return lines
+
+
+def _audience(precheck: Precheck, doc: "SkillDoc") -> str:
+    """Who a shared collection step is actually for.
+
+    In a document covering several faults, a step every reader runs and a step
+    that only decides whether to enter one scenario are different instructions;
+    saying which is which is what keeps the shared phase honest.
+    """
+    if not doc.multi:
+        return ""
+    titles = {scenario.label: scenario.title for scenario in doc.scenarios}
+    readers = [label for label in precheck.owners if label in titles]
+    if not readers or len(readers) == len(titles):
+        return "全部场景"
+    named = "、".join(titles[label] for label in readers)
+    if precheck.routes:
+        return f"{named}（读数用于分流判断，其他场景可跳过）"
+    return f"{named}（其他场景可跳过）"
+
+
 def _render_step(step: Step, *, heading: str) -> List[str]:
     lines = [f"{heading} 步骤{step.index}：{step.name}", ""]
     lines.append(f"1. **步骤名称**：{step.name}")
@@ -894,33 +1043,7 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
         lines.append("前置检查按顺序线性执行，仅用于采集后续排查所需的回显信息，不做跳转。")
         lines.append("")
         for index, precheck in enumerate(doc.prechecks, start=1):
-            lines.append(f"{index}. **{precheck.title}**")
-            if precheck.commands:
-                if len(precheck.commands) == 1:
-                    lines.append(f"   - CLI 命令：`{precheck.commands[0]}`")
-                else:
-                    lines.append("   - CLI 命令：")
-                    lines += [f"     - `{command}`" for command in precheck.commands]
-            else:
-                lines.append("   - CLI 命令：来源未给出命令模板，按来源步骤说明人工采集")
-            if precheck.literals:
-                lines.append(
-                    "   - 注意：命令含案例字面量（" + "、".join(precheck.literals[:4]) + "），执行前替换为现场对象"
-                )
-            if precheck.hardcoded:
-                lines.append(
-                    "   - 注意：命令含示例取值（" + "、".join(precheck.hardcoded[:4]) + "），按现场实际替换"
-                )
-            lines.append(f"   - 采集内容：{precheck.collect}")
-            if precheck.variants:
-                lines.append(
-                    "   - 来源另有写法："
-                    + "、".join(f"`{variant}`" for variant in precheck.variants[:3])
-                    + "，按设备版本确认"
-                )
-            for verdict in precheck.verdicts:
-                lines.append(f"   - 根因定位：{verdict}")
-            lines.append("")
+            lines += _render_collection(precheck, index, audience=_audience(precheck, doc))
     else:
         lines += ["本子图未给出该症状的入口检查动作，直接进入排查步骤。", ""]
 
@@ -942,6 +1065,10 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
         lines.append("")
         for scenario in doc.scenarios:
             lines += [f"### {scenario.title}", ""]
+            if scenario.collection:
+                lines += ["**本场景采集**（公共前置之外，只有本场景需要，进入本场景后再执行）：", ""]
+                for index, precheck in enumerate(scenario.collection, start=1):
+                    lines += _render_collection(precheck, index)
             if not scenario.steps:
                 lines += ["本场景在子图中没有可展开的候选原因。", ""]
                 continue

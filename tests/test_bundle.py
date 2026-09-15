@@ -383,3 +383,107 @@ def test_selection_does_not_cross_a_fault_boundary():
 
     everything = graph.reachable(["symptom_a"], edge_types=schema.FORWARD_EDGES)
     assert "cause_b" in everything  # 需要时仍可显式跨越
+
+
+# -- 公共前置到底"公共"在哪 ------------------------------------------------
+def _two_scenario_graph():
+    """两个场景：一条共用采集，一条只有场景B 用、且不产生分流判据。"""
+    from subkg2skill.loader import RawBundle
+    from tests.conftest import make_edge, make_node
+
+    nodes = [
+        make_node("symptom_a", "symptom", "邻居无法建立"),
+        make_node("symptom_b", "symptom", "路由震荡"),
+        make_node(
+            "check_shared", "check", "查看邻居状态",
+            attrs={"command_templates": ["display isis peer"], "intent": "确认邻居状态"},
+        ),
+        make_node(
+            "check_local", "check", "导出链路状态数据库",
+            # 没有 observes 边：是纯采集，出不了分流判据
+            attrs={"command_templates": ["display isis lsdb"], "intent": "留存 LSDB"},
+        ),
+        make_node("observation_down", "observation", "邻居 Down", attrs={"field": "邻居状态"}),
+        make_node("cause_a", "cause", "接口故障"),
+        make_node("cause_b", "cause", "LSDB 不一致"),
+        make_node(
+            "repair_b", "repair", "重启进程",
+            attrs={"command_templates": ["reset isis all"], "repair_kind": "reset"},
+        ),
+    ]
+    edges = [
+        make_edge("e1", "diagnosed_by", "symptom_a", "check_shared"),
+        make_edge("e2", "diagnosed_by", "symptom_b", "check_shared"),
+        make_edge("e3", "diagnosed_by", "symptom_b", "check_local"),
+        make_edge("e4", "observes", "check_shared", "observation_down"),
+        make_edge("e5", "has_cause", "symptom_a", "cause_a"),
+        make_edge("e6", "has_cause", "symptom_b", "cause_b"),
+        make_edge("e7", "confirms", "observation_down", "cause_a"),
+        make_edge("e8", "diagnosed_by", "cause_b", "check_local"),
+        make_edge("e9", "repaired_by", "cause_b", "repair_b"),
+    ]
+    graph, report = Graph.from_bundle(RawBundle(nodes=nodes, edges=edges, sources=["x"]))
+    assert not report.errors
+    return graph
+
+
+@pytest.fixture()
+def split_doc():
+    from subkg2skill.playbook import build_playbook
+
+    graph = _two_scenario_graph()
+    named = [
+        ("邻居无法建立", build_playbook(graph, graph.nodes["symptom_a"])),
+        ("路由震荡", build_playbook(graph, graph.nodes["symptom_b"])),
+    ]
+    return graph, build_multi_doc(graph, named)
+
+
+def test_a_check_only_one_scenario_reads_leaves_the_shared_phase(split_doc):
+    _graph, doc = split_doc
+    shared = [command for precheck in doc.prechecks for command in precheck.commands]
+    assert shared == ["display isis peer"], "只有两个场景都跑的命令才算公共前置"
+    local = [
+        command
+        for scenario in doc.scenarios
+        for precheck in scenario.collection
+        for command in precheck.commands
+    ]
+    assert local == ["display isis lsdb"]
+    # 下沉到真正需要它的那个场景，而不是随便挂一个
+    owner = [s for s in doc.scenarios if s.collection]
+    assert [s.name for s in owner] == ["路由震荡"]
+
+
+def test_steps_cite_the_phase_the_collection_actually_lives_in(split_doc):
+    _graph, doc = split_doc
+    notes = [step.reuse_note for scenario in doc.scenarios for step in scenario.steps]
+    assert any("复用本场景采集 1 回显" in note for note in notes)
+    assert not any("复用前置检查步骤 2" in note for note in notes)
+
+
+def test_shared_phase_says_who_each_step_is_for(split_doc):
+    _graph, doc = split_doc
+    text = render_doc(doc, name="x", description="d")
+    assert "适用场景：全部场景" in text
+    assert "**本场景采集**" in text
+    assert lint_text(text).ok, [issue.render() for issue in lint_text(text).errors]
+
+
+def test_a_single_scenario_check_that_routes_stays_shared(doc):
+    """判据用于分流的检查留在公共层——读者要先有读数才知道进哪个场景。"""
+    single_owner = [p for p in doc.prechecks if len(p.owners) == 1]
+    assert single_owner, "multisource 夹具里本来就有单场景的分流采集"
+    assert all(precheck.routes for precheck in single_owner)
+    assert not any(scenario.collection for scenario in doc.scenarios)
+
+
+def test_routing_and_labels_are_off_for_a_single_fault_document(example_graph):
+    from subkg2skill.playbook import build_playbook
+
+    ISIS = "symptom_7f1c02aa93be4d61b0c5e210"
+    playbook = build_playbook(example_graph, example_graph.nodes[ISIS])
+    doc = build_multi_doc(example_graph, [("IS-IS邻居无法建立", playbook)])
+    text = render_doc(doc, name="x", description="d")
+    assert not any(scenario.collection for scenario in doc.scenarios)
+    assert "适用场景" not in text and "本场景采集" not in text

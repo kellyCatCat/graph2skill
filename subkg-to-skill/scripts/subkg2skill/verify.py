@@ -86,6 +86,13 @@ SCAFFOLDING = (
     "按设备版本确认",
     "按现场实际替换",
     "执行前替换为现场对象",
+    "复用本场景采集",
+    "本场景采集",
+    "公共前置之外",
+    "适用场景",
+    "其他场景可跳过",
+    "读数用于分流判断",
+    "全部场景",
 )
 
 #: Prefixes the renderer puts in front of a sourced fragment.
@@ -261,7 +268,13 @@ class Claim:
 
 _CAUSE_QUOTE_RE = re.compile(r"(?:判定根因为|定位根因|排除根因)\s*[“\"]([^”\"]+)[”\"]")
 #: Lines whose code spans name a field to read, not a command to run.
-_REUSE_MARKS = ("复用前置检查", "来源未给出命令模板", "本子图未给出", "按来源步骤说明")
+_REUSE_MARKS = (
+    "复用前置检查",
+    "复用本场景采集",
+    "来源未给出命令模板",
+    "本子图未给出",
+    "按来源步骤说明",
+)
 #: Notes the renderer attaches under a command; their spans are literals, not claims.
 _NOTE_MARKS = ("注意：命令含案例字面量", "注意：命令含示例取值")
 
@@ -391,7 +404,27 @@ def _step_claims(lines: Sequence[str]) -> List[Claim]:
         if "**步骤名称**" in line:
             mode = ""
             continue
+        if "本场景采集" in line and "复用" not in line:
+            mode = "collection"
+            continue
         stripped = line.strip()
+        if mode == "collection":
+            # A scenario's own collection phase: same shape as 前置检查.
+            if "CLI 命令" in line:
+                if not any(mark in line for mark in _REUSE_MARKS):
+                    claims += [Claim("command", span, where) for span in _spans(line)]
+                continue
+            if "采集内容" in line:
+                claims += [Claim("criterion", span, where) for span in _spans(line)]
+                claims += [Claim("text", fragment, where) for fragment in _fragments(_plain(line))]
+                continue
+            if "根因定位" in line:
+                claims += [Claim("criterion", span, where) for span in _spans(line)]
+                claims += [Claim("cause", match, where) for match in _CAUSE_QUOTE_RE.findall(line)]
+                continue
+            if stripped.startswith("- `") or stripped.startswith("  - `"):
+                claims += [Claim("command", span, where) for span in _spans(line)]
+                continue
         if mode == "command" and stripped.startswith("-"):
             if any(mark in stripped for mark in _NOTE_MARKS):
                 continue

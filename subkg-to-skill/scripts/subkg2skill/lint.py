@@ -23,6 +23,8 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 STEP_RE = re.compile(r"^(#{2,4})\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
 SCENARIO_RE = re.compile(r"^###\s*场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
 ROUTING_HEADING = "场景跳转表"
+#: A scenario's own collection phase, rendered inside 排查步骤.
+COLLECTION_HEADING = "本场景采集"
 #: “步骤 N” as a jump target — “前置检查步骤 N” is a back-reference, not a jump.
 JUMP_RE = re.compile(r"(?<!前置检查)步骤\s*(\d+)")
 CODE_RE = re.compile(r"`([^`]+)`")
@@ -329,6 +331,9 @@ def lint_text(text: str) -> LintResult:
     current_step: Optional[int] = None
     step_bodies[""] = {}
     order[""] = []
+    #: 场景自己的采集块：住在排查步骤一节里，形状和前置检查一样
+    collection: Dict[str, List[str]] = {}
+    in_collection = False
     for line in step_lines:
         scenario_match = SCENARIO_RE.match(line)
         if scenario_match:
@@ -337,6 +342,11 @@ def lint_text(text: str) -> LintResult:
             step_bodies.setdefault(current_scenario, {})
             order.setdefault(current_scenario, [])
             current_step = None
+            in_collection = False
+            continue
+        if COLLECTION_HEADING in line and "复用" not in line:
+            in_collection = True
+            collection.setdefault(current_scenario, [])
             continue
         match = STEP_RE.match(line)
         if match:
@@ -355,9 +365,31 @@ def lint_text(text: str) -> LintResult:
             continue
         if current_step is not None:
             step_bodies[current_scenario][current_step].append(line)
+        elif in_collection:
+            collection.setdefault(current_scenario, []).append(line)
 
     if scenarios and step_bodies[""]:
         issues.append(LintIssue("error", "分场景时所有步骤都必须落在某个 `### 场景X：…` 下"))
+
+    # 场景自己的采集，和前置检查一样：参数得是现场能提供的必填项
+    for scenario, lines_in_block in collection.items():
+        where = f"{scenario} " if scenario else ""
+        if any(JUMP_RE.search(line) and "顺序" not in line for line in lines_in_block):
+            issues.append(LintIssue("error", f"{where}本场景采集不允许跳转到其他步骤"))
+        for command in _commands_in(lines_in_block):
+            for token in PARAM_RE.findall(command):
+                key = param_key(token)
+                if key not in declared:
+                    issues.append(
+                        LintIssue("error", f"{where}本场景采集用了未在入参列表声明的参数 <{token}>")
+                    )
+                elif not declared[key]:
+                    issues.append(
+                        LintIssue(
+                            "error",
+                            f"{where}本场景采集的参数 <{token}> 在入参列表里被标为“否”，必须是必填",
+                        )
+                    )
 
     declared_causes: Dict[str, Set[str]] = {}
     for scenario in scenarios or [""]:

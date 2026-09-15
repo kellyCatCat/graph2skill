@@ -18,6 +18,8 @@ from subkg2skill.template import NOT_FOUND, DocScenario, SkillDoc
 
 COMMAND_RE = re.compile(r"`([^`]+)`")
 REUSE_NUMBER_RE = re.compile(r"复用前置检查步骤 (\d+)")
+#: 步骤读的是哪一处采集：公共前置，还是本场景自己的
+REUSE_PHASE_RE = re.compile(r"复用(前置检查步骤|本场景采集) (\d+)")
 
 
 @dataclass
@@ -30,6 +32,8 @@ class ScenarioPlan:
     causes: int
     fix_commands: int
     prechecks: List[int] = field(default_factory=list)
+    #: 只有本场景需要的采集步骤数（不在公共前置里）
+    collection: int = 0
     cause_names: Set[str] = field(default_factory=set)
     step_names: List[str] = field(default_factory=list)
 
@@ -90,6 +94,7 @@ def plan_document(doc: SkillDoc) -> Plan:
                 causes=len([c for c in scenario.root_causes if c.name != NOT_FOUND]),
                 fix_commands=len(_fix_commands(scenario)),
                 prechecks=cited,
+                collection=len(scenario.collection),
                 cause_names={c.name for c in scenario.root_causes if c.name != NOT_FOUND},
                 step_names=[step.name for step in scenario.steps],
             )
@@ -130,19 +135,21 @@ def _hints(doc: SkillDoc, scenarios: Sequence[ScenarioPlan]) -> List[Hint]:
                     )
                 )
 
-    # 场景之内：多个步骤读同一条前置检查回显 → 可以合成一步多判据
+    # 场景之内：多个步骤读同一条采集的回显 → 可以合成一步多判据
     for scenario, built in zip(scenarios, doc.scenarios):
-        by_precheck: Dict[int, List[str]] = {}
+        by_precheck: Dict[str, List[str]] = {}
         for step in built.steps:
-            for number in REUSE_NUMBER_RE.findall(step.reuse_note):
-                by_precheck.setdefault(int(number), []).append(f"步骤{step.index}（{step.name}）")
-        for number, steps in by_precheck.items():
+            for phase, number in REUSE_PHASE_RE.findall(step.reuse_note):
+                by_precheck.setdefault(f"{phase} {number}", []).append(
+                    f"步骤{step.index}（{step.name}）"
+                )
+        for source, steps in by_precheck.items():
             if len(steps) > 1:
                 hints.append(
                     Hint(
                         "step",
                         f"{scenario.title} 的 " + "、".join(steps)
-                        + f" 都只读前置检查步骤 {number} 的回显，判据不同则保持分开，"
+                        + f" 都只读{source} 的回显，判据不同则保持分开，"
                         "判据其实相同就该合成一步",
                     )
                 )
@@ -163,18 +170,20 @@ def render_plan(plan: Plan, *, limit: int = 20) -> List[str]:
     lines = [
         "生成规划（未写盘，数字是实际会写进文档的量）：",
         "",
-        "| 场景 | 步骤 | 根因 | 修复命令 | 复用的公共前置检查 |",
-        "| --- | --- | --- | --- | --- |",
+        "| 场景 | 步骤 | 根因 | 修复命令 | 复用的公共前置检查 | 本场景采集 |",
+        "| --- | --- | --- | --- | --- | --- |",
     ]
     for scenario in plan.scenarios:
         cited = "、".join(f"步骤 {number}" for number in scenario.prechecks) or "—"
+        own = f"{scenario.collection} 条" if scenario.collection else "—"
         lines.append(
             f"| {scenario.title} | {scenario.steps} | {scenario.causes} | "
-            f"{scenario.fix_commands} | {cited} |"
+            f"{scenario.fix_commands} | {cited} | {own} |"
         )
     lines.append(
         f"| **合计** | **{plan.steps}** | **{plan.causes}** | **{plan.fix_commands}** | "
-        f"公共前置检查 {plan.prechecks} 条 |"
+        f"公共前置检查 {plan.prechecks} 条 | "
+        f"**{sum(s.collection for s in plan.scenarios)} 条** |"
     )
     lines.append("")
 
@@ -237,7 +246,10 @@ def metrics(doc: SkillDoc) -> List[Metric]:
     causes = sum(
         len([c for c in scenario.root_causes if c.name != NOT_FOUND]) for scenario in doc.scenarios
     )
-    precheck_commands = sum(len(precheck.commands) for precheck in doc.prechecks)
+    collection = list(doc.prechecks) + [
+        precheck for scenario in doc.scenarios for precheck in scenario.collection
+    ]
+    precheck_commands = sum(len(precheck.commands) for precheck in collection)
     criteria = sum(_criteria_count(scenario) for scenario in doc.scenarios)
     # A step that issues its own command is a command this document did not reuse.
     issued = sum(1 for scenario in doc.scenarios for step in scenario.steps if step.commands)
@@ -261,10 +273,10 @@ def metrics(doc: SkillDoc) -> List[Metric]:
 
     found = [
         Metric(
-            "前置检查 命令数 / 步骤数",
-            f"{precheck_commands} 条 / {len(doc.prechecks)} 步",
+            "采集 命令数 / 步骤数",
+            f"{precheck_commands} 条 / {len(collection)} 步",
             "命令数 < 步骤数 × 3",
-            precheck_commands < len(doc.prechecks) * 3 or not doc.prechecks,
+            precheck_commands < len(collection) * 3 or not collection,
         ),
         Metric("必填参数", f"{required} 个", "越少越好，每个都应服务多条命令", required <= 5),
         Metric(
