@@ -29,7 +29,13 @@ from subkg2skill import describe, schema
 from subkg2skill.condition import describe_edge_condition
 from subkg2skill.graph import Graph, Node, _text
 from subkg2skill.playbook import Playbook
-from subkg2skill.template import BuildPolicy, SkillDoc, build_multi_doc, render_doc
+from subkg2skill.template import (
+    SHARED_COVERAGE,
+    BuildPolicy,
+    SkillDoc,
+    build_multi_doc,
+    render_doc,
+)
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 MAX_DESCRIPTION = 1024
@@ -65,6 +71,8 @@ class BuildOptions:
     include_example_specific: bool = False
     keep_undecidable: bool = False
     max_steps: int = 0
+    #: 公共前置的门槛：一条采集要被这个比例的场景读到，才留在公共层
+    shared_coverage: float = SHARED_COVERAGE
     #: 人工剔除的条目：(匹配到它的 exclude 写法, 节点名)
     excluded: Sequence[Tuple[str, str]] = ()
 
@@ -73,6 +81,7 @@ class BuildOptions:
             include_example_specific=self.include_example_specific,
             keep_undecidable=self.keep_undecidable,
             max_steps=self.max_steps,
+            shared_coverage=self.shared_coverage,
         )
 
 

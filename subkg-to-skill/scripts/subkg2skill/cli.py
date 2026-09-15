@@ -34,6 +34,7 @@ from subkg2skill.playbook import (
     fault_key,
     suggest_merges,
 )
+from subkg2skill.template import SHARED_COVERAGE
 from subkg2skill.verify import VerifyResult, verify_path, verify_text
 from subkg2skill.render import (
     BuildOptions,
@@ -82,6 +83,15 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
         "--keep-undecidable", action="store_true", help="保留既无判据也无修复动作的原因"
     )
     parser.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
+    parser.add_argument(
+        "--shared-coverage",
+        type=float,
+        default=SHARED_COVERAGE,
+        help=(
+            f"多场景时公共前置的门槛：一条采集要被这个比例的场景读到才留在公共层"
+            f"（默认 {SHARED_COVERAGE:g}；分流判据与采集期判根因不受此限）"
+        ),
+    )
     parser.add_argument(
         "--exclude",
         action="append",
@@ -543,6 +553,7 @@ def _build_one(
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
+        shared_coverage=args.shared_coverage,
         excluded=excluded,
     )
     package = build_package(scoped, playbook, options)
@@ -718,6 +729,7 @@ def cmd_plan(args) -> int:
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
+        shared_coverage=args.shared_coverage,
     ).policy()
     doc = build_multi_doc(scoped, named, policy)
     for spec, node_name in removed:
@@ -766,6 +778,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
+        shared_coverage=args.shared_coverage,
         excluded=removed,
     )
     package = build_package(scoped, named, options)
@@ -1037,6 +1050,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-example-specific", action="store_true", help="保留 example_specific 条目"
     )
     plan.add_argument("--keep-undecidable", action="store_true", help="保留既无判据也无修复的原因")
+    plan.add_argument(
+        "--shared-coverage",
+        type=float,
+        default=SHARED_COVERAGE,
+        help="公共前置的门槛，与 build 同义",
+    )
     plan.add_argument("--max-steps", type=int, default=0, help="排查步骤上限（0=不限）")
     plan.add_argument(
         "--exclude", action="append", default=[], help="剔除无关节点：node_id 或名称关键词，可重复"

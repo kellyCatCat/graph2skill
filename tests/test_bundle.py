@@ -487,3 +487,96 @@ def test_routing_and_labels_are_off_for_a_single_fault_document(example_graph):
     text = render_doc(doc, name="x", description="d")
     assert not any(scenario.collection for scenario in doc.scenarios)
     assert "适用场景" not in text and "本场景采集" not in text
+
+
+# -- 公共的门槛：覆盖比例，不是"至少两个" ----------------------------------
+def _wide_graph(scenario_count: int = 10, *, shared_readers: int = 8, narrow_readers: int = 2):
+    """一份很宽的文档：一条采集被多数场景读，另一条只被少数几个读。"""
+    from subkg2skill.loader import RawBundle
+    from tests.conftest import make_edge, make_node
+
+    nodes = [
+        make_node(
+            "check_wide", "check", "查看邻居状态",
+            attrs={"command_templates": ["display isis peer"], "intent": "确认邻居状态"},
+        ),
+        make_node(
+            "check_narrow", "check", "导出链路状态数据库",
+            attrs={"command_templates": ["display isis lsdb"], "intent": "留存 LSDB"},
+        ),
+    ]
+    edges = []
+    for index in range(scenario_count):
+        symptom = f"symptom_{index}"
+        cause = f"cause_{index}"
+        nodes.append(make_node(symptom, "symptom", f"故障{index}"))
+        nodes.append(make_node(cause, "cause", f"原因{index}"))
+        nodes.append(
+            make_node(
+                f"repair_{index}", "repair", f"处置{index}",
+                attrs={"command_templates": [f"reset isis {index}"], "repair_kind": "reset"},
+            )
+        )
+        edges.append(make_edge(f"hc_{index}", "has_cause", symptom, cause))
+        edges.append(make_edge(f"rb_{index}", "repaired_by", cause, f"repair_{index}"))
+        # 谁读哪条采集
+        if index < shared_readers:
+            edges.append(make_edge(f"dw_{index}", "diagnosed_by", symptom, "check_wide"))
+            # 有步骤读它，才不会被"没人引用"的剪枝拿掉
+            edges.append(make_edge(f"cw_{index}", "diagnosed_by", cause, "check_wide"))
+        if index < narrow_readers:
+            edges.append(make_edge(f"dn_{index}", "diagnosed_by", symptom, "check_narrow"))
+            edges.append(make_edge(f"cn_{index}", "diagnosed_by", cause, "check_narrow"))
+    graph, report = Graph.from_bundle(RawBundle(nodes=nodes, edges=edges, sources=["x"]))
+    assert not report.errors
+    return graph
+
+
+def _wide_doc(**kwargs):
+    from subkg2skill.playbook import build_playbook
+    from subkg2skill.template import BuildPolicy
+
+    count = kwargs.pop("scenario_count", 10)
+    policy = BuildPolicy(**kwargs) if kwargs else None
+    graph = _wide_graph(count)
+    named = [
+        (f"故障{index}", build_playbook(graph, graph.nodes[f"symptom_{index}"]))
+        for index in range(count)
+    ]
+    return build_multi_doc(graph, named, policy)
+
+
+def test_two_of_ten_scenarios_is_not_common_enough():
+    doc = _wide_doc()
+    shared = [command for precheck in doc.prechecks for command in precheck.commands]
+    # 8/10 读的留在公共层；2/10 读的下沉——否则 8 个场景白跑一条命令
+    assert "display isis peer" in shared
+    assert "display isis lsdb" not in shared
+
+
+def test_a_sunk_step_lands_in_every_scenario_that_reads_it():
+    doc = _wide_doc()
+    owners = [s.label for s in doc.scenarios if s.collection]
+    assert len(owners) == 2, "两个场景都读它，两个场景里都得有"
+    for scenario in doc.scenarios:
+        if scenario.label not in owners:
+            continue
+        assert [c.commands for c in scenario.collection] == [["display isis lsdb"]]
+        notes = [step.reuse_note for step in scenario.steps]
+        assert any("复用本场景采集 1 回显" in note for note in notes)
+
+
+def test_the_threshold_is_a_ratio_not_a_count():
+    # 门槛放到 0.2 时，2/10 就够格留在公共层
+    doc = _wide_doc(shared_coverage=0.2)
+    shared = [command for precheck in doc.prechecks for command in precheck.commands]
+    assert "display isis lsdb" in shared
+    assert not any(scenario.collection for scenario in doc.scenarios)
+
+
+def test_a_sunk_step_still_renders_and_lints():
+    doc = _wide_doc()
+    text = render_doc(doc, name="x", description="d")
+    assert text.count("**本场景采集**") == 2
+    result = lint_text(text)
+    assert result.ok, [issue.render() for issue in result.errors]

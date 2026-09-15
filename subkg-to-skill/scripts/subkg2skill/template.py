@@ -20,6 +20,7 @@ Rules that drive everything here:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -169,6 +170,11 @@ class Param:
     note: str
 
 
+#: Share of a document's scenarios that must read a collection step for it to
+#: stay in the shared phase.  Two scenarios means both; ten means eight.
+SHARED_COVERAGE = 0.8
+
+
 @dataclass
 class BuildPolicy:
     """What to leave out, so the document stays about one transferable fault."""
@@ -179,6 +185,8 @@ class BuildPolicy:
     keep_undecidable: bool = False
     #: Hard cap on 排查步骤 (0 = no cap); the overflow is reported, not silently cut.
     max_steps: int = 0
+    #: How much of the document a collection step must serve to stay shared.
+    shared_coverage: float = SHARED_COVERAGE
 
 
 @dataclass
@@ -447,7 +455,9 @@ def build_multi_doc(
         or any(node_id in referenced for node_id in precheck.node_ids)
     ]
     if len(built) > 1:
-        shared.prechecks = _split_collection(shared.prechecks, built)
+        shared.prechecks = _split_collection(
+            shared.prechecks, built, coverage=policy.shared_coverage
+        )
     _resolve_references(shared.prechecks, built)
 
     primary = scenarios[0][1]
@@ -714,31 +724,40 @@ def _readers(precheck: Precheck, scenarios: Sequence[DocScenario]) -> List[str]:
 
 
 def _split_collection(
-    prechecks: Sequence[Precheck], scenarios: Sequence[DocScenario]
+    prechecks: Sequence[Precheck], scenarios: Sequence[DocScenario], *, coverage: float
 ) -> List[Precheck]:
-    """Keep the shared collection shared; hand the rest to the scenario that needs it.
+    """Keep the shared collection shared; hand the rest to the scenarios that need it.
 
-    "公共前置" has to mean it: a command only one scenario reads is that
-    scenario's first move, and making every reader run it before the routing
-    table wastes commands on a live device.
+    "公共前置" has to mean it.  The two costs are not symmetric: a step left in
+    the shared phase is run by *every* reader, including the ones whose fault it
+    says nothing about — a command issued on a live device for nothing — while
+    sinking it copies a few lines into the scenario sections, which a reader
+    never sees more than one of.  So the bar is coverage, not "more than one":
+    a step stays shared when at least ``coverage`` of the document's scenarios
+    read it (two scenarios means both; ten means eight).
 
-    Two kinds of single-scenario collection stay in the shared phase anyway,
-    because the reader runs them *before* knowing which scenario they are in:
-    one whose reading decides a routing row, and one that settles a root cause
-    during collection.  They are labelled with who they serve instead.
+    Two kinds of narrow collection stay shared whatever their coverage, because
+    the reader runs them *before* knowing which scenario they are in: one whose
+    reading decides a routing row, and one that settles a root cause during
+    collection.  They are labelled with who they serve instead.
     """
+    total = len(scenarios)
+    needed = max(1, math.ceil(coverage * total)) if total else 1
     kept: List[Precheck] = []
     for precheck in prechecks:
         readers = _readers(precheck, scenarios)
         precheck.owners = readers
-        if len(readers) > 1 or precheck.routes or precheck.verdicts:
+        if len(readers) >= needed or precheck.routes or precheck.verdicts:
             kept.append(precheck)
             continue
-        owner = next((s for s in scenarios if s.label in readers), None)
-        if owner is None:  # nobody reads it; the pruning pass already allowed it
+        owners = [scenario for scenario in scenarios if scenario.label in readers]
+        if not owners:  # nobody reads it; the pruning pass already allowed it
             kept.append(precheck)
             continue
-        owner.collection.append(precheck)
+        # Every scenario that reads it gets its own copy — a reader follows one
+        # scenario, so the step has to be there, and nowhere else.
+        for scenario in owners:
+            scenario.collection.append(precheck)
     return kept
 
 
