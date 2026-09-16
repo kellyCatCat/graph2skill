@@ -32,8 +32,11 @@ CODE_RE = re.compile(r"`([^`]+)`")
 CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 #: Only ``{}`` is a stray placeholder; ``[ ... ]`` is CLI optional-argument syntax.
 BAD_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z0-9_\-一-鿿]+\}")
-#: Beyond this many steps a document stops being followable; split by diagnostic unit.
+#: Beyond this many steps in one path a reader stops following; split it up.
 MAX_REASONABLE_STEPS = 25
+#: A scenario the frontmatter never names is one the agent will not pick this
+#: skill for — the section exists, but nothing routes to it.
+DESCRIPTION_NAMED_SCENARIOS = 6
 #: The same command collected this many times means the prechecks were not merged.
 MAX_COMMAND_REPEATS = 2
 #: Root-cause names this similar are usually one cause written twice.
@@ -242,7 +245,7 @@ def _table_rows(lines: Sequence[str]) -> List[List[str]]:
 def lint_text(text: str) -> LintResult:
     """Check one SKILL.md body against the template."""
     issues: List[LintIssue] = []
-    _, frontmatter_issues = _frontmatter(text)
+    frontmatter, frontmatter_issues = _frontmatter(text)
     issues += frontmatter_issues
 
     sections, order = _split_sections(text)
@@ -370,6 +373,27 @@ def lint_text(text: str) -> LintResult:
 
     if scenarios and step_bodies[""]:
         issues.append(LintIssue("error", "分场景时所有步骤都必须落在某个 `### 场景X：…` 下"))
+
+    # 一个场景在 description 里没名字，agent 就不会为它选中这份 skill：
+    # 正文有内容，检索却到不了，等于没覆盖。
+    description = frontmatter.get("description", "")
+    if scenarios and description:
+        unnamed = [
+            scenario
+            for scenario in scenarios
+            if scenario.split("：", 1)[-1].strip() not in description
+        ]
+        if unnamed:
+            listed = "、".join(unnamed[:4])
+            issues.append(
+                LintIssue(
+                    "warning",
+                    f"{len(unnamed)} 个场景没写进 description（{listed}…）；"
+                    "description 是 agent 选中这份 skill 的唯一依据，"
+                    f"名字进不去的场景检索不到——通常说明场景数超过了一份 skill 能承载的量"
+                    f"（约 {DESCRIPTION_NAMED_SCENARIOS} 个），该拆成多份",
+                )
+            )
 
     # 场景自己的采集，和前置检查一样：参数得是现场能提供的必填项
     for scenario, lines_in_block in collection.items():
@@ -566,14 +590,19 @@ def lint_text(text: str) -> LintResult:
                     "换台设备就是错的，应参数化或在采集内容里注明按实际替换",
                 )
             )
-    if len(step_bodies) > MAX_REASONABLE_STEPS:
-        issues.append(
-            LintIssue(
-                "warning",
-                f"共 {len(step_bodies)} 个排查步骤，超出可读范围（>{MAX_REASONABLE_STEPS}）；"
-                "多半是把多个故障场景合成了一份，建议按诊断单元拆分（build --unit）",
+    # 可读性看的是**读者实际要走的那条路**：单故障文档是全篇，多场景文档是一个场景。
+    # 全篇步骤数由覆盖多少根因决定，不该用同一把尺子卡。
+    for scenario, bodies in step_bodies.items():
+        if len(bodies) > MAX_REASONABLE_STEPS:
+            where = f"{scenario} " if scenario else ""
+            issues.append(
+                LintIssue(
+                    "warning",
+                    f"{where}共 {len(bodies)} 个排查步骤，超出可读范围（>{MAX_REASONABLE_STEPS}）；"
+                    "多半是把多个故障场景合成了一步步的长队，建议按诊断单元拆分（build --unit）"
+                    "或拆成多个场景",
+                )
             )
-        )
 
     repeats: Dict[str, int] = {}
     for command in _commands_in(collection_lines):

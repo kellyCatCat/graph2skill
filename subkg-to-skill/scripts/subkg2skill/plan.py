@@ -209,6 +209,16 @@ def render_plan(plan: Plan, *, limit: int = 20) -> List[str]:
 
 
 # ------------------------------------------------------------- 交付统计
+#: What one skill is supposed to look like when it is the right size.  A
+#: subgraph with a hundred symptoms does not become one document with a hundred
+#: sections: it becomes several skills, each of this shape, because the agent
+#: picks a skill by its description and reads the whole file once it does.
+TARGET_LINES = 500
+TARGET_SCENARIOS = (5, 7)
+TARGET_PRECHECKS = (3, 7)
+TARGET_CAUSES = 30
+
+
 #: Each metric's healthy range, as the delivery checklist states it.
 @dataclass
 class Metric:
@@ -234,7 +244,53 @@ def _criteria_count(scenario: DocScenario) -> int:
     )
 
 
-def metrics(doc: SkillDoc) -> List[Metric]:
+def shape_metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
+    """Is this document the right size to be one skill?
+
+    Four numbers decide it, and they pull against each other: a document that
+    covers more faults reaches more readers but gets longer, and past a few
+    hundred lines the section the reader needs is buried in the ones they do
+    not.  The scenario count is the hard one — the frontmatter description can
+    only name a handful, and a scenario the description never mentions is one
+    the agent will not pick this skill for.
+    """
+    scenarios = len(doc.scenarios)
+    causes = sum(
+        len([c for c in scenario.root_causes if c.name != NOT_FOUND]) for scenario in doc.scenarios
+    )
+    low, high = TARGET_SCENARIOS
+    floor, ceiling = TARGET_PRECHECKS
+    found = [
+        Metric(
+            "场景数",
+            f"{scenarios} 个",
+            f"{low}–{high} 个（再多就该拆成几份 skill）",
+            low <= scenarios <= high,
+        ),
+        Metric(
+            "公共前置",
+            f"{len(doc.prechecks)} 条",
+            f"{floor}–{ceiling} 条（塌到 0 说明几组场景没有共同入口）",
+            floor <= len(doc.prechecks) <= ceiling,
+        ),
+        Metric(
+            "根因覆盖", f"{causes} 个", f"≥ {TARGET_CAUSES} 个（太少说明边界画得过窄）", causes >= TARGET_CAUSES
+        ),
+    ]
+    if text:
+        lines = len(text.splitlines())
+        found.append(
+            Metric(
+                "文档规模",
+                f"{lines} 行",
+                f"≈ {TARGET_LINES} 行（命中后整篇进上下文）",
+                lines <= TARGET_LINES * 1.4,
+            )
+        )
+    return found
+
+
+def metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
     """Measure a built document against the delivery thresholds.
 
     These are the numbers that say whether the optimisation actually landed.
@@ -287,6 +343,7 @@ def metrics(doc: SkillDoc) -> List[Metric]:
         Metric("复检覆盖率", f"{recheck_rate:.0%}", "> 70%", recheck_rate > 0.7),
         Metric("「仅定位」根因", f"{locate_only} 个", "记录即可，反映数据完整度", True),
     ]
+    found += shape_metrics(doc, text)
     if len(sizes) > 1:
         # Not a defect, but the reader must not be left thinking coverage is even.
         found.append(

@@ -34,7 +34,7 @@ from subkg2skill.playbook import (
     fault_key,
     suggest_merges,
 )
-from subkg2skill.template import SHARED_COVERAGE
+from subkg2skill.template import SHARED_COVERAGE, render_doc
 from subkg2skill.verify import VerifyResult, verify_path, verify_text
 from subkg2skill.render import (
     BuildOptions,
@@ -295,11 +295,11 @@ def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
     )
 
 
-def _print_metrics(doc, *, prefix: str = "  ") -> None:
+def _print_metrics(doc, *, prefix: str = "  ", text: str = "") -> None:
     """Say which delivery numbers came out of range, so they get reported on."""
     if doc is None:
         return
-    off = [metric for metric in metrics(doc) if not metric.ok]
+    off = [metric for metric in metrics(doc, text) if not metric.ok]
     if not off:
         print(f"{prefix}交付统计：全部指标在健康值内")
         return
@@ -598,7 +598,7 @@ def _build_one(
     _print_omitted(package.omitted)
     _print_lint(result)
     _print_verify(grounding)
-    _print_metrics(package.doc)
+    _print_metrics(package.doc, text=package.files["SKILL.md"])
     return 0 if (result.ok and grounding.ok) else 1
 
 
@@ -735,13 +735,15 @@ def cmd_plan(args) -> int:
     for spec, node_name in removed:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     plan = plan_document(doc)
+    # 文档规模要看渲染后的正文；技能名此时可能还是占位符，不影响行数。
+    preview = render_doc(doc, name="preview", description="预览")
 
     print(f"输入：{'、'.join(sources)}")
     print(f"编排来源：{source}" + (f"；技能名 {name}" if name and not name.startswith("<") else ""))
     print()
     for line in render_plan(plan, limit=args.limit or 20):
         print(line)
-    for line in render_metrics(metrics(doc)):
+    for line in render_metrics(metrics(doc, preview)):
         print(line)
     if report.issues:
         print(f"载入时有 {len(report.issues)} 条告警/丢弃（build --with-evidence 可导出明细）")
@@ -818,7 +820,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     _print_omitted(package.omitted)
     _print_lint(result)
     _print_verify(grounding)
-    _print_metrics(package.doc)
+    _print_metrics(package.doc, text=package.files["SKILL.md"])
     _install_hint(out_dir, normalise_name(name))
     return 0 if (result.ok and grounding.ok) else 1
 
