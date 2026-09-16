@@ -23,6 +23,10 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 STEP_RE = re.compile(r"^(#{2,4})\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
 SCENARIO_RE = re.compile(r"^###\s*场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
 ROUTING_HEADING = "场景跳转表"
+#: The same table one level down, in a document covering a single fault.
+STEP_ROUTING_HEADING = "步骤跳转表"
+#: ``- 适用步骤：步骤 3：…`` names who reads a collection step, it is not a jump.
+AUDIENCE_RE = re.compile(r"适用(?:场景|步骤)")
 #: A scenario's own collection phase, rendered inside 排查步骤.
 COLLECTION_HEADING = "本场景采集"
 #: “步骤 N” as a jump target — “前置检查步骤 N” is a back-reference, not a jump.
@@ -306,12 +310,16 @@ def lint_text(text: str) -> LintResult:
         (
             index
             for index, line in enumerate(precheck_lines)
-            if line.strip().startswith("##") and ROUTING_HEADING in line
+            if line.strip().startswith("##")
+            and (ROUTING_HEADING in line or STEP_ROUTING_HEADING in line)
         ),
         len(precheck_lines),
     )
     collection_lines = precheck_lines[:routing_start]
-    if any(JUMP_RE.search(line) and "顺序" not in line for line in collection_lines):
+    if any(
+        JUMP_RE.search(line) and "顺序" not in line and not AUDIENCE_RE.search(line)
+        for line in collection_lines
+    ):
         issues.append(LintIssue("error", "前置检查不允许跳转到其他步骤"))
     precheck_params: Set[str] = set()
     for command in _commands_in(collection_lines):
@@ -484,6 +492,37 @@ def lint_text(text: str) -> LintResult:
             issues.append(
                 LintIssue("warning", f"前置检查里 `{signature}` 重复了 {count} 次，应合并为一条采集步骤")
             )
+
+    # -- 步骤跳转表（单场景）---------------------------------------------
+    # 分流表指向排查步骤时，目标必须真实存在，且同一条判据不能指向两个步骤
+    if not scenarios and routing_start < len(precheck_lines):
+        step_rows = _table_rows(precheck_lines[routing_start:])[1:]
+        by_criterion: Dict[str, Set[str]] = {}
+        for row in step_rows:
+            if len(row) < 3:
+                issues.append(LintIssue("error", f"{STEP_ROUTING_HEADING}行格式不对（需要 3 列）：{row}"))
+                continue
+            targets = JUMP_RE.findall(row[2])
+            if not targets:
+                issues.append(
+                    LintIssue("error", f"{STEP_ROUTING_HEADING}的跳转目标必须写成「步骤 N」：{row[2]}")
+                )
+            for target in targets:
+                if int(target) not in step_bodies.get("", {}):
+                    issues.append(
+                        LintIssue("error", f"{STEP_ROUTING_HEADING}指向了不存在的步骤 {target}")
+                    )
+            by_criterion.setdefault(row[1].strip(), set()).update(targets)
+        for criterion, targets in by_criterion.items():
+            if len(targets) > 1:
+                issues.append(
+                    LintIssue(
+                        "warning",
+                        f"{STEP_ROUTING_HEADING}里 {criterion} 同时指向步骤 "
+                        + "、".join(sorted(targets))
+                        + "，无法据此分流",
+                    )
+                )
 
     # -- 场景跳转表 -----------------------------------------------------
     routing_rows: List[List[str]] = []

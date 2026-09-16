@@ -237,6 +237,8 @@ class Step:
     branches: List[Branch]
     causes: List[str]
     literals: List[str] = field(default_factory=list)
+    #: The check whose command this step issues, while it issues one of its own.
+    check_id: str = ""
 
 
 @dataclass
@@ -298,15 +300,23 @@ class SkillDoc:
         return [cause for scenario in self.scenarios for cause in scenario.root_causes]
 
 
-def _collect_line(check: Node, outcomes: Sequence) -> str:
+def _observed(step: CheckStep) -> List[Node]:
+    return [outcome.observation for outcome in step.outcomes]
+
+
+def _observations_of(graph: Graph, check: Node) -> List[Node]:
+    return [node for node, _edge in graph.targets(check.node_id, "observes")]
+
+
+def _collect_line(check: Node, observations: Sequence[Node]) -> str:
     """What this check is being run to read off the screen."""
     parts: List[str] = []
     intent = _text(check.attr("intent"))
     if intent:
         parts.append(intent)
     fields: List[str] = []
-    for outcome in outcomes:
-        field_name = _text(outcome.observation.attr("field"))
+    for observation in observations:
+        field_name = _text(observation.attr("field"))
         if field_name and field_name not in fields:
             fields.append(field_name)
     if fields:
@@ -458,6 +468,10 @@ def build_multi_doc(
         shared.prechecks = _split_collection(
             shared.prechecks, built, coverage=policy.shared_coverage
         )
+    else:
+        shared.prechecks = _share_across_steps(
+            graph, built[0], shared, coverage=policy.shared_coverage
+        )
     _resolve_references(shared.prechecks, built)
 
     primary = scenarios[0][1]
@@ -525,14 +539,16 @@ def _build_scenario(
         index = _equivalent_precheck(shared.prechecks, commands) if commands else None
         if index is not None:
             precheck = shared.prechecks[index - 1]
-            precheck.collect = _merge_collect(precheck.collect, _collect_line(check, step.outcomes))
+            precheck.collect = _merge_collect(
+                precheck.collect, _collect_line(check, _observed(step))
+            )
             precheck.node_ids.append(check.node_id)
             _register_variants(precheck, commands)
         else:
             precheck = Precheck(
                 title=check.name,
                 commands=commands,
-                collect=_collect_line(check, step.outcomes),
+                collect=_collect_line(check, _observed(step)),
                 node_id=check.node_id,
                 node_ids=[check.node_id],
                 literals=case_literals(" ".join(commands)),
@@ -613,6 +629,11 @@ def _build_scenario(
         commands, reuse_note = _step_commands(
             branch, decisive, shared.producing_check, shared.of_check, shared.prechecks
         )
+        issued_by = ""
+        for own in branch.checks if commands else ():
+            if same_command_set(commands, command_templates(own.check)):
+                issued_by = own.check.node_id
+                break
         branches: List[Branch] = []
         causes: List[str] = []
         for observation, verdict in decisive:
@@ -650,6 +671,7 @@ def _build_scenario(
                 branches=branches,
                 causes=causes,
                 literals=case_literals(" ".join(commands)),
+                check_id=issued_by,
             )
         )
 
@@ -759,6 +781,142 @@ def _split_collection(
         for scenario in owners:
             scenario.collection.append(precheck)
     return kept
+
+
+def _share_across_steps(
+    graph: Graph, scenario: DocScenario, shared: _Shared, *, coverage: float
+) -> List[Precheck]:
+    """Decide the collection phase of a document covering one fault.
+
+    A skill covering several faults asks two questions of every collection
+    step: does its reading say which fault to open, and do enough readers need
+    it to be worth running before the split.  One fault deserves the same two
+    questions one level down, where the sub-scenarios are the steps — a reader
+    pays for 前置检查 whichever step turns out to be theirs, and a command the
+    steps issue for themselves is a command typed once per step.
+    """
+    steps = scenario.steps
+    if not steps:
+        return shared.prechecks
+    # Two steps means both; ten means eight.  One step shares nothing.
+    needed = max(2, math.ceil(coverage * len(steps)))
+
+    issuing: Dict[str, List[Step]] = {}
+    for step in steps:
+        if step.commands and step.check_id:
+            issuing.setdefault(command_signature(step.commands), []).append(step)
+    for group in issuing.values():
+        if len(group) < needed:
+            continue
+        checks = [node for node in (graph.get(step.check_id) for step in group) if node]
+        if not checks:
+            continue
+        check = checks[0]
+        # Several check nodes run this one command; the collection step stands
+        # for all of them, so every reading they produce is collected here.
+        precheck = Precheck(
+            title=check.name,
+            commands=list(group[0].commands),
+            collect="",
+            node_id=check.node_id,
+            node_ids=[node.node_id for node in checks],
+            literals=list(group[0].literals),
+            hardcoded=hygiene.hardcoded_literals(" ".join(group[0].commands)),
+        )
+        for node in checks:
+            precheck.collect = _merge_collect(
+                precheck.collect, _collect_line(node, _observations_of(graph, node))
+            )
+            for _command, variants in command_variants(node):
+                precheck.variants.extend(variants)
+        shared.prechecks.append(precheck)
+        for node in checks:
+            shared.of_check[node.node_id] = len(shared.prechecks)
+        for step in group:
+            step.reuse_note = f"复用@@{check.node_id}@@ 回显（{check.name}）"
+            step.commands = []
+            step.literals = []
+            step.check_id = ""
+
+    # Below the bar it is not everyone's work, but it is still one screen: the
+    # steps after the first read what the first one already put there.
+    for group in issuing.values():
+        if len(group) < 2 or not group[0].commands:
+            continue
+        first = group[0]
+        for step in group[1:]:
+            if not step.commands:
+                continue
+            step.reuse_note = f"复用步骤 {first.index}（{first.name}）的回显"
+            step.commands = []
+            step.literals = []
+            step.check_id = ""
+
+    _route_to_steps(graph, scenario, shared.prechecks)
+
+    kept: List[Precheck] = []
+    for precheck in shared.prechecks:
+        readers = [
+            step
+            for step in steps
+            if set(REUSE_RE.findall(step.reuse_note)) & set(precheck.node_ids)
+        ]
+        precheck.owners = [f"步骤 {step.index}：{step.name}" for step in readers]
+        if len(readers) != 1 or len(steps) == 1 or precheck.routes or precheck.verdicts:
+            kept.append(precheck)
+            continue
+        # One step of several reads it and the reading routes nowhere: it is
+        # that step's own work, and the other readers were typing it for nothing.
+        reader = readers[0]
+        reader.commands = list(precheck.commands)
+        reader.reuse_note = ""
+        reader.literals = list(precheck.literals)
+        reader.check_id = precheck.node_ids[0]
+    return kept
+
+
+def _route_to_steps(
+    graph: Graph, scenario: DocScenario, prechecks: Sequence[Precheck]
+) -> None:
+    """Rows sending the reader straight to the step a reading picks out.
+
+    Only a reading that picks out *one* step routes anywhere: an observation
+    supporting every cause in the document says «若 X 转步骤 1；若 X 转步骤 2»,
+    which is one criterion written three times, not a classification.
+    """
+    step_of_cause: Dict[str, Step] = {}
+    for step in scenario.steps:
+        for cause in step.causes:
+            step_of_cause.setdefault(fault_key(cause), step)
+    seen: Set[str] = set()
+    for precheck in prechecks:
+        for check_id in precheck.node_ids:
+            check = graph.get(check_id)
+            if check is None:
+                continue
+            for observation in _observations_of(graph, check):
+                targets = {
+                    step_of_cause[fault_key(cause.name)].index
+                    for cause, edge in graph.targets(
+                        observation.node_id, *schema.VERDICT_EDGES
+                    )
+                    if edge.edge_type != "excludes" and fault_key(cause.name) in step_of_cause
+                }
+                expression = observation_expression(observation)
+                if len(targets) != 1 or not expression or expression in seen:
+                    continue
+                seen.add(expression)
+                step = scenario.steps[targets.pop() - 1]
+                precheck.routes = True
+                scenario.routing.append(
+                    RoutingRow(
+                        precheck=f"@@{precheck.node_ids[0]}@@"
+                        + (f"（`{precheck.commands[0]}`）" if precheck.commands else ""),
+                        criterion=f"`{expression}`",
+                        scenario=f"步骤 {step.index}：{step.name}",
+                    )
+                )
+    scenario.routing.sort(key=lambda row: row.scenario)
 
 
 def _resolve_references(prechecks: List[Precheck], scenarios: Sequence[DocScenario]) -> None:
@@ -948,7 +1106,12 @@ def _build_params(
 
 # ------------------------------------------------------------------ render
 def _render_collection(
-    precheck: Precheck, index: int, *, indent: str = "   ", audience: str = ""
+    precheck: Precheck,
+    index: int,
+    *,
+    indent: str = "   ",
+    audience: str = "",
+    audience_label: str = "适用场景",
 ) -> List[str]:
     """One collection step — the same shape wherever it is rendered."""
     lines = [f"{index}. **{precheck.title}**"]
@@ -974,7 +1137,7 @@ def _render_collection(
         )
     lines.append(f"{indent}- 采集内容：{precheck.collect}")
     if audience:
-        lines.append(f"{indent}- 适用场景：{audience}")
+        lines.append(f"{indent}- {audience_label}：{audience}")
     if precheck.variants:
         lines.append(
             f"{indent}- 来源另有写法："
@@ -995,7 +1158,14 @@ def _audience(precheck: Precheck, doc: "SkillDoc") -> str:
     saying which is which is what keeps the shared phase honest.
     """
     if not doc.multi:
-        return ""
+        steps = doc.scenarios[0].steps if doc.scenarios else []
+        readers = [label for label in precheck.owners if label]
+        if len(steps) < 2 or not readers or len(readers) == len(steps):
+            return "全部步骤" if readers and len(steps) >= 2 else ""
+        named = "、".join(readers)
+        if precheck.routes:
+            return f"{named}（读数用于分流判断，其他步骤可跳过）"
+        return f"{named}（其他步骤不读这条回显）"
     titles = {scenario.label: scenario.title for scenario in doc.scenarios}
     readers = [label for label in precheck.owners if label in titles]
     if not readers or len(readers) == len(titles):
@@ -1057,14 +1227,32 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
         lines.append("本排查流程不需要额外入参（子图未给出必填槽位与命令参数）。")
     lines.append("")
 
+    routing = doc.scenarios[0].routing if doc.scenarios and not doc.multi else []
     lines += ["# 前置检查", ""]
     if doc.prechecks:
-        lines.append("前置检查按顺序线性执行，仅用于采集后续排查所需的回显信息，不做跳转。")
+        lines.append(
+            "前置检查按顺序线性执行，仅用于采集后续排查所需的回显信息，不做跳转"
+            + ("；采完后按下面的步骤跳转表进入对应步骤。" if routing else "。")
+        )
         lines.append("")
         for index, precheck in enumerate(doc.prechecks, start=1):
-            lines += _render_collection(precheck, index, audience=_audience(precheck, doc))
+            lines += _render_collection(
+                precheck,
+                index,
+                audience=_audience(precheck, doc),
+                audience_label="适用场景" if doc.multi else "适用步骤",
+            )
     else:
         lines += ["本子图未给出该症状的入口检查动作，直接进入排查步骤。", ""]
+
+    if routing:
+        lines += ["## 步骤跳转表", ""]
+        lines.append("公共采集做完后，按下表判据直接进入对应步骤；判据都不命中时从步骤 1 起顺序执行。")
+        lines.append("")
+        lines += ["| 前置检查步骤 | 判据 | 跳转步骤 |", "| --- | --- | --- |"]
+        for row in routing:
+            lines.append(f"| {row.precheck} | {row.criterion} | → **{row.scenario}** |")
+        lines.append("")
 
     if doc.multi:
         lines += ["## 场景跳转表", ""]
@@ -1094,7 +1282,10 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
             for step in scenario.steps:
                 lines += _render_step(step, heading="####")
     else:
-        lines.append("默认按顺序执行；判据来自前置检查回显的步骤不重复下发命令。")
+        lines.append(
+            ("按步骤跳转表进入对应步骤，判据都不命中时" if routing else "默认")
+            + "按顺序执行；判据来自前置检查回显的步骤不重复下发命令。"
+        )
         lines.append("")
         for step in doc.scenarios[0].steps:
             lines += _render_step(step, heading="##")

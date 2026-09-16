@@ -5,6 +5,7 @@ section, a battle-tree row and a case entry — with a cause (MTU) that appears 
 two of them as separate nodes.
 """
 
+import re
 import pytest
 
 from subkg2skill.cli import main
@@ -170,7 +171,7 @@ def test_merge_same_name_pulls_in_the_other_sources(tmp_path, capsys):
     assert code == 0
     assert "合并来源：" in capsys.readouterr().out
     text = (out / "SKILL.md").read_text(encoding="utf-8")
-    assert text.count("## 步骤") == 4
+    assert len(re.findall(r"^## 步骤\d", text, re.M)) == 4
 
 
 def test_building_one_source_alone_says_what_it_is_missing(tmp_path, capsys):
@@ -181,7 +182,7 @@ def test_building_one_source_alone_says_what_it_is_missing(tmp_path, capsys):
     assert code == 0
     output = capsys.readouterr().out
     assert "同名症状" in output and "--merge-same-name" in output
-    assert (out / "SKILL.md").read_text(encoding="utf-8").count("## 步骤") == 2
+    assert len(re.findall(r"^## 步骤\d", (out / "SKILL.md").read_text(encoding="utf-8"), re.M)) == 2
 
 
 def test_entry_can_be_repeated_for_unrelated_names(tmp_path):
@@ -191,7 +192,7 @@ def test_entry_can_be_repeated_for_unrelated_names(tmp_path):
          "--name", "isis", "--out", str(out)]
     )
     assert code == 0
-    assert (out / "SKILL.md").read_text(encoding="utf-8").count("## 步骤") == 3
+    assert len(re.findall(r"^## 步骤\d", (out / "SKILL.md").read_text(encoding="utf-8"), re.M)) == 3
 
 
 def test_build_all_emits_one_skill_for_the_merged_fault(tmp_path):
