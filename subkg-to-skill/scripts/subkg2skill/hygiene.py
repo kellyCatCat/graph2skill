@@ -316,6 +316,36 @@ def is_topology_label(name: str) -> bool:
     return bool(TOPOLOGY_LABEL_RE.match((name or "").strip()))
 
 
+#: ``f317a60748`` — the extraction's hash of a slot, glued onto its name.
+HASH_TOKEN_RE = re.compile(r"^[0-9a-f]{8,}$", re.I)
+
+
+def is_hash_token(token: str) -> bool:
+    """True for an extraction hash such as ``c8be5e6454``.
+
+    An all-digit run is left alone: ``20230115`` is something the engineer can
+    read off a screen, while a hex run of that length is only ever an id the
+    extractor carried over.
+    """
+    token = (token or "").strip()
+    if not HASH_TOKEN_RE.match(token):
+        return False
+    return any(char in "abcdefABCDEF" for char in token)
+
+
+def generalise_slot(name: str) -> str:
+    """``peer ip c8be5e6454`` → ``peer-ip``; returns ``""`` for a bare hash.
+
+    The same input is hashed differently by every source, so ``peer ip
+    c8be5e6454`` and ``peer ip 4f2ab19c07`` reach the 入参列表 as two rows
+    asking the field for one thing.  Dropping the hash is what lets them merge;
+    the source wording is still what ``reference/evidence.md`` quotes.
+    """
+    parts = [part for part in re.split(r"[\s_\-]+", (name or "").strip()) if part]
+    kept = [part for part in parts if not is_hash_token(part)]
+    return "-".join(kept)
+
+
 def hardcoded_literals(command: str) -> List[str]:
     """Example values left in a command that break on the next device."""
     found: List[str] = []

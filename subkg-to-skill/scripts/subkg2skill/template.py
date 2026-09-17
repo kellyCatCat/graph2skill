@@ -61,11 +61,20 @@ def case_literals(text: str) -> List[str]:
 
 
 def normalise_command(command: str) -> str:
-    """Re-bracket ``{}`` placeholders to ``<>`` without renaming anything."""
+    """Re-bracket ``{}`` placeholders to ``<>`` and drop extraction hashes.
+
+    The name inside the brackets is never translated or reworded, but a hash
+    the extractor glued on is not part of it: left in, one document asks for
+    ``<peer ip c8be5e6454>`` where its 入参列表 says ``peer ip``, and the
+    engineer is being asked to type an id that means nothing on their device.
+    """
     text = _text(command)
     if not text:
         return ""
-    return PLACEHOLDER_RE.sub(lambda m: f"<{m.group(1).strip()}>", text)
+    text = PLACEHOLDER_RE.sub(lambda m: f"<{m.group(1).strip()}>", text)
+    return PARAM_RE.sub(
+        lambda m: f"<{hygiene.generalise_slot(m.group(1)) or m.group(1).strip()}>", text
+    )
 
 
 def command_signature(commands: Sequence[str]) -> str:
@@ -151,8 +160,18 @@ def parameters_in(commands: Iterable[str]) -> List[str]:
 
 
 def param_key(token: str) -> str:
-    """Identity used to merge a slot name with a CLI parameter name."""
-    return re.sub(r"[\s_\-]+", "", token).lower()
+    """Identity used to merge a slot name with a CLI parameter name.
+
+    An extraction hash is not part of the identity: the same input carries a
+    different one in every source, so keeping them apart asks the field the
+    same question several times over.
+    """
+    parts = [
+        part
+        for part in re.split(r"[\s_\-]+", token or "")
+        if part and not hygiene.is_hash_token(part)
+    ]
+    return "".join(parts).lower()
 
 
 def param_display(token: str) -> str:
@@ -1062,12 +1081,17 @@ def _build_params(
     for slot in playbook.required_slots():
         key = param_key(slot)
         if not key:
+            if slot.strip():
+                # Nothing but the extractor's hash: there is no question to ask.
+                dropped.append((slot, "伪参数：只剩抽取哈希，没有可填的名字"))
             continue
         if hygiene.is_topology_label(slot):
             # A letter off the source's topology diagram; nobody can fill it in.
             dropped.append((slot, "伪参数：来源示意图的设备编号，现场没有这个名字"))
             continue
-        params[key] = Param(slot, param_display(slot), True, "现场提供")
+        # ``peer ip c8be5e6454`` is one input, however many sources hashed it.
+        general = hygiene.generalise_slot(slot)
+        params[key] = Param(general, param_display(general), True, "现场提供")
 
     precheck_tokens: Set[str] = set()
     collection = [(f"前置检查步骤 {index}", precheck) for index, precheck in enumerate(prechecks, start=1)]

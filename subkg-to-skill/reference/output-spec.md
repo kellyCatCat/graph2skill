@@ -64,7 +64,7 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 
 | 来源 | 是否必填 | 说明列写什么 |
 | --- | --- | --- |
-| `symptom.attrs.required_slots` | 是 | 现场提供 |
+| `symptom.attrs.required_slots` | 是 | 现场提供。先去掉抽取哈希再归一：`peer ip c8be5e6454`、`peer_ip_9d10bb2201` 都是 `peer ip` 一行；只剩哈希的槽位当伪参数剔除并记录 |
 | 前置检查命令里的 `<token>` | 是 | 前置检查步骤 N 命令参数 |
 | 只在排查步骤命令里出现的 `<token>` | 否 | 从前置检查回显中提取，无需人工输入 |
 | 只在修复/复检命令里出现的 `<token>` | 否 | 修复动作参数，按现场规划或回显确定 |

@@ -11,8 +11,16 @@ import pytest
 from subkg2skill import hygiene
 from subkg2skill.graph import Graph
 from subkg2skill.loader import RawBundle
-from subkg2skill.playbook import build_playbook
-from subkg2skill.template import build_doc, command_templates, command_variants, same_command_set
+from subkg2skill.lint import lint_text
+from subkg2skill.playbook import build_merged_playbook, build_playbook
+from subkg2skill.template import (
+    build_doc,
+    command_templates,
+    command_variants,
+    param_key,
+    render_doc,
+    same_command_set,
+)
 
 from conftest import make_edge, make_node
 
@@ -246,3 +254,94 @@ def test_command_variants_are_reported_per_node():
     assert command_variants(check) == [
         ("display current-configuration configuration bgp", ["display current-config config bgp"])
     ]
+
+
+# ------------------------------------------------------------ 抽取哈希
+# 抽取给同一个输入在每个来源上各贴一个哈希（`peer ip c8be5e6454`）。
+# 原样透传的结果是入参列表里同一个问题问好几遍，命令里印着现场无意义的 id。
+def test_a_hash_is_recognised_and_a_readable_id_is_not():
+    assert hygiene.is_hash_token("c8be5e6454")
+    assert hygiene.is_hash_token("f317a60748")
+    assert not hygiene.is_hash_token("20230115")  # 全数字是读得出的编号
+    assert not hygiene.is_hash_token("ip")
+    assert not hygiene.is_hash_token("bfd12")
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("slot f317a60748", "slot"),
+        ("case ip fb3f6f7e17", "case-ip"),
+        ("peer ip c8be5e6454", "peer-ip"),
+        ("peer_ip_9d10bb2201", "peer-ip"),
+        ("neName", "neName"),
+        ("interface-type", "interface-type"),
+        ("f317a60748", ""),  # 只剩哈希，没有可填的名字
+    ],
+)
+def test_slot_names_are_generalised(raw, expected):
+    assert hygiene.generalise_slot(raw) == expected
+
+
+def test_the_same_input_hashed_twice_is_one_key():
+    assert param_key("peer ip c8be5e6454") == param_key("peer ip 4f2ab19c07")
+    assert param_key("peer ip c8be5e6454") == param_key("peer-ip")
+    assert param_key("peer ip c8be5e6454") != param_key("case ip fb3f6f7e17")
+
+
+def _hashed_records():
+    nodes = [
+        make_node(
+            "symptom_a", "symptom", "BGP邻居异常",
+            attrs={"required_slots": ["peer ip c8be5e6454", "slot f317a60748"]},
+        ),
+        make_node(
+            "symptom_b", "symptom", "BGP邻居异常",
+            attrs={"required_slots": ["peer ip 4f2ab19c07", "peer_ip_9d10bb2201"]},
+        ),
+        make_node("cause_a", "cause", "对端未配置"),
+        make_node(
+            "check_a", "check", "看邻居",
+            attrs={"command_templates": ["display bgp peer <peer ip c8be5e6454>"]},
+        ),
+        make_node("obs_a", "observation", "邻居 Idle", attrs={"field": "State"}),
+    ]
+    edges = [
+        make_edge("e1", "has_cause", "symptom_a", "cause_a", rank=1),
+        make_edge("e2", "diagnosed_by", "cause_a", "check_a"),
+        make_edge("e3", "observes", "check_a", "obs_a"),
+        make_edge("e4", "confirms", "obs_a", "cause_a"),
+    ]
+    return nodes, edges
+
+
+def test_slots_hashed_per_source_become_one_input():
+    nodes, edges = _hashed_records()
+    graph = _graph(nodes, edges)
+    playbook = build_merged_playbook(graph, [graph.nodes["symptom_a"], graph.nodes["symptom_b"]])
+    doc = build_doc(graph, playbook)
+    assert [param.display for param in doc.params] == ["peer ip", "slot"]
+
+
+def test_a_slot_that_is_only_a_hash_is_reported_not_asked_for():
+    nodes, edges = _hashed_records()
+    nodes[0]["attrs"]["required_slots"] = ["f317a60748"]
+    doc = _doc(nodes, edges)
+    assert not any(param.display == "f317a60748" for param in doc.params)
+    assert any("只剩抽取哈希" in reason for _name, reason in doc.omitted)
+
+
+def test_the_command_asks_for_the_same_name_the_parameter_list_declares():
+    nodes, edges = _hashed_records()
+    doc = _doc(nodes, edges)
+    assert doc.steps[0].commands == ["display bgp peer <peer-ip>"]
+    assert lint_text(render_doc(doc, name="demo", description="现象。出现时使用。")).ok
+
+
+def test_lint_rejects_a_hash_left_in_a_command():
+    nodes, edges = _hashed_records()
+    doc = _doc(nodes, edges)
+    text = render_doc(doc, name="demo", description="现象。出现时使用。")
+    broken = text.replace("<peer-ip>", "<peer ip c8be5e6454>")
+    messages = [issue.message for issue in lint_text(broken).issues]
+    assert any("带抽取哈希" in message for message in messages)

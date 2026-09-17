@@ -609,6 +609,16 @@ def lint_text(text: str) -> LintResult:
             issues.append(LintIssue("error", f"命令里的占位符必须用 <>：`{command}`"))
         if re.search(r"\bXXX+\b", command):
             issues.append(LintIssue("warning", f"命令里保留了大写占位符：`{command}`"))
+        for token in PARAM_RE.findall(command):
+            hashes = [part for part in re.split(r"[\s_\-]+", token) if hygiene.is_hash_token(part)]
+            if hashes:
+                issues.append(
+                    LintIssue(
+                        "error",
+                        f"参数 <{token}> 带抽取哈希（{'、'.join(hashes)}），现场敲不出这个 id；"
+                        f"去掉写成 <{hygiene.generalise_slot(token) or token}>",
+                    )
+                )
         literals = case_literals(command)
         if literals:
             issues.append(

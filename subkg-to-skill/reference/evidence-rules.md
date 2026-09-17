@@ -72,7 +72,7 @@ Excel 来源给 `sheet`/`cell`，案例来源给 `case_uuid`。
 | CLI 命令（前置检查、场景跳转表、排查步骤、修复/复检列） | `check` / `repair` / `escalation` 的 `attrs.command_templates`，经与生成器相同的清洗（`{x}` → `<x>`、去设备提示符、缩写与全称折叠、剔除回显与表格行） | ERROR |
 | 根因名（对照表首列、根因定位、跳转里的"定位/排除根因"） | `cause` 节点的 `name` | ERROR；只是写法不同（空格、连字符）会直接报出来源写法 |
 | 判据（跳转信息、场景跳转表、现象列、采集字段） | `observation` 的表达式、`field`、取值、`normalized_expression` | ERROR |
-| 入参列表的「信息」列 | 症状的 `required_slots`，或正文命令里真实出现的 `<参数>` | ERROR |
+| 入参列表的「信息」列 | 症状的 `required_slots`，或正文命令里真实出现的 `<参数>`；抽取哈希（`peer ip c8be5e6454` 的 `c8be5e6454`）不算名字的一部分，去掉后同一个输入只问一次 | ERROR |
 | 修复说法、采集说明等自由文本 | 来源记录里出现过的原文（含 `procedure`、`service_impact`、`rollback`） | WARNING |
 
 不查的：模板自带的固定说法（"未找到根因""复用前置检查步骤 N 回显""无直接修复CLI""现场提供"
