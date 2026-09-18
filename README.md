@@ -202,6 +202,7 @@ python3 $S verify out/isis-neighbor-down --graph examples/subgraph
 
 | 路径 | 内容 |
 | --- | --- |
+| `docs/design.md` | 设计文档：输入输出、四段流程的数据流、每个代码文件的职责 |
 | `install.py` | 一条命令安装/更新到 Claude Code / opencode |
 | `.claude-plugin/marketplace.json` | 插件市场清单，供 `/plugin marketplace add` 使用 |
 | `subkg-to-skill/.claude-plugin/plugin.json` | 插件清单（单技能插件，`SKILL.md` 在插件根） |
