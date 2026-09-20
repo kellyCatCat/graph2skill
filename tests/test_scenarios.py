@@ -194,8 +194,11 @@ def test_lint_flags_an_oversized_hand_written_document(tmp_path):
         "# 根因对照表\n\n| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |\n| --- | --- | --- | --- |\n"
         f"{table}\n| 未找到根因 | 全部步骤走完仍未命中任何故障特征 | 输出摘要 | - |\n"
     )
-    warnings = " ".join(issue.message for issue in lint_text(document).warnings)
+    messages = [issue.message for issue in lint_text(document).warnings]
+    warnings = " ".join(messages)
     assert "超出可读范围" in warnings and "按诊断单元拆分" in warnings
+    # 告警要如实转告用户，同一处毛病报两遍会让人以为有两处
+    assert sum(1 for message in messages if "超出可读范围" in message) == 1
 
 
 def test_lint_flags_a_repeated_collection_command():
@@ -213,8 +216,10 @@ def test_lint_flags_a_repeated_collection_command():
         "| 根因A | `状态` 为 `Down` | 无直接修复CLI | - |\n"
         "| 未找到根因 | 全部步骤走完仍未命中任何故障特征 | 输出摘要 | - |\n"
     )
-    warnings = " ".join(issue.message for issue in lint_text(document).warnings)
+    messages = [issue.message for issue in lint_text(document).warnings]
+    warnings = " ".join(messages)
     assert "重复了 4 次" in warnings and "合并" in warnings
+    assert sum(1 for message in messages if "重复了 4 次" in message) == 1
 
 
 def test_the_documented_scenario_workflow_runs(tmp_path):

@@ -473,26 +473,6 @@ def lint_text(text: str) -> LintResult:
         issues += _criterion_issues(bodies, scenario=scenario)
         declared_causes[scenario] = found
 
-    total_steps = sum(len(bodies) for bodies in step_bodies.values())
-    if total_steps > MAX_REASONABLE_STEPS and not scenarios:
-        issues.append(
-            LintIssue(
-                "warning",
-                f"共 {total_steps} 个排查步骤，超出可读范围（>{MAX_REASONABLE_STEPS}）；"
-                "多半是把多个故障场景合成了一份，建议按诊断单元拆分（build --unit）或分场景（### 场景X）",
-            )
-        )
-
-    repeats: Dict[str, int] = {}
-    for command in _commands_in(collection_lines):
-        signature = command_signature([command])
-        repeats[signature] = repeats.get(signature, 0) + 1
-    for signature, count in repeats.items():
-        if count > MAX_COMMAND_REPEATS:
-            issues.append(
-                LintIssue("warning", f"前置检查里 `{signature}` 重复了 {count} 次，应合并为一条采集步骤")
-            )
-
     # -- 步骤跳转表（单场景）---------------------------------------------
     # 分流表指向排查步骤时，目标必须真实存在，且同一条判据不能指向两个步骤
     if not scenarios and routing_start < len(precheck_lines):
