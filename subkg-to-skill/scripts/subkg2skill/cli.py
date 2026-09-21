@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import __version__, schema
 from subkg2skill.graph import Graph, Node, ValidationReport
-from subkg2skill.lint import lint_path, lint_text
+from subkg2skill.lint import lint_files, lint_path
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import (
     build_merged_playbook,
@@ -34,11 +34,12 @@ from subkg2skill.playbook import (
     fault_key,
     suggest_merges,
 )
-from subkg2skill.template import SHARED_COVERAGE, render_doc
-from subkg2skill.verify import VerifyResult, verify_path, verify_text
+from subkg2skill.template import SHARED_COVERAGE, render_package
+from subkg2skill.verify import VerifyResult, verify_files, verify_path
 from subkg2skill.render import (
     BuildOptions,
     RenderError,
+    _assign_scenario_slugs,
     build_package,
     normalise_name,
     suggested_slug,
@@ -294,6 +295,18 @@ def _print_omitted(omitted: Sequence, *, prefix: str = "  ", limit: int = 10) ->
         print(f"{prefix}  …另有 {len(omitted) - limit} 条（--with-evidence 导出完整清单）")
 
 
+def _print_unnamed_scenarios(package, *, prefix: str = "  ") -> None:
+    """Scenario files nobody named: the reader picks a file by its name."""
+    if not package.unnamed_scenarios:
+        return
+    print(
+        f"{prefix}{len(package.unnamed_scenarios)} 个场景没给英文名，用了占位文件名"
+        "（场景清单里填 slug，按语义拟英文名后重跑）："
+    )
+    for name, slug in package.unnamed_scenarios:
+        print(f"{prefix}  {name}  →  reference/{slug}.md")
+
+
 def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
     if not package.internal:
         return
@@ -304,11 +317,11 @@ def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
     )
 
 
-def _print_metrics(doc, *, prefix: str = "  ", text: str = "") -> None:
+def _print_metrics(doc, *, prefix: str = "  ", files=None) -> None:
     """Say which delivery numbers came out of range, so they get reported on."""
     if doc is None:
         return
-    off = [metric for metric in metrics(doc, text) if not metric.ok]
+    off = [metric for metric in metrics(doc, files) if not metric.ok]
     if not off:
         print(f"{prefix}交付统计：全部指标在健康值内")
         return
@@ -318,7 +331,7 @@ def _print_metrics(doc, *, prefix: str = "  ", text: str = "") -> None:
 
 
 def _install_hint(out_dir: Path, name: str) -> None:
-    print("\n装进框架（交付物只有 SKILL.md，目录里没有别的文件）：")
+    print("\n装进框架（整个目录一起拷，reference/ 是 skill 的一部分）：")
     print(f"  cp -r {out_dir} .claude/skills/{name}          # Claude Code（项目级）")
     print(f"  cp -r {out_dir} ~/.claude/skills/{name}        # Claude Code（全局）")
     print(f"  cp -r {out_dir} .opencode/skill/{name}         # opencode（项目级）")
@@ -410,6 +423,10 @@ def cmd_list(args) -> int:
             "scenarios": [
                 {
                     "name": group.name,
+                    # 该场景在 reference/ 下的文件名（英文 slug）。中文场景名没法
+                    # 机械翻译，和技能名一样由调用方按语义给出；留空则用 scenario-a
+                    # 这类占位名，并在生成时列出来提醒改。
+                    "slug": "",
                     "entries": [node.node_id for node in group.symptoms],
                     "units": list(group.units),
                     # 与本场景无关的节点：写 node_id 或名称关键词，生成时整条剔除
@@ -568,10 +585,10 @@ def _build_one(
         skill_index=dict(skill_index or {}),
     )
     package = build_package(scoped, playbook, options)
-    result = lint_text(package.files["SKILL.md"])
+    result = lint_files(package.files)
     # Post-verification: every command, root cause, criterion and parameter in
     # the finished document has to be findable in the subgraph it came from.
-    grounding = verify_text(package.files["SKILL.md"], reference.subgraph(playbook.covered))
+    grounding = verify_files(package.files, reference.subgraph(playbook.covered))
 
     if args.dry_run:
         print(
@@ -607,9 +624,10 @@ def _build_one(
         print(f"  提示：{note}")
     _print_internal(package, out_dir)
     _print_omitted(package.omitted)
+    _print_unnamed_scenarios(package)
     _print_lint(result)
     _print_verify(grounding)
-    _print_metrics(package.doc, text=package.files["SKILL.md"])
+    _print_metrics(package.doc, files=package.files)
     return 0 if (result.ok and grounding.ok) else 1
 
 
@@ -681,7 +699,7 @@ def _apply_exclusions(
 def _scenarios_from_manifest(
     graph: Graph, path: Path, extra_exclude: Sequence[str] = (), removed_ids: Optional[Set[str]] = None
 ) -> Tuple[str, str, List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
-    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元, 剔除记录)."""
+    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元, 剔除记录, 场景 slug)."""
     manifest = _load_manifest(path)
     units: List[str] = []
     for entry in manifest["scenarios"]:
@@ -692,6 +710,7 @@ def _scenarios_from_manifest(
     removed: List[Tuple[str, str]] = []
     removed_ids = removed_ids if removed_ids is not None else set()
     named: List[Tuple[str, object]] = []
+    slugs: List[str] = []
     for index, entry in enumerate(manifest["scenarios"]):
         ids = entry.get("entries") or []
         if not ids:
@@ -705,12 +724,14 @@ def _scenarios_from_manifest(
         )
         playbook = build_merged_playbook(base, symptoms, unit_scope)
         named.append((entry.get("name") or symptoms[0].name, playbook))
+        slugs.append(str(entry.get("slug") or "").strip())
     return (
         manifest.get("name", ""),
         manifest.get("description", ""),
         named,
         units,
         removed,
+        slugs,
     )
 
 
@@ -748,13 +769,14 @@ def cmd_plan(args) -> int:
     graph = _select(graph, args)
     removed_ids: Set[str] = set()
     if args.scenarios:
-        name, _description, named, units, removed = _scenarios_from_manifest(
+        name, _description, named, units, removed, scenario_slugs = _scenarios_from_manifest(
             graph, Path(args.scenarios), args.exclude, removed_ids
         )
         source = f"场景清单 {args.scenarios}"
     else:
         named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
         name = ""
+        scenario_slugs = []
         source = "自动分组（未用场景清单）"
     scoped = graph.scope_to_units(units) if units else graph
     scoped = scoped.without(removed_ids)
@@ -769,8 +791,10 @@ def cmd_plan(args) -> int:
     for spec, node_name in removed:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     plan = plan_document(doc)
-    # 文档规模要看渲染后的正文；技能名此时可能还是占位符，不影响行数。
-    preview = render_doc(doc, name="preview", description="预览")
+    # 文档规模要看渲染后的正文，而且要按交付时的拆分来看——多场景时读者读的是
+    # 入口 + 他那一个场景，不是全部场景之和。技能名此时可能还是占位符，不影响行数。
+    _assign_scenario_slugs(doc, scenario_slugs)
+    preview = render_package(doc, name="preview", description="预览")
 
     print(f"输入：{'、'.join(sources)}")
     print(f"编排来源：{source}" + (f"；技能名 {name}" if name and not name.startswith("<") else ""))
@@ -792,9 +816,14 @@ def cmd_plan(args) -> int:
 def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     """One document covering several faults off a shared collection phase."""
     removed_ids: Set[str] = set()
-    manifest_name, manifest_description, named, units, removed = _scenarios_from_manifest(
-        graph, Path(args.scenarios), args.exclude, removed_ids
-    )
+    (
+        manifest_name,
+        manifest_description,
+        named,
+        units,
+        removed,
+        scenario_slugs,
+    ) = _scenarios_from_manifest(graph, Path(args.scenarios), args.exclude, removed_ids)
     name = args.name or manifest_name or ""
     if not name or name.startswith("<"):
         raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
@@ -817,13 +846,14 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         shared_coverage=args.shared_coverage,
         excluded=removed,
         skill_index=_skill_index(args),
+        scenario_slugs=scenario_slugs,
     )
     package = build_package(scoped, named, options)
-    result = lint_text(package.files["SKILL.md"])
+    result = lint_files(package.files)
     covered: Set[str] = set()
     for _label, book in named:
         covered |= book.covered
-    grounding = verify_text(package.files["SKILL.md"], reference.subgraph(covered))
+    grounding = verify_files(package.files, reference.subgraph(covered))
     out_dir = Path(args.out)
 
     if args.dry_run:
@@ -834,6 +864,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         for relative in sorted(package.files):
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
         _print_omitted(package.omitted, prefix="")
+        _print_unnamed_scenarios(package, prefix="")
         _print_lint(result, prefix="")
         _print_verify(grounding, prefix="")
         return 0 if (result.ok and grounding.ok) else 1
@@ -853,9 +884,10 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         print(f"  提示：{note}")
     _print_internal(package, out_dir)
     _print_omitted(package.omitted)
+    _print_unnamed_scenarios(package)
     _print_lint(result)
     _print_verify(grounding)
-    _print_metrics(package.doc, text=package.files["SKILL.md"])
+    _print_metrics(package.doc, files=package.files)
     _install_hint(out_dir, normalise_name(name))
     return 0 if (result.ok and grounding.ok) else 1
 

@@ -7,8 +7,6 @@
 
 import json
 
-import pytest
-
 from subkg2skill.cli import main
 from subkg2skill.lint import lint_text
 from subkg2skill.playbook import build_playbook

@@ -1,6 +1,6 @@
 ---
 name: subkg-to-skill
-description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成符合模板的排障 skill：一个故障入口一份，交付物就是一个 SKILL.md，文档为「入参列表 / 前置检查 / 排查步骤 / 根因对照表」四章节，生成后逐条回查原图、删除没有来源的内容，Claude Code、opencode 拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包”，或手里有 node.json、edge.json 想变成智能体能用的排障文档时使用。Turns a fault-diagnosis knowledge-graph subgraph into template-conformant agent skills."
+description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.json + edge.json）编译成符合模板的排障 skill：一个故障入口一份，文档为「入参列表 / 前置检查 / 排查步骤 / 根因对照表」四章节，多场景时步骤按场景拆到 reference/ 下，生成后逐条回查原图、删除没有来源的内容，Claude Code、opencode 拷进去就能加载。当用户说“把这个子图/知识图谱变成 skill”“根据图谱生成排查技能包”，或手里有 node.json、edge.json 想变成智能体能用的排障文档时使用。Turns a fault-diagnosis knowledge-graph subgraph into template-conformant agent skills."
 ---
 
 # 子图 → skill 生成器
@@ -11,8 +11,12 @@ confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to�
 
 输出：**一个故障场景一份 skill**——场景 = 一个 symptom × 一个诊断单元（章节号或案例 ID）。
 知识图谱会把同一个症状在几十个章节、案例里的原因合并到一个节点上，不按诊断单元切分就会把
-互不相干的故障塞进同一份文档。**交付物只有 `<skill>/SKILL.md` 一个文件**，
-严格按四章节模板写：入参列表 → 前置检查 → 排查步骤 → 根因对照表。
+互不相干的故障塞进同一份文档。四章节模板是硬性的：入参列表 → 前置检查 → 排查步骤 → 根因对照表。
+
+**交付的是整个 skill 目录**。单故障就一个 `SKILL.md`；一份 skill 覆盖多个场景时，
+`SKILL.md` 只留入参列表 / 前置检查（含场景跳转表）/ 一张指向各场景的参考文件表，
+每个场景的步骤与根因对照表拆到 `reference/<场景>.md`——**读者只走一个场景**，
+步骤都堆在入口就是让每个读者都加载别人那几份。单场景不拆：跳转表只有一行，纯属多一层间接。
 
 子图切片、出处清单、查询脚本是**构建期的内部产物，不对外暴露**：默认不生成，要人工核对时用
 `--with-evidence` / `--with-subgraph` / `--with-script` 导出到 `<输出目录>.internal/`，不要拷走。
@@ -84,7 +88,7 @@ python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但�
 
 ```bash
 python3 scripts/build_skill.py list <图> --export-scenarios scenarios.json
-# 编辑 scenarios.json：填英文技能名 name、改中文场景名、按判断结果拆/并 entries 与 units、删掉不要的场景
+# 编辑 scenarios.json：填技能名 name、每个场景填英文 slug（它的 reference/ 文件名）、拆并 entries 与 units、删掉不要的场景
 ```
 
 ### 阶段三 · 生成前规划

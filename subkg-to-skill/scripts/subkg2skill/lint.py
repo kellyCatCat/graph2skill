@@ -25,7 +25,14 @@ from subkg2skill.template import (
     param_key,
 )
 
-SECTIONS = ("入参列表", "前置检查", "排查步骤", "根因对照表")
+CAUSE_TABLE = "根因对照表"
+SECTIONS = ("入参列表", "前置检查", "排查步骤", CAUSE_TABLE)
+#: A multi-scenario skill's entry file: the steps live under ``reference/``.
+INDEX_SECTIONS = ("入参列表", "前置检查", "排查步骤")
+#: ``# 场景A：BGP邻居无法建立`` — the first heading of a scenario's own file.
+SCENARIO_H1_RE = re.compile(r"^场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
+#: ``| 场景A：… | reference/neighbor-down.md | … |`` — the index's pointer table.
+REFERENCE_PATH_RE = re.compile(r"^reference/([A-Za-z0-9][A-Za-z0-9-]*)\.md$")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 #: ``（skill: isis-neighbor-down）`` — the skill a hand-off points at.  A name
 #: that is not a slug names nothing the reader can open.
@@ -262,28 +269,114 @@ def _table_rows(lines: Sequence[str]) -> List[List[str]]:
     return rows
 
 
-def lint_text(text: str) -> LintResult:
-    """Check one SKILL.md body against the template."""
+def _reference_table(step_lines: Sequence[str]) -> Tuple[List[str], List[LintIssue]]:
+    """The index's 场景 → 参考文件 table: which scenarios exist and where they live.
+
+    This table is the only thing tying the entry file to the scenario files, so
+    a row pointing at a path that is not ``reference/<slug>.md`` sends the
+    reader nowhere.
+    """
+    issues: List[LintIssue] = []
+    scenarios: List[str] = []
+    seen: Set[str] = set()
+    for row in _table_rows(step_lines)[1:]:  # drop the header row
+        if len(row) < 2 or not row[0].strip():
+            continue
+        title = row[0].strip()
+        if not SCENARIO_H1_RE.match(title):
+            issues.append(
+                LintIssue("error", f"参考文件表的场景名必须写成「场景X：名称」，当前为 {title!r}")
+            )
+            continue
+        path = row[1].strip().strip("`")
+        if not REFERENCE_PATH_RE.match(path):
+            issues.append(
+                LintIssue(
+                    "error",
+                    f"{title} 的参考文件必须是 `reference/<英文名>.md`，当前为 {path!r}",
+                )
+            )
+        elif path in seen:
+            issues.append(LintIssue("error", f"参考文件 {path} 被多个场景共用，一个场景一个文件"))
+        seen.add(path)
+        scenarios.append(title)
+    if not scenarios and not issues:
+        issues.append(
+            LintIssue(
+                "error",
+                "多场景入口的「排查步骤」必须用一张表列出每个场景的参考文件（场景 / 参考文件 / 内容）",
+            )
+        )
+    return scenarios, issues
+
+
+def reference_paths(text: str) -> List[str]:
+    """Reference files an index document points at, in the order it lists them."""
+    sections, order = _split_sections(text)
+    if document_kind(order) != "index":
+        return []
+    found: List[str] = []
+    for row in _table_rows(sections.get("排查步骤", []))[1:]:
+        if len(row) >= 2:
+            path = row[1].strip().strip("`")
+            if REFERENCE_PATH_RE.match(path) and path not in found:
+                found.append(path)
+    return found
+
+
+def document_kind(order: Sequence[str]) -> str:
+    """Which of the three shapes this file is, by its first-level headings.
+
+    ``skill`` — one fault, all four sections in one file.
+    ``index`` — the entry file of a multi-scenario skill: inputs, shared
+    collection and the routing table, with the steps one file per scenario.
+    ``scenario`` — one of those files: a scenario heading and its root causes.
+    """
+    listed = list(order)
+    if listed == list(SECTIONS):
+        return "skill"
+    if listed == list(INDEX_SECTIONS):
+        return "index"
+    if listed and SCENARIO_H1_RE.match(listed[0]) and CAUSE_TABLE in listed:
+        return "scenario"
+    return ""
+
+
+def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintResult:
+    """Check one delivered file against the template.
+
+    ``declared`` carries the 入参列表 of the skill a scenario file belongs to:
+    its commands use those parameters, but the table itself lives in
+    ``SKILL.md``.  :func:`lint_path` supplies it; on its own a scenario file
+    can only be checked for everything else.
+    """
     issues: List[LintIssue] = []
     frontmatter, frontmatter_issues = _frontmatter(text)
     issues += frontmatter_issues
 
     sections, order = _split_sections(text)
-    if order != list(SECTIONS):
+    kind = document_kind(order)
+    if not kind:
         issues.append(
             LintIssue(
                 "error",
-                "一级标题必须依次为 " + " → ".join(f"# {s}" for s in SECTIONS) + f"，当前为 {order}",
+                "一级标题必须是以下三种之一："
+                + "；".join(
+                    (
+                        "单故障 " + " → ".join(f"# {s}" for s in SECTIONS),
+                        "多场景入口 " + " → ".join(f"# {s}" for s in INDEX_SECTIONS),
+                        f"场景参考文件 `# 场景X：…` → `# {CAUSE_TABLE}`",
+                    )
+                )
+                + f"，当前为 {order}",
             )
         )
-    missing = [name for name in SECTIONS if name not in sections]
-    if missing:
-        issues.append(LintIssue("error", "缺少章节：" + "、".join(missing)))
         return LintResult(issues)
 
     # -- 入参列表 -------------------------------------------------------
-    param_rows = _table_rows(sections["入参列表"])[1:]  # drop the header row
-    declared: Dict[str, bool] = {}
+    # 场景参考文件没有这一节：入参声明在它所属 skill 的 SKILL.md 里。
+    param_rows = _table_rows(sections["入参列表"])[1:] if "入参列表" in sections else []
+    declared = dict(declared or {})
     for row in param_rows:
         if len(row) < 3:
             issues.append(LintIssue("error", f"入参列表行格式不对：{row}"))
@@ -320,7 +413,7 @@ def lint_text(text: str) -> LintResult:
         )
 
     # -- 前置检查 -------------------------------------------------------
-    precheck_lines = sections["前置检查"]
+    precheck_lines = sections.get("前置检查", [])
     # 场景跳转表就在这一节里，但它是分流表不是采集步骤，两类检查要分开
     routing_start = next(
         (
@@ -350,7 +443,8 @@ def lint_text(text: str) -> LintResult:
                 )
 
     # -- 排查步骤 -------------------------------------------------------
-    step_lines = sections["排查步骤"]
+    # 场景参考文件把步骤放在它自己的 `# 场景X：…` 标题下，那就是它的排查步骤一节。
+    step_lines = sections[order[0]] if kind == "scenario" else sections.get("排查步骤", [])
     scenarios: List[str] = []          # 场景标题，按出现顺序
     step_bodies: Dict[str, Dict[int, List[str]]] = {}   # 场景 -> 步骤号 -> 正文
     order: Dict[str, List[int]] = {}
@@ -394,6 +488,12 @@ def lint_text(text: str) -> LintResult:
             step_bodies[current_scenario][current_step].append(line)
         elif in_collection:
             collection.setdefault(current_scenario, []).append(line)
+
+    if kind == "index":
+        # 入口文件的场景来自「排查步骤」里的参考文件表——步骤在 reference/ 下，
+        # 这份文件里没有 `### 场景X` 标题可数。
+        scenarios, reference_issues = _reference_table(step_lines)
+        issues += reference_issues
 
     if scenarios and step_bodies[""]:
         issues.append(LintIssue("error", "分场景时所有步骤都必须落在某个 `### 场景X：…` 下"))
@@ -491,7 +591,7 @@ def lint_text(text: str) -> LintResult:
 
     # -- 步骤跳转表（单场景）---------------------------------------------
     # 分流表指向排查步骤时，目标必须真实存在，且同一条判据不能指向两个步骤
-    if not scenarios and routing_start < len(precheck_lines):
+    if kind == "skill" and not scenarios and routing_start < len(precheck_lines):
         step_rows = _table_rows(precheck_lines[routing_start:])[1:]
         by_criterion: Dict[str, Set[str]] = {}
         for row in step_rows:
@@ -554,7 +654,8 @@ def lint_text(text: str) -> LintResult:
                 )
 
     # -- 根因对照表 -----------------------------------------------------
-    table_lines = sections["根因对照表"]
+    # 入口文件没有这一节：根因随步骤一起住在各自的场景参考文件里。
+    table_lines = sections.get(CAUSE_TABLE, [])
     per_scenario: Dict[str, List[List[str]]] = {}
     if scenarios:
         current = ""
@@ -579,7 +680,7 @@ def lint_text(text: str) -> LintResult:
             if cause not in (scope or listed):
                 where = f"{scenario} 的" if scenario else ""
                 issues.append(LintIssue("error", f"{where}根因“{cause}”没有在根因对照表里逐字出现"))
-    if NOT_FOUND not in listed:
+    if NOT_FOUND not in listed and kind != "index":
         issues.append(LintIssue("error", f"根因对照表缺少「{NOT_FOUND}」行"))
 
     names = [row[0].strip() for row in table_rows if row and row[0].strip() != NOT_FOUND]
@@ -696,10 +797,57 @@ def lint_text(text: str) -> LintResult:
     return LintResult(issues)
 
 
+def declared_params(text: str) -> Dict[str, bool]:
+    """The 入参列表 of a document, as ``参数 -> 是否必填``."""
+    sections, _order = _split_sections(text)
+    declared: Dict[str, bool] = {}
+    for row in _table_rows(sections.get("入参列表", []))[1:]:
+        if len(row) >= 2 and row[0].strip():
+            declared[param_key(row[0])] = row[1].strip() in ("是", "必填", "Y", "yes")
+    return declared
+
+
+def lint_files(files: Dict[str, str]) -> LintResult:
+    """Lint a whole delivered skill: the entry file and every scenario file.
+
+    A scenario file's commands are written against the 入参列表 in ``SKILL.md``,
+    and the entry file promises a file per scenario — neither can be checked
+    from one document alone, so the package is checked as a whole.
+    """
+    entry = files.get("SKILL.md")
+    if entry is None:
+        return LintResult([LintIssue("error", "交付目录里没有 SKILL.md")])
+    issues = list(lint_text(entry).issues)
+    declared = declared_params(entry)
+    promised = reference_paths(entry)
+    delivered = sorted(path for path in files if path != "SKILL.md")
+
+    for path in promised:
+        if path not in files:
+            issues.append(LintIssue("error", f"SKILL.md 指向的参考文件不存在：{path}"))
+    for path in delivered:
+        if path not in promised:
+            # 没人指向它，读者就永远到不了——比内容有错更隐蔽。
+            issues.append(
+                LintIssue("error", f"{path} 没有出现在 SKILL.md 的参考文件表里，读者到不了它")
+            )
+    for path in delivered:
+        for issue in lint_text(files[path], declared=declared).issues:
+            issues.append(LintIssue(issue.level, f"{path}: {issue.message}"))
+    return LintResult(issues)
+
+
 def lint_path(path: Path) -> LintResult:
-    """Lint a ``SKILL.md`` or a skill directory containing one."""
+    """Lint a ``SKILL.md``, or a skill directory with its ``reference/`` files."""
     path = Path(path)
-    target = path / "SKILL.md" if path.is_dir() else path
-    if not target.exists():
-        return LintResult([LintIssue("error", f"{target}: 文件不存在")])
-    return lint_text(target.read_text(encoding="utf-8"))
+    if not path.is_dir():
+        if not path.exists():
+            return LintResult([LintIssue("error", f"{path}: 文件不存在")])
+        return lint_text(path.read_text(encoding="utf-8"))
+    entry = path / "SKILL.md"
+    if not entry.exists():
+        return LintResult([LintIssue("error", f"{entry}: 文件不存在")])
+    files = {"SKILL.md": entry.read_text(encoding="utf-8")}
+    for child in sorted((path / "reference").glob("*.md")) if (path / "reference").is_dir() else []:
+        files[f"reference/{child.name}"] = child.read_text(encoding="utf-8")
+    return lint_files(files)

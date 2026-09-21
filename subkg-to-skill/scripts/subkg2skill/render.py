@@ -1,19 +1,25 @@
 """Assemble the skill package around one fault entry.
 
-**A delivered skill is one file: ``SKILL.md``.**  The knowledge graph is not
-handed out with it — the subgraph slice, the evidence write-up and the query
-script are build-time working material, useful while checking a generated
-document and worthless (or misleading) to whoever installs the skill.  They are
-produced only on request and written *beside* the skill, never inside it:
+**The knowledge graph is never handed out with a skill.**  The subgraph slice,
+the evidence write-up and the query script are build-time working material,
+useful while checking a generated document and worthless (or misleading) to
+whoever installs the skill.  They are produced only on request and written
+*beside* the skill, never inside it.
 
-    out/isis-neighbor-down/SKILL.md            delivered
-    out/isis-neighbor-down.internal/           build-time only, do not ship
+One fault is one file.  A skill covering several scenarios splits them: the
+reader follows exactly one scenario, so carrying all of them in the entry file
+costs every reader the ones that are not theirs.
+
+    out/isis-neighbor-down/SKILL.md            单故障：四章节，就这一个文件
+    out/bgp-troubleshooting/SKILL.md           多场景：入参 + 前置检查 + 场景跳转表
+    out/bgp-troubleshooting/reference/*.md       每个场景的排查步骤与根因对照表
+    out/bgp-troubleshooting.internal/          build-time only, do not ship
       evidence.md                              where every claim came from
       subgraph.json                            this fault's slice, verbatim
       kg_query.py                              stdlib query tool over that slice
 
-``SKILL.md`` is written by :mod:`subkg2skill.template`; this module supplies the
-frontmatter, the working material and the on-disk layout.
+The documents are written by :mod:`subkg2skill.template`; this module supplies
+the frontmatter, the working material and the on-disk layout.
 """
 
 from __future__ import annotations
@@ -34,7 +40,7 @@ from subkg2skill.template import (
     BuildPolicy,
     SkillDoc,
     build_multi_doc,
-    render_doc,
+    render_package,
 )
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -77,6 +83,9 @@ class BuildOptions:
     excluded: Sequence[Tuple[str, str]] = ()
     #: 本批次已生成的 skill：``node_id -> slug``，用来把跨故障的边写成可打开的引用
     skill_index: Dict[str, str] = field(default_factory=dict)
+    #: 每个场景的参考文件名，按场景顺序给；留空的用占位名并报出来。
+    #: 按顺序而不是按场景名对齐：两个场景完全可以重名。
+    scenario_slugs: Sequence[str] = ()
 
     def policy(self) -> BuildPolicy:
         return BuildPolicy(
@@ -90,7 +99,8 @@ class BuildOptions:
 
 @dataclass
 class SkillPackage:
-    #: What ships: ``SKILL.md`` and nothing else.
+    #: What ships, keyed by path inside the skill directory: ``SKILL.md``, plus
+    #: ``reference/<scenario>.md`` when the skill covers several scenarios.
     files: Dict[str, str] = field(default_factory=dict)
     #: Build-time material (evidence, subgraph slice, query script), if asked for.
     internal: Dict[str, str] = field(default_factory=dict)
@@ -101,6 +111,8 @@ class SkillPackage:
     doc: Optional["SkillDoc"] = None
     #: Causes / checks left out of the document, with the reason for each.
     omitted: List[Tuple[str, str]] = field(default_factory=list)
+    #: Scenarios that got a placeholder file name: ``(场景名, 用了什么名字)``.
+    unnamed_scenarios: List[Tuple[str, str]] = field(default_factory=list)
 
     def internal_dir(self, out_dir: Path) -> Path:
         """Sibling directory for build-time material — outside the skill itself."""
@@ -149,6 +161,32 @@ def suggested_slug(symptom: Node, unit: str = "") -> str:
     unit_hint = re.sub(r"[^a-z0-9]+", "-", unit.lower()).strip("-")
     base = f"{hint}-{tail}" if hint else f"fault-{tail}"
     return normalise_name(f"{base}-{unit_hint}" if unit_hint else base)
+
+
+def _assign_scenario_slugs(doc: SkillDoc, supplied: Sequence[str] = ()) -> List[Tuple[str, str]]:
+    """Give every scenario its file name; report the ones nobody named.
+
+    A Chinese scenario name cannot be turned into a meaningful English file
+    name mechanically — the same reason the skill's own name is the caller's
+    to give.  ``scenario-a`` keeps the build moving and is reported, so it does
+    not quietly ship as the name of a file an agent is meant to pick out.
+    """
+    if not doc.multi:
+        return []
+    unnamed: List[Tuple[str, str]] = []
+    taken: Set[str] = set()
+    for index, scenario in enumerate(doc.scenarios):
+        wanted = (supplied[index] if index < len(supplied) else "").strip()
+        if wanted:
+            slug = normalise_name(wanted)
+        else:
+            slug = f"scenario-{scenario.label.lower()}"
+            unnamed.append((scenario.name, slug))
+        while slug in taken:  # two scenarios must not share one file
+            slug = f"{slug}-{scenario.label.lower()}"
+        taken.add(slug)
+        scenario.slug = slug
+    return unnamed
 
 
 def _multi_description(scenarios: Sequence[Tuple[str, Playbook]]) -> str:
@@ -400,6 +438,7 @@ def build_package(
     doc.unit = options.unit
     for spec, node_name in options.excluded:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
+    unnamed = _assign_scenario_slugs(doc, options.scenario_slugs)
     package = SkillPackage(
         notes=list(doc.notes),
         stats={
@@ -410,8 +449,9 @@ def build_package(
         },
         doc=doc,
         omitted=list(doc.omitted),
+        unnamed_scenarios=unnamed,
     )
-    package.files["SKILL.md"] = render_doc(doc, name=name, description=description)
+    package.files.update(render_package(doc, name=name, description=description))
     # Everything below is build-time material: it is written beside the skill,
     # never inside it, and is not part of what gets installed.
     if options.emit_evidence:

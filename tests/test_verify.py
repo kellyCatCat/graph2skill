@@ -254,12 +254,18 @@ def test_build_fails_when_its_own_output_is_not_grounded(monkeypatch, tmp_path, 
     """后校验是构建的一部分：产物不可回查就不算生成成功。"""
     import subkg2skill.cli as cli
 
-    original = cli.verify_text
+    original = cli.verify_files
 
-    def poisoned(text, graph):
-        return original(text.replace("`display isis peer`", "`display invented command`"), graph)
+    def poisoned(files, graph):
+        return original(
+            {
+                path: text.replace("`display isis peer`", "`display invented command`")
+                for path, text in files.items()
+            },
+            graph,
+        )
 
-    monkeypatch.setattr(cli, "verify_text", poisoned)
+    monkeypatch.setattr(cli, "verify_files", poisoned)
     out = tmp_path / "skill"
     code = main(["build", str(example_dir), "--entry", ISIS, "--name", "x", "--out", str(out)])
     assert code == 1

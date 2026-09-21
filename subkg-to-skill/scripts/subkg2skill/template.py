@@ -376,6 +376,10 @@ class DocScenario:
     label: str  # A / B / C …
     name: str
     symptom: Node
+    #: File name of this scenario under ``reference/``.  Like the skill's own
+    #: name it is English and cannot be derived from a Chinese scenario name —
+    #: the caller supplies it, and a placeholder is reported until they do.
+    slug: str = ""
     #: Collection only this scenario needs — not part of the shared phase.
     collection: List[Precheck] = field(default_factory=list)
     steps: List[Step] = field(default_factory=list)
@@ -1336,12 +1340,29 @@ def _render_cause_table(causes: Sequence[RootCause]) -> List[str]:
     return lines
 
 
-def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
-    """Render the document that ships — four sections, nothing else.
+#: Where a multi-scenario skill keeps one file per scenario.
+REFERENCE_DIR = "reference"
+#: What the index says the reader should do once the routing table picks a scenario.
+ENTER_SCENARIO = (
+    "进入对应场景后，先读取 `reference/` 目录下该场景的参考文件，"
+    "再按其中的步骤顺序执行（默认从步骤 1 开始，按跳转信息顺序执行）："
+)
 
-    No pointer to the graph: the subgraph is build-time material and is not
-    delivered with the skill, so a reference to it would dangle.
-    """
+
+def scenario_path(slug: str) -> str:
+    return f"{REFERENCE_DIR}/{slug}.md"
+
+
+def scenario_description(scenario: DocScenario, skill: str) -> str:
+    """Frontmatter description of one scenario file — what it is and how it is reached."""
+    return (
+        f"{scenario.title} —— 排查步骤与根因对照表；"
+        f"由 skill {skill} 的前置检查分流进入。"
+    )
+
+
+def _render_head(doc: SkillDoc, *, name: str, description: str) -> Tuple[List[str], List["RoutingRow"]]:
+    """Frontmatter, 入参列表 and 前置检查 — identical in both shapes."""
     lines = ["---", f"name: {name}", f"description: {description}", "---", ""]
     lines += ["# 入参列表", ""]
     if doc.params:
@@ -1388,24 +1409,19 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
             for row in scenario.routing:
                 lines.append(f"| {row.precheck} | {row.criterion} | → **{row.scenario}** |")
         lines.append("")
+    return lines, routing
 
+
+def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
+    """One fault, one file — the four sections, nothing else.
+
+    No pointer to the graph: the subgraph is build-time material and is not
+    delivered with the skill, so a reference to it would dangle.
+    """
+    lines, routing = _render_head(doc, name=name, description=description)
     lines += ["# 排查步骤", ""]
     if not doc.steps:
         lines += ["本子图未给出该症状的候选原因，无法展开排查步骤。", ""]
-    elif doc.multi:
-        lines.append("按场景跳转表进入对应场景；每个场景内的步骤从 1 开始，默认顺序执行。")
-        lines.append("")
-        for scenario in doc.scenarios:
-            lines += [f"### {scenario.title}", ""]
-            if scenario.collection:
-                lines += ["**本场景采集**（公共前置之外，只有本场景需要，进入本场景后再执行）：", ""]
-                for index, precheck in enumerate(scenario.collection, start=1):
-                    lines += _render_collection(precheck, index)
-            if not scenario.steps:
-                lines += ["本场景在子图中没有可展开的候选原因。", ""]
-                continue
-            for step in scenario.steps:
-                lines += _render_step(step, heading="####")
     else:
         lines.append(
             ("按步骤跳转表进入对应步骤，判据都不命中时" if routing else "默认")
@@ -1416,10 +1432,61 @@ def render_doc(doc: SkillDoc, *, name: str, description: str) -> str:
             lines += _render_step(step, heading="##")
 
     lines += ["# 根因对照表", ""]
-    if doc.multi:
-        for scenario in doc.scenarios:
-            lines += [f"### {scenario.title}", ""]
-            lines += _render_cause_table(scenario.root_causes)
-    else:
-        lines += _render_cause_table(doc.scenarios[0].root_causes)
+    lines += _render_cause_table(doc.scenarios[0].root_causes)
     return "\n".join(lines)
+
+
+def render_index(doc: SkillDoc, *, name: str, description: str) -> str:
+    """The entry file of a multi-scenario skill: inputs, shared collection, routing.
+
+    The steps themselves live one file per scenario.  A reader follows exactly
+    one of them, so putting all of them here costs every reader the ones that
+    are not theirs — the same asymmetry that decides the shared collection
+    phase, one level up.
+    """
+    lines, _routing = _render_head(doc, name=name, description=description)
+    lines += ["# 排查步骤", ""]
+    if not doc.steps:
+        lines += ["本子图未给出该症状的候选原因，无法展开排查步骤。", ""]
+        return "\n".join(lines)
+    lines += [ENTER_SCENARIO, ""]
+    lines += ["| 场景 | 参考文件 | 内容 |", "| --- | --- | --- |"]
+    for scenario in doc.scenarios:
+        content = "排查步骤 + 根因对照表" if scenario.steps else "（本场景没有可展开的候选原因）"
+        lines.append(f"| {scenario.title} | {scenario_path(scenario.slug)} | {content} |")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def render_scenario(scenario: DocScenario, *, name: str, description: str) -> str:
+    """One scenario's own file: its collection, its steps, its root causes."""
+    lines = ["---", f"name: {name}", f"description: {description}", "---", ""]
+    lines += [f"# {scenario.title}", ""]
+    if scenario.collection:
+        lines += ["**本场景采集**（公共前置之外，只有本场景需要，进入本场景后再执行）：", ""]
+        for index, precheck in enumerate(scenario.collection, start=1):
+            lines += _render_collection(precheck, index)
+    if not scenario.steps:
+        lines += ["本场景在子图中没有可展开的候选原因。", ""]
+    else:
+        lines.append("按顺序执行；判据来自前置检查回显的步骤不重复下发命令。")
+        lines.append("")
+        for step in scenario.steps:
+            lines += _render_step(step, heading="##")
+    lines += ["# 根因对照表", ""]
+    lines += _render_cause_table(scenario.root_causes)
+    return "\n".join(lines)
+
+
+def render_package(doc: SkillDoc, *, name: str, description: str) -> Dict[str, str]:
+    """Every file the skill delivers, keyed by its path inside the skill directory."""
+    if not doc.multi:
+        return {"SKILL.md": render_doc(doc, name=name, description=description)}
+    files = {"SKILL.md": render_index(doc, name=name, description=description)}
+    for scenario in doc.scenarios:
+        files[scenario_path(scenario.slug)] = render_scenario(
+            scenario,
+            name=scenario.slug,
+            description=scenario_description(scenario, name),
+        )
+    return files

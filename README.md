@@ -13,8 +13,10 @@ edge.json ─┘                     → 按故障入口展开
                                  → 后校验 verify（出处）：逐条回查原图，没来源的不许留
 ```
 
-**交付物只有 `SKILL.md` 一个文件**：子图不对外暴露。出处清单、子图切片、查询脚本是
-构建期的内部产物，按需导出到 `<输出目录>.internal/`，不随 skill 交付。
+**交付的是整个 skill 目录**：单故障就一个 `SKILL.md`；一份 skill 覆盖多个场景时，
+入口留在 `SKILL.md`（入参 / 前置检查 / 场景跳转表），每个场景的排查步骤与根因对照表
+拆到 `reference/<场景>.md`——读者只走一个场景，不该为别人那几份买单。子图不对外暴露：
+出处清单、子图切片、查询脚本是构建期的内部产物，按需导出到 `<输出目录>.internal/`。
 
 ## 装这个 skill（三选一）
 
@@ -127,8 +129,18 @@ python3 $S build-all examples/subgraph --out out/ --names names.json
 | `# 排查步骤` | `## 步骤N：名称` + 步骤名称 / CLI 命令 / 跳转信息 / 根因定位 | 每条 `has_cause` 一步，判据来自 `confirms` / `supports` / `excludes` |
 | `# 根因对照表` | 根因 / 现象 / 修复CLI和方法 / 复检命令 | `repaired_by` 的命令模板或文字说法 |
 
-一份 skill 也可以覆盖多个故障场景：公共前置检查 + `## 场景跳转表` + 每个场景
-`### 场景X：xxx`（步骤在场景内从 1 计数）+ 按场景分节的根因对照表。
+一份 skill 也可以覆盖多个故障场景。这时产物是一个目录：
+
+```
+bgp-troubleshooting/
+├── SKILL.md                    # 入参列表 / 前置检查（含 ## 场景跳转表）/ 排查步骤（参考文件表）
+└── reference/
+    ├── neighbor-down.md        # # 场景A：… + ## 步骤N + # 根因对照表
+    └── route-flap.md           # # 场景B：…
+```
+
+步骤在各自场景内从 1 计数。参考文件名是英文 slug，在场景清单里填 `slug`——中文场景名
+和技能名一样无法机械翻译，由调用方按语义给出。
 
 ```bash
 python3 $S list  kg/ --export-scenarios scenarios.json   # 导出分组，改名字/删场景

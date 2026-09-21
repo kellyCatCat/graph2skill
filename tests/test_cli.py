@@ -20,7 +20,7 @@ def build(tmp_path, example_dir, *extra, name="isis-neighbor-down"):
 def test_build_writes_a_conforming_skill(tmp_path, example_dir, capsys):
     code, out = build(tmp_path, example_dir)
     assert code == 0
-    # 交付物只有 SKILL.md：子图不对外暴露
+    # 单故障就一个文件；子图不对外暴露
     assert {path.name for path in out.iterdir()} == {"SKILL.md"}
     text = (out / "SKILL.md").read_text(encoding="utf-8")
     assert text.startswith("---\nname: isis-neighbor-down\n")

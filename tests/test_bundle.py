@@ -6,11 +6,11 @@ import pytest
 
 from subkg2skill.cli import main
 from subkg2skill.graph import Graph
-from subkg2skill.lint import lint_text
+from subkg2skill.lint import lint_files, lint_path, lint_text
 from subkg2skill.loader import load
 from subkg2skill.playbook import build_merged_playbook, fault_groups
 from subkg2skill.render import BuildOptions, build_package
-from subkg2skill.template import build_multi_doc, render_doc, scenario_label
+from subkg2skill.template import build_multi_doc, render_doc, render_package, scenario_label
 from tests.conftest import ROOT
 
 MULTI = ROOT / "tests" / "data" / "multisource"
@@ -38,9 +38,29 @@ def doc(scenarios):
     return build_multi_doc(graph, named)
 
 
+def _files(doc):
+    """把一份多场景 doc 渲染成交付的全部文件（场景名机械填充即可）。"""
+    from subkg2skill.render import _assign_scenario_slugs
+
+    _assign_scenario_slugs(doc)
+    return render_package(doc, name="x", description="d")
+
+
 @pytest.fixture()
-def text(doc):
-    return render_doc(doc, name="isis-troubleshooting", description="IS-IS 排障。出现邻居异常时使用。")
+def files(doc):
+    """交付的全部文件：入口 SKILL.md + 每个场景一个 reference/ 文件。"""
+    from subkg2skill.render import _assign_scenario_slugs
+
+    _assign_scenario_slugs(doc, ["neighbor-down", "route-flap"])
+    return render_package(
+        doc, name="isis-troubleshooting", description="IS-IS 排障。出现邻居异常时使用。"
+    )
+
+
+@pytest.fixture()
+def text(files):
+    """入口文件本身。"""
+    return files["SKILL.md"]
 
 
 def test_labels_run_a_b_c():
@@ -76,20 +96,33 @@ def test_routing_rows_cite_a_real_precheck(doc):
                 assert 1 <= number <= len(doc.prechecks)
 
 
-def test_scenario_headings_and_step_levels(text):
-    assert "### 场景A：" in text and "### 场景B：" in text
-    assert "#### 步骤1：" in text
-    assert "\n## 步骤" not in text  # 分场景时步骤是四级标题
+def test_each_scenario_gets_its_own_file(files):
+    assert sorted(files) == ["SKILL.md", "reference/neighbor-down.md", "reference/route-flap.md"]
 
 
-def test_root_cause_tables_are_split_by_scenario(text):
-    table = text.split("# 根因对照表")[1]
-    assert table.count("### 场景") == 2
-    assert table.count("| 未找到根因 |") == 2
+def test_scenario_headings_and_step_levels(files):
+    # 场景标题是它那份文件的一级标题，步骤回到二级——一个文件只讲一个场景，
+    # 不必再为「哪个场景」留一层。
+    scenario = files["reference/neighbor-down.md"]
+    assert scenario.startswith("---\n") and "\n# 场景A：" in scenario
+    assert "\n## 步骤1：" in scenario
+    assert "#### 步骤" not in scenario
 
 
-def test_the_document_passes_the_linter(text):
-    result = lint_text(text)
+def test_the_entry_file_carries_no_steps_or_causes(text):
+    # 读者只走一个场景；把所有场景的步骤都留在入口，等于让每个人都读别人的那份
+    assert "## 步骤1：" not in text and "# 根因对照表" not in text
+    assert "reference/neighbor-down.md" in text
+
+
+def test_each_scenario_file_has_its_own_root_cause_table(files):
+    for path in ("reference/neighbor-down.md", "reference/route-flap.md"):
+        table = files[path].split("# 根因对照表")[1]
+        assert table.count("| 未找到根因 |") == 1
+
+
+def test_the_delivered_files_pass_the_linter(files):
+    result = lint_files(files)
     assert result.ok, [issue.render() for issue in result.errors]
 
 
@@ -105,17 +138,27 @@ def test_lint_catches_a_routing_row_pointing_nowhere(text):
     assert "指向了不存在的场景" in messages or "没有出现在场景跳转表里" in messages
 
 
-def test_lint_catches_wrong_step_heading_level(text):
-    broken = text.replace("#### 步骤1：", "## 步骤1：", 1)
-    messages = " ".join(issue.message for issue in lint_text(broken).issues)
-    assert "步骤标题应为四级" in messages
-
-
-def test_lint_numbers_steps_per_scenario(text):
-    # 第二个场景的步骤如果接着上一个场景编号，应报错
-    broken = text.replace("#### 步骤1：检查两端接口MTU不一致", "#### 步骤4：检查两端接口MTU不一致")
-    messages = " ".join(issue.message for issue in lint_text(broken).issues)
+def test_lint_numbers_steps_from_one_in_every_scenario_file(files):
+    broken = dict(files)
+    broken["reference/route-flap.md"] = broken["reference/route-flap.md"].replace(
+        "## 步骤1：", "## 步骤4：", 1
+    )
+    messages = " ".join(issue.message for issue in lint_files(broken).issues)
     assert "步骤编号必须从 1 起连续" in messages
+
+
+def test_lint_catches_a_promised_file_that_is_missing(files):
+    without = {path: text for path, text in files.items() if path != "reference/route-flap.md"}
+    messages = " ".join(issue.message for issue in lint_files(without).issues)
+    assert "指向的参考文件不存在" in messages
+
+
+def test_lint_catches_a_file_nothing_points_at(files):
+    # 读者到不了它，比内容写错更隐蔽
+    orphan = dict(files)
+    orphan["reference/stray.md"] = files["reference/route-flap.md"]
+    messages = " ".join(issue.message for issue in lint_files(orphan).issues)
+    assert "读者到不了它" in messages
 
 
 def test_single_scenario_output_is_unchanged(scenarios):
@@ -164,8 +207,11 @@ def test_export_then_build(tmp_path, capsys):
     out = tmp_path / "skill"
     assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
     text = (out / "SKILL.md").read_text(encoding="utf-8")
-    assert "## 场景跳转表" in text and "### 场景B：" in text
-    assert lint_text(text).ok
+    assert "## 场景跳转表" in text and "→ **场景B：" in text
+    # slug 没填，用了占位名并报出来
+    assert "reference/scenario-a.md" in text
+    assert (out / "reference" / "scenario-a.md").exists()
+    assert lint_path(out).ok
 
 
 def test_placeholder_name_is_refused(tmp_path, capsys):
@@ -343,15 +389,14 @@ def test_manifest_carries_a_per_scenario_exclude(tmp_path, capsys):
 
     out = tmp_path / "skill"
     assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
-    text = (out / "SKILL.md").read_text(encoding="utf-8")
     # 只在场景A剔除，场景B不受影响。前置检查是两个场景共用的一次采集，
-    # 场景B要读的字段留在那里是对的，所以只看场景A自己的步骤与根因分节。
-    blocks = [
-        block.split("### 场景B")[0]
-        for block in text.split("### 场景A")[1:]
-    ]
-    assert blocks, "场景A 的分节没有生成"
-    assert all("认证" not in block for block in blocks)
+    # 场景B要读的字段留在那里是对的，所以只看场景A自己那份参考文件。
+    files = sorted((out / "reference").glob("*.md"))
+    assert len(files) == 2, "每个场景一个参考文件"
+    scenario_a = next(
+        path for path in files if "# 场景A：" in path.read_text(encoding="utf-8")
+    )
+    assert "认证" not in scenario_a.read_text(encoding="utf-8")
 
 
 def test_selection_does_not_cross_a_fault_boundary():
@@ -464,10 +509,13 @@ def test_steps_cite_the_phase_the_collection_actually_lives_in(split_doc):
 
 def test_shared_phase_says_who_each_step_is_for(split_doc):
     _graph, doc = split_doc
-    text = render_doc(doc, name="x", description="d")
-    assert "适用场景：全部场景" in text
-    assert "**本场景采集**" in text
-    assert lint_text(text).ok, [issue.render() for issue in lint_text(text).errors]
+    files = _files(doc)
+    # 谁该跑这一条，写在共用的入口文件里；下沉的采集跟着它的场景走
+    assert "适用场景：全部场景" in files["SKILL.md"]
+    sunk = [text for path, text in files.items() if path != "SKILL.md"]
+    assert any("**本场景采集**" in text for text in sunk)
+    result = lint_files(files)
+    assert result.ok, [issue.render() for issue in result.errors]
 
 
 def test_a_single_scenario_check_that_routes_stays_shared(doc):
@@ -576,7 +624,8 @@ def test_the_threshold_is_a_ratio_not_a_count():
 
 def test_a_sunk_step_still_renders_and_lints():
     doc = _wide_doc()
-    text = render_doc(doc, name="x", description="d")
-    assert text.count("**本场景采集**") == 2
-    result = lint_text(text)
+    files = _files(doc)
+    sunk = [path for path, text in files.items() if "**本场景采集**" in text]
+    assert len(sunk) == 2
+    result = lint_files(files)
     assert result.ok, [issue.render() for issue in result.errors]

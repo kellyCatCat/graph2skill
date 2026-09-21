@@ -73,12 +73,17 @@ def test_chinese_name_is_rejected():
 
 def test_missing_section():
     broken = GOOD.replace("# 前置检查", "## 前置检查")
-    assert "缺少章节" in messages(broken) or "一级标题必须依次为" in messages(broken)
+    assert "一级标题必须是以下三种之一" in messages(broken)
 
 
 def test_out_of_order_sections():
     text = GOOD.replace("# 入参列表", "# 排查步骤", 1).replace("# 排查步骤\n\n默认", "# 入参列表\n\n默认", 1)
-    assert "一级标题必须依次为" in messages(text)
+    assert "一级标题必须是以下三种之一" in messages(text)
+
+
+def test_a_document_of_no_known_shape_is_rejected():
+    # 三种形态之外的一级标题组合无法判断该按哪套规则查，只能报出来
+    assert "一级标题必须是以下三种之一" in messages(GOOD.replace("# 根因对照表", "# 其他说明"))
 
 
 def test_discontinuous_step_numbers():

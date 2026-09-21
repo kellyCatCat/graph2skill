@@ -31,11 +31,17 @@
 
 ## 产物
 
-交付物只有 `SKILL.md`——**子图不对外暴露**：
+交付的是**整个 skill 目录**（`reference/` 也是 skill 的一部分）——**子图不对外暴露**：
 
 ```
-out/isis-neighbor-down/
+out/isis-neighbor-down/              # 单故障：一个文件
 └── SKILL.md                # 四章节，不放出处
+
+out/bgp-troubleshooting/             # 多场景：入口 + 每个场景一份
+├── SKILL.md                # 入参列表 / 前置检查（含场景跳转表）/ 排查步骤（参考文件表）
+└── reference/
+    ├── neighbor-down.md    # # 场景A：… + # 根因对照表
+    └── route-flap.md       # # 场景B：… + # 根因对照表
 
 out/isis-neighbor-down.internal/     # 构建期中间产物，默认不生成，不随 skill 交付
 ├── evidence.md             # 出处、证据强度、未求值条件、质量标记、被剔除的条目
@@ -44,7 +50,13 @@ out/isis-neighbor-down.internal/     # 构建期中间产物，默认不生成�
 ```
 
 内部产物用 `--with-evidence` / `--with-subgraph` / `--with-script` 按需导出，
-写在 skill 目录**旁边**，所以 `cp -r <skill> ~/.claude/skills/` 不会把它们带走。
+写在 skill 目录**旁边**，所以 `cp -r <skill> ~/.claude/skills/` 会带走 `reference/`
+（它是 skill 的一部分），但不会带走 `.internal/`。
+
+多场景为什么拆文件：**读者只走一个场景**。步骤都留在入口文件，命中这份 skill 的每个读者
+都要加载别人那几份；拆出去之后入口只剩分流所需的部分。这和公共前置的取舍是同一件事
+（留在公共层 = 让不相干的读者多敲一条命令），只是低了一层。单场景不拆——跳转表只有一行、
+文件只有一个，纯属多一层间接。
 
 frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behavior`）作故障现象，
 `aliases` + `attrs.match_phrases` 作适用时机，`attrs.trigger_context` 作补充；
@@ -79,8 +91,10 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 | --- | --- | --- |
 | 前置检查 | 该故障的入口检查，按命令去重 | **所有场景**的入口检查，按命令跨场景去重 |
 | 跳转表 | 无 | `## 场景跳转表`：前置检查步骤 / 判据 / 跳转场景 |
-| 排查步骤 | `## 步骤N` | `### 场景X：名称` + `#### 步骤N`，**每个场景从 1 计数** |
-| 根因对照表 | 一张表 | 按 `### 场景X：名称` 分节，每节一张四列表 |
+| 文件 | 只有 `SKILL.md` | `SKILL.md` + `reference/<场景 slug>.md`，一个场景一份 |
+| 排查步骤 | `## 步骤N`，就在 `SKILL.md` 里 | `SKILL.md` 里只留一张「场景 / 参考文件 / 内容」表；步骤在各自文件里写 `## 步骤N`，**每个场景从 1 计数** |
+| 根因对照表 | `SKILL.md` 末尾一张表 | 每份参考文件末尾各一张，只含本场景的根因 |
+| 参考文件名 | — | 英文 slug，中文场景名无法机械翻译，在场景清单里填 `slug`；没填用 `scenario-a` 占位并报出来 |
 | 跳转"顺序执行步骤 N" | 全文唯一编号 | 指本场景内的第 N 步 |
 
 跳转表的判据取各场景入口检查能观测到的表达式；子图没给可判定的回显时，

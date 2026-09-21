@@ -39,7 +39,15 @@ from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
 from subkg2skill.describe import observation_expression
 from subkg2skill.graph import Graph, Node
-from subkg2skill.lint import CODE_RE, SCENARIO_RE, STEP_RE, _split_sections, _table_rows
+from subkg2skill.lint import (
+    CAUSE_TABLE,
+    CODE_RE,
+    SCENARIO_RE,
+    STEP_RE,
+    _split_sections,
+    _table_rows,
+    document_kind,
+)
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import fault_key
 from subkg2skill.template import (
@@ -416,10 +424,10 @@ def _precheck_claims(lines: Sequence[str]) -> List[Claim]:
     return claims
 
 
-def _step_claims(lines: Sequence[str]) -> List[Claim]:
+def _step_claims(lines: Sequence[str], scenario: str = "") -> List[Claim]:
+    """Claims of a 排查步骤 section, or of one scenario file's own steps."""
     claims: List[Claim] = []
-    scenario = ""
-    where = "排查步骤"
+    where = " ".join(part for part in ("排查步骤", scenario) if part)
     mode = ""
     for line in lines:
         grouping = SCENARIO_RE.match(line)
@@ -532,13 +540,23 @@ def _param_claims(lines: Sequence[str]) -> List[Claim]:
 
 
 def claims_of(text: str) -> List[Claim]:
-    """Every checkable assertion a SKILL.md makes, with where it sits."""
-    sections, _order = _split_sections(text)
+    """Every checkable assertion one delivered file makes, with where it sits.
+
+    A multi-scenario entry file's 排查步骤 is a table of file names, not of
+    knowledge: reading it as content would report every scenario title as a
+    fabricated root cause.  The steps it points at are checked in their own
+    files.
+    """
+    sections, order = _split_sections(text)
+    kind = document_kind(order)
     claims: List[Claim] = []
     claims += _param_claims(sections.get("入参列表", []))
     claims += _precheck_claims(sections.get("前置检查", []))
-    claims += _step_claims(sections.get("排查步骤", []))
-    claims += _table_claims(sections.get("根因对照表", []))
+    if kind == "scenario":
+        claims += _step_claims(sections.get(order[0], []), scenario=order[0])
+    elif kind != "index":
+        claims += _step_claims(sections.get("排查步骤", []))
+    claims += _table_claims(sections.get(CAUSE_TABLE, []))
     return claims
 
 
@@ -645,6 +663,44 @@ def load_graph(paths: Sequence[str]) -> Graph:
     return graph
 
 
+def verify_files(files: Dict[str, str], graph: Graph) -> VerifyResult:
+    """Verify every delivered file of one skill against *graph*.
+
+    Most of a multi-scenario skill's claims live in its scenario files, so
+    checking only ``SKILL.md`` would be checking the cover of the book.
+    """
+    merged = VerifyResult()
+    for path in sorted(files, key=lambda name: (name != "SKILL.md", name)):
+        result = verify_text(files[path], graph)
+        prefix = "" if path == "SKILL.md" or len(files) == 1 else f"{path} "
+        for finding in result.findings:
+            merged.findings.append(
+                Finding(
+                    finding.level,
+                    finding.kind,
+                    finding.text,
+                    f"{prefix}{finding.where}".strip(),
+                    finding.hint,
+                )
+            )
+        for kind, count in result.checked.items():
+            merged.checked[kind] = merged.checked.get(kind, 0) + count
+    return merged
+
+
+def read_skill(path: Path) -> Dict[str, str]:
+    """Every delivered file of a skill directory, keyed by its path inside it."""
+    path = Path(path)
+    if not path.is_dir():
+        return {"SKILL.md": path.read_text(encoding="utf-8")}
+    files = {"SKILL.md": (path / "SKILL.md").read_text(encoding="utf-8")}
+    reference = path / "reference"
+    if reference.is_dir():
+        for child in sorted(reference.glob("*.md")):
+            files[f"reference/{child.name}"] = child.read_text(encoding="utf-8")
+    return files
+
+
 def verify_path(path: Path, graph_inputs: Sequence[str] = ()) -> VerifyResult:
     """Verify a skill directory (or ``SKILL.md``) against the graph it came from.
 
@@ -658,8 +714,9 @@ def verify_path(path: Path, graph_inputs: Sequence[str] = ()) -> VerifyResult:
     document = path / "SKILL.md" if path.is_dir() else path
     if not document.exists():
         raise SubgraphLoadError(f"{document}: 文件不存在")
+    files = read_skill(path)
     if graph_inputs:
-        return verify_text(document.read_text(encoding="utf-8"), load_graph(graph_inputs))
+        return verify_files(files, load_graph(graph_inputs))
     skill_dir = document.parent
     dumped = skill_dir.parent / (skill_dir.name + ".internal") / "subgraph.json"
     if not dumped.exists():
@@ -667,4 +724,4 @@ def verify_path(path: Path, graph_inputs: Sequence[str] = ()) -> VerifyResult:
             f"没有可校验的参照图：用 --graph 指定原始 node/edge 文件"
             f"（或先用 build --with-subgraph 导出 {dumped}）"
         )
-    return verify_text(document.read_text(encoding="utf-8"), load_graph([str(dumped)]))
+    return verify_files(files, load_graph([str(dumped)]))

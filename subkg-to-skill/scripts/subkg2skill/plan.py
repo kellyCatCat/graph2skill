@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill.playbook import fault_key
 from subkg2skill.template import NOT_FOUND, DocScenario, SkillDoc
@@ -244,7 +244,19 @@ def _criteria_count(scenario: DocScenario) -> int:
     )
 
 
-def shape_metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
+def reader_lines(files: Dict[str, str]) -> int:
+    """How much a reader actually loads: the entry file plus their one scenario.
+
+    Not the sum of every file — a reader follows one scenario, and splitting
+    the steps out is precisely what stops the other scenarios from costing
+    them anything.
+    """
+    entry = len(files.get("SKILL.md", "").splitlines())
+    scenarios = [len(text.splitlines()) for path, text in files.items() if path != "SKILL.md"]
+    return entry + (max(scenarios) if scenarios else 0)
+
+
+def shape_metrics(doc: SkillDoc, files: Optional[Dict[str, str]] = None) -> List[Metric]:
     """Is this document the right size to be one skill?
 
     Four numbers decide it, and they pull against each other: a document that
@@ -277,20 +289,21 @@ def shape_metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
             "根因覆盖", f"{causes} 个", f"≥ {TARGET_CAUSES} 个（太少说明边界画得过窄）", causes >= TARGET_CAUSES
         ),
     ]
-    if text:
-        lines = len(text.splitlines())
+    if files:
+        lines = reader_lines(files)
+        where = "入口 + 最大的一个场景" if len(files) > 1 else "命中后整篇进上下文"
         found.append(
             Metric(
                 "文档规模",
                 f"{lines} 行",
-                f"≈ {TARGET_LINES} 行（命中后整篇进上下文）",
+                f"≈ {TARGET_LINES} 行（{where}）",
                 lines <= TARGET_LINES * 1.4,
             )
         )
     return found
 
 
-def metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
+def metrics(doc: SkillDoc, files: Optional[Dict[str, str]] = None) -> List[Metric]:
     """Measure a built document against the delivery thresholds.
 
     These are the numbers that say whether the optimisation actually landed.
@@ -343,7 +356,7 @@ def metrics(doc: SkillDoc, text: str = "") -> List[Metric]:
         Metric("复检覆盖率", f"{recheck_rate:.0%}", "> 70%", recheck_rate > 0.7),
         Metric("「仅定位」根因", f"{locate_only} 个", "记录即可，反映数据完整度", True),
     ]
-    found += shape_metrics(doc, text)
+    found += shape_metrics(doc, files)
     if len(sizes) > 1:
         # Not a defect, but the reader must not be left thinking coverage is even.
         found.append(
