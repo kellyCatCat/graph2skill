@@ -6,6 +6,8 @@ import pytest
 
 from subkg2skill.cli import main
 
+from tests.conftest import ROOT
+
 ISIS = "symptom_7f1c02aa93be4d61b0c5e210"
 
 
@@ -44,11 +46,37 @@ def test_build_rejects_a_chinese_name(tmp_path, example_dir, capsys):
     assert "英文" in capsys.readouterr().err
 
 
-def test_build_needs_an_entry_when_the_graph_has_several(tmp_path, example_dir, capsys):
+def test_a_whole_subgraph_becomes_one_skill(tmp_path, capsys):
+    """不指定入口时，粒度是**一个子图一份**：图里的每个故障成为它的一个场景。"""
+    multi = ROOT / "tests" / "data" / "multisource"
     out = tmp_path / "skill"
-    code = main(["build", str(example_dir), "--out", str(out), "--name", "x"])
-    assert code == 2
-    assert "请用 --entry 指定" in capsys.readouterr().err
+    code = main(["build", str(multi), "--out", str(out), "--name", "x"])
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "场景A：" in output and "场景B：" in output
+    # 一份 skill，不是每个故障各一份
+    assert (out / "SKILL.md").exists()
+    assert sorted(path.name for path in (out / "reference").iterdir()) == [
+        "scenario-a.md",
+        "scenario-b.md",
+    ]
+
+
+def test_a_subgraph_with_one_fault_is_still_one_file(tmp_path, example_dir):
+    # 一个场景不拆：跳转表只有一行，纯属多一层间接
+    out = tmp_path / "skill"
+    assert main(["build", str(example_dir), "--out", str(out), "--name", "x"]) == 0
+    assert [path.name for path in out.iterdir()] == ["SKILL.md"]
+
+
+def test_an_entry_still_builds_just_that_one_fault(tmp_path, example_dir):
+    out = tmp_path / "skill"
+    code = main(
+        ["build", str(example_dir), "--entry", "symptom_7f1c", "--unit", "28.21.3",
+         "--out", str(out), "--name", "x"]
+    )
+    assert code == 0
+    assert list(path.name for path in out.iterdir()) == ["SKILL.md"]
 
 
 def test_entry_accepts_a_name_keyword(tmp_path, example_dir):

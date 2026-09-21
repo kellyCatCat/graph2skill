@@ -1,14 +1,17 @@
 """Command line interface.
 
     build_skill.py list     <子图>                       # 有哪些故障入口，各自建议的 slug
-    build_skill.py build    <子图> --entry <症状> --name <slug> --out <目录>
-    build_skill.py build-all <子图> --out <目录> [--names names.json]
+    build_skill.py build    <子图> --name <slug> --out <目录>          # 一个子图一份
+    build_skill.py build    <子图> --entry <症状> --name <slug> --out <目录>   # 只做一个故障
+    build_skill.py build-all <子图> --out <目录> [--names names.json]  # 每个故障各一份
     build_skill.py inspect  <子图>                       # 规模与分布
     build_skill.py validate <子图>                       # 只做结构校验
     build_skill.py lint     <skill 目录或 SKILL.md>      # 模板符合性检查
     build_skill.py verify   <skill 目录或 SKILL.md> --graph <原图>   # 后校验：逐条回查原图
 
-一个 skill 对应一个故障入口（一个 symptom），文档遵循四章节模板。
+默认粒度是**一个子图一份 skill**：图里的每个故障成为它的一个场景，公共前置共用，
+步骤按场景写进 `reference/`。`--entry` 只做那一个故障；`build-all` 则是每个故障各自
+独立成一份。文档遵循四章节模板。
 """
 
 from __future__ import annotations
@@ -301,7 +304,7 @@ def _print_unnamed_scenarios(package, *, prefix: str = "  ") -> None:
         return
     print(
         f"{prefix}{len(package.unnamed_scenarios)} 个场景没给英文名，用了占位文件名"
-        "（场景清单里填 slug，按语义拟英文名后重跑）："
+        "（按语义拟英文名后重跑：--names 给 {node_id: slug}，或在场景清单里填 slug）："
     )
     for name, slug in package.unnamed_scenarios:
         print(f"{prefix}  {name}  →  reference/{slug}.md")
@@ -738,8 +741,18 @@ def _scenarios_from_manifest(
 def _scenarios_from_groups(
     graph: Graph, args, removed_ids: Optional[Set[str]] = None
 ) -> Tuple[List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
-    """Fall back to the automatic grouping when no manifest is given."""
+    """Group this subgraph's faults into the scenarios of one skill."""
     groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
+    if not groups and args.min_causes and entry_symptoms(graph):
+        # 这张图的故障全都候选原因不足。门槛是用来挑"值不值得单独成一份 skill"的，
+        # 而调用方已经指名要这个子图的 skill——空着手回去不如照实做出来，
+        # 排查步骤会是空的，交付统计和提示都会说。
+        groups = fault_groups(graph, min_causes=0, merge=not args.no_merge)
+        if groups:
+            print(
+                f"提示：{len(groups)} 个故障的候选原因都少于 {args.min_causes} 个，"
+                "仍按本子图生成一份（排查步骤会是空的）"
+            )
     if args.limit:
         groups = groups[: args.limit]
     if not groups:
@@ -814,19 +827,39 @@ def cmd_plan(args) -> int:
 
 
 def cmd_build_scenarios(args, graph: Graph, sources) -> int:
-    """One document covering several faults off a shared collection phase."""
+    """One skill for this whole subgraph: shared collection, then one file per fault.
+
+    The scenarios come from a manifest when there is one, and otherwise from the
+    same automatic grouping ``list`` and ``plan`` show — feeding a subgraph in
+    and getting the skill for it out is the ordinary case, not one that should
+    require exporting a manifest first.
+    """
     removed_ids: Set[str] = set()
-    (
-        manifest_name,
-        manifest_description,
-        named,
-        units,
-        removed,
-        scenario_slugs,
-    ) = _scenarios_from_manifest(graph, Path(args.scenarios), args.exclude, removed_ids)
+    if args.scenarios:
+        (
+            manifest_name,
+            manifest_description,
+            named,
+            units,
+            removed,
+            scenario_slugs,
+        ) = _scenarios_from_manifest(graph, Path(args.scenarios), args.exclude, removed_ids)
+    else:
+        named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
+        manifest_name, manifest_description = "", ""
+        # 自动分组时场景名从 --names 的 {node_id: slug} 取，和 build-all 同一份映射
+        names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
+        scenario_slugs = [
+            names.get(book.symptom.node_id) or names.get(fault_key(book.symptom.name)) or ""
+            for _label, book in named
+        ]
     name = args.name or manifest_name or ""
     if not name or name.startswith("<"):
-        raise RenderError("场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单")
+        raise RenderError(
+            "场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单"
+            if args.scenarios
+            else "模板要求英文技能名，请用 --name 指定这份 skill 的名字"
+        )
     reference = graph.scope_to_units(units) if units else graph
     scoped = reference.without(removed_ids)
 
@@ -899,7 +932,10 @@ def cmd_build(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
-    if args.scenarios:
+    # 默认粒度是**一个子图一份 skill**：不指定入口时，把这张图里的每个故障编成
+    # 一个场景，公共前置共用，步骤各进各的 reference/ 文件。指定了 --entry 才是
+    # 只做那一个故障（`build-all` 则是每个故障各自独立成一份）。
+    if args.scenarios or not (args.entry or args.unit or args.all_units):
         return cmd_build_scenarios(args, graph, sources)
     entries = args.entry or [""]
     symptoms = [_resolve_entry(graph, entry) for entry in entries]
@@ -1061,12 +1097,20 @@ def build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才算一个场景")
     listing.set_defaults(func=cmd_list)
 
-    build = sub.add_parser("build", help="为一个故障入口生成 skill")
+    build = sub.add_parser(
+        "build", help="把一个子图编成一份 skill（--entry 则只做其中一个故障）"
+    )
     _add_input_arguments(build)
     _add_selection_arguments(build)
     _add_output_arguments(build)
     build.add_argument(
-        "--entry", action="append", default=[], help="入口症状：node_id、id 前缀或名称关键词，可重复（多个即合并）"
+        "--entry",
+        action="append",
+        default=[],
+        help=(
+            "只做这一个故障：node_id、id 前缀或名称关键词，可重复（多个即合并）。"
+            "不给则把整个子图编成一份多场景 skill"
+        ),
     )
     build.add_argument(
         "--unit", action="append", default=[], help="诊断单元（章节号/案例 ID），可重复"
@@ -1075,6 +1119,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--scenarios",
         default="",
         help="场景清单 JSON（list --export-scenarios 生成）：一份 skill 含公共前置检查 + 多个场景",
+    )
+    build.add_argument("--min-causes", type=int, default=1, help="自动分组时，至少几个候选原因才算一个场景")
+    build.add_argument(
+        "--no-merge", action="store_true", help="自动分组时不跨来源归并同名症状"
+    )
+    build.add_argument(
+        "--limit", type=int, default=0, help="自动分组时最多收几个场景（0=不限）"
+    )
+    build.add_argument(
+        "--names",
+        default="",
+        help=(
+            "{node_id: slug} 的 JSON：自动分组时每个场景的参考文件名（reference/<slug>.md）。"
+            "不给则用 scenario-a 这类占位名并在输出里列出来；用 --scenarios 时改在清单里填 slug"
+        ),
     )
     build.add_argument(
         "--merge-same-name",
@@ -1088,7 +1147,9 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--description", default="", help="frontmatter 描述（不给则由症状自动生成）")
     build.set_defaults(func=cmd_build)
 
-    build_all = sub.add_parser("build-all", help="给每个故障入口各生成一份 skill")
+    build_all = sub.add_parser(
+        "build-all", help="每个故障各自独立成一份 skill（不是一个子图一份）"
+    )
     _add_input_arguments(build_all)
     _add_selection_arguments(build_all)
     _add_output_arguments(build_all)

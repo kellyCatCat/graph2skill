@@ -2,13 +2,13 @@
 
 本仓库交付**一个 skill**：[`subkg-to-skill/`](subkg-to-skill/)。
 它的作用是——把 JSON 格式的**故障诊断知识图谱子图**（`node.json` + `edge.json`）
-编译成符合模板的**排障 skill**：**一个故障场景一份**（场景 = 一个 symptom × 一个诊断单元），
-文档为「入参列表 → 前置检查 → 排查步骤 → 根因对照表」四章节。
+编译成符合模板的**排障 skill**：**一个子图一份**，图里的每个故障（故障 = 一个 symptom ×
+一个诊断单元）成为它的一个场景，文档为「入参列表 → 前置检查 → 排查步骤 → 根因对照表」四章节。
 
 ```
 node.json ─┐                                           <生成的 skill>/
-           ├─▶ subkg-to-skill ─▶ 载入 → 校验 → 选子图  └── SKILL.md   四章节模板
-edge.json ─┘                     → 按故障入口展开
+           ├─▶ subkg-to-skill ─▶ 载入 → 校验 → 选子图  ├── SKILL.md    入参/前置检查/场景跳转
+edge.json ─┘                     → 按故障入口展开      └── reference/  每个场景的步骤与根因
                                  → 模板自检 lint（形状）
                                  → 后校验 verify（出处）：逐条回查原图，没来源的不许留
 ```
@@ -86,7 +86,7 @@ python3 $S list examples/subgraph --show-causes      # 该不该拆
 python3 $S list examples/subgraph --suggest-merge    # 该不该合
 python3 $S list examples/subgraph --export-scenarios scenarios.json
 
-# 三 · 生成前规划 → 生成
+# 三 · 生成前规划 → 生成（默认一个子图一份；不给清单就用自动分组）
 python3 $S plan  examples/subgraph --scenarios scenarios.json
 python3 $S build examples/subgraph --scenarios scenarios.json --out out/isis
 
@@ -95,17 +95,24 @@ python3 $S lint   out/isis
 python3 $S verify out/isis --graph examples/subgraph
 ```
 
-单个故障一份：
+**一条命令，一个子图一份**（不给 `--entry` 就是这个粒度）：
 
 ```bash
-python3 $S list    examples/subgraph          # 有哪些故障场景（症状 × 诊断单元）
+python3 $S build examples/subgraph --name isis-troubleshooting --names names.json \
+        --out out/isis-troubleshooting
+```
+
+只做子图里的某一个故障：
+
+```bash
+python3 $S list    examples/subgraph          # 有哪些故障（症状 × 诊断单元）
 python3 $S build   examples/subgraph --entry symptom_7f1c --unit 28.21.3 \
         --name isis-neighbor-down --out out/isis-neighbor-down
 python3 $S lint    out/isis-neighbor-down     # 模板符合性检查
 python3 $S verify  out/isis-neighbor-down --graph examples/subgraph   # 后校验：回查原图
 ```
 
-批量（每个入口一个子目录，用 `{node_id: slug}` 映射指定英文名）：
+每个故障各自独立成一份（不是一个子图一份；每个入口一个子目录，用 `{node_id: slug}` 指定英文名）：
 
 ```bash
 python3 $S build-all examples/subgraph --out out/ --names names.json

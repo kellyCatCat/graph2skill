@@ -9,9 +9,10 @@ description: "把 JSON 格式的知识图谱子图（故障诊断图谱的 node.
 observation / repair / escalation；十一类边：has_cause、diagnosed_by、observes、supports /
 confirms / excludes、repaired_by、refines、refers_to、next_step、leads_to）。
 
-输出：**一个故障场景一份 skill**——场景 = 一个 symptom × 一个诊断单元（章节号或案例 ID）。
-知识图谱会把同一个症状在几十个章节、案例里的原因合并到一个节点上，不按诊断单元切分就会把
-互不相干的故障塞进同一份文档。四章节模板是硬性的：入参列表 → 前置检查 → 排查步骤 → 根因对照表。
+输出：**一个子图一份 skill**——图里的每个故障成为它的一个场景。故障 = 一个 symptom ×
+一个诊断单元（章节号或案例 ID）：知识图谱会把同一个症状在几十个章节、案例里的原因合并到一个
+节点上，不按诊断单元切分就会把互不相干的故障塞进同一个场景。四章节模板是硬性的：
+入参列表 → 前置检查 → 排查步骤 → 根因对照表。
 
 **交付的是整个 skill 目录**。单故障就一个 `SKILL.md`；一份 skill 覆盖多个场景时，
 `SKILL.md` 只留入参列表 / 前置检查（含场景跳转表）/ 一张指向各场景的参考文件表，
@@ -127,25 +128,19 @@ python3 scripts/build_skill.py plan <图> --scenarios scenarios.json
 5. **剔除清单**：逐条看"未进入正文的条目"——自动剔除的对不对、还有没有跨领域内容漏网。
    漏网的加进 `exclude` 再 plan 一次；`plan --exclude "MPLS"` 可以先试效果再写进清单。
 
-规划满意了再生成：
+规划满意了再生成。**默认粒度就是一个子图一份**，不给 `--entry` 即可：
 
 ```bash
-python3 scripts/build_skill.py build <图> --scenarios scenarios.json --out out/isis-troubleshooting
-python3 scripts/build_skill.py lint   out/isis-troubleshooting            # 形状
-python3 scripts/build_skill.py verify out/isis-troubleshooting --graph <图>  # 出处
+S=scripts/build_skill.py; O=out/isis-troubleshooting
+python3 $S build  <图> --name isis-troubleshooting --names names.json --out $O  # names.json：每个场景的参考文件名
+python3 $S lint   $O                 # 形状
+python3 $S verify $O --graph <图>    # 出处
 ```
 
-全部子命令与参数见 [`reference/cli.md`](reference/cli.md)。
-
-单个故障一份（不需要多场景时）：
-
-```bash
-python3 scripts/build_skill.py build <图> --entry symptom_7f1c --unit 28.21.3 \
-    --name isis-neighbor-down --out out/isis-neighbor-down
-```
-
-只给一个 `--entry` 时，若别的来源还有同名症状，命令会提示加 `--merge-same-name`。
-批量：`build-all <图> --out out/ --names names.json`（每个故障一个子目录）。
+编排在阶段二动过（改场景名、拆并、剔除）就改用清单：`build <图> --scenarios scenarios.json`，
+产物形态一样，只是场景从哪来不同。另外两种粒度按需要才用：加 `--entry symptom_7f1c --unit 28.21.3`
+只做其中一个故障（产物是单文件四章节；别的来源还有同名症状时会提示加 `--merge-same-name`）；
+`build-all <图> --out out/` 是每个故障各自独立成一份。全部参数见 [`reference/cli.md`](reference/cli.md)。
 
 **必须用脚本生成，不要照着模板手写文档。** 手写会漏掉命令去重、案例内容剔除、
 跳转编号一致性这些机器保证的东西——这些恰恰是生成质量的关键。
