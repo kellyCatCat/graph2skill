@@ -49,17 +49,29 @@ def test_build_rejects_a_chinese_name(tmp_path, example_dir, capsys):
 def test_a_whole_subgraph_becomes_one_skill(tmp_path, capsys):
     """不指定入口时，粒度是**一个子图一份**：图里的每个故障成为它的一个场景。"""
     multi = ROOT / "tests" / "data" / "multisource"
+    names = tmp_path / "names.json"
+    names.write_text(
+        json.dumps({"symptom_manual": "neighbor-down", "symptom_generic": "adjacency-flap"}),
+        encoding="utf-8",
+    )
     out = tmp_path / "skill"
-    code = main(["build", str(multi), "--out", str(out), "--name", "x"])
+    code = main(["build", str(multi), "--out", str(out), "--name", "x", "--names", str(names)])
     assert code == 0
     output = capsys.readouterr().out
     assert "场景A：" in output and "场景B：" in output
     # 一份 skill，不是每个故障各一份
     assert (out / "SKILL.md").exists()
     assert sorted(path.name for path in (out / "reference").iterdir()) == [
-        "scenario-a.md",
-        "scenario-b.md",
+        "adjacency-flap.md",
+        "neighbor-down.md",
     ]
+
+
+def test_scenarios_without_file_names_are_refused(tmp_path, capsys):
+    multi = ROOT / "tests" / "data" / "multisource"
+    out = tmp_path / "skill"
+    assert main(["build", str(multi), "--out", str(out), "--name", "x"]) == 2
+    assert "还没有英文文件名" in capsys.readouterr().err
 
 
 def test_a_subgraph_with_one_fault_is_still_one_file(tmp_path, example_dir):

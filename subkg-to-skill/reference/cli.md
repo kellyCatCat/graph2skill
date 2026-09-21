@@ -103,11 +103,11 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | 参数 | 说明 |
 | --- | --- |
 | `--entry VALUE` | **只做这一个故障**：`node_id`、id 前缀或名称关键词，**可重复**（多个即合并）。不给则把整个子图编成一份多场景 skill |
-| `--names FILE` | `{node_id: slug}` JSON：自动分组时每个场景的参考文件名（`reference/<slug>.md`）。不给则用 `scenario-a` 占位并在输出里列出来；用 `--scenarios` 时改在清单里填 `slug` |
+| `--names FILE` | `{node_id: slug}` JSON：自动分组时每个场景的参考文件名（`reference/<slug>.md`）。**多场景时必给**——没有语义的文件名说不出文件里是哪个故障，缺一个就报错退出（码 2）并列出缺哪几个；用 `--scenarios` 时改在清单里填 `slug` |
 | `--min-causes N` / `--no-merge` / `--limit N` | 自动分组时的分组参数，与 `list` 同义。整张图的故障都不够 `--min-causes` 时会退回 0 并提示——调用方指名要这个子图的 skill，空手报错不如照实做出来 |
 | `--unit SECTION` | 诊断单元（章节号如 `28.21`，或案例 ID 如 `case:loop-001`，前缀匹配）。**可重复**；单症状横跨多个单元时必填 |
 | `--merge-same-name` | 把其他来源里同名（拼写差异归一后）的症状及其单元一并合并进来 |
-| `--scenarios FILE` | 场景清单 JSON：一份 skill 覆盖多个故障，公共前置检查 + 场景跳转表 + 每场景一份 `reference/<slug>.md`。清单里每个场景的 `slug` 就是它的参考文件名，由调用方按语义给英文名，留空则用 `scenario-a` 占位并在构建输出里列出来。给了它就忽略 `--entry`/`--unit` |
+| `--scenarios FILE` | 场景清单 JSON：一份 skill 覆盖多个故障，公共前置检查 + 场景跳转表 + 每场景一份 `reference/<slug>.md`。清单里每个场景的 `slug` 就是它的参考文件名，**必填**，由调用方按语义给英文名；留空就报错退出（码 2）。给了它就忽略 `--entry`/`--unit` |
 | `--all-units` | 合并该症状的全部诊断单元；会把多个故障场景写进一份文档，仅在用户明确要求时用 |
 | `--name SLUG` | **必填**，英文技能名（`^[a-z0-9-]+$`）。模板硬性要求，中文名会报错 |
 | `--description TEXT` | frontmatter 描述；不给则由症状的名称、别名、`match_phrases`、`trigger_context` 生成 |
@@ -214,8 +214,9 @@ python3 scripts/build_skill.py lint out/isis-neighbor-down
 
 每个场景的 `exclude` 只作用于该场景；命令行 `--exclude` 对所有场景生效。
 `slug` 是该场景在 `reference/` 下的文件名（上例生成 `reference/neighbor-down.md`）：
-中文场景名和技能名一样无法机械翻译，由调用方按语义给出；留空则用 `scenario-a` 这类
-占位名，并在构建输出里列出来提醒改。
+中文场景名和技能名一样无法机械翻译，**必须**由调用方按语义给出：留空就报错退出，
+并列出还缺哪几个。文件名是读者和 agent 区分场景的唯一依据，`scenario-a.md` 说不出
+文件里是哪个故障；`plan` 会在 `build` 之前先把缺名字的场景报出来。
 
 `names.json` 形如（键可以是 `node_id`，也可以是 `node_id@诊断单元` 以区分同一症状的不同场景）：
 

@@ -33,6 +33,9 @@ INDEX_SECTIONS = ("入参列表", "前置检查", "排查步骤")
 SCENARIO_H1_RE = re.compile(r"^场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
 #: ``| 场景A：… | reference/neighbor-down.md | … |`` — the index's pointer table.
 REFERENCE_PATH_RE = re.compile(r"^reference/([A-Za-z0-9][A-Za-z0-9-]*)\.md$")
+#: ``scenario-a`` / ``scenario-a16`` — the scenario's label spelled out, which
+#: tells a reader nothing about which fault is in the file.
+PLACEHOLDER_SLUG_RE = re.compile(r"^scenario-[a-z]\d*$")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 #: ``（skill: isis-neighbor-down）`` — the skill a hand-off points at.  A name
 #: that is not a slug names nothing the reader can open.
@@ -289,11 +292,21 @@ def _reference_table(step_lines: Sequence[str]) -> Tuple[List[str], List[LintIss
             )
             continue
         path = row[1].strip().strip("`")
-        if not REFERENCE_PATH_RE.match(path):
+        reference = REFERENCE_PATH_RE.match(path)
+        if not reference:
             issues.append(
                 LintIssue(
                     "error",
                     f"{title} 的参考文件必须是 `reference/<英文名>.md`，当前为 {path!r}",
+                )
+            )
+        elif PLACEHOLDER_SLUG_RE.match(reference.group(1)):
+            # 文件名是读者和 agent 区分场景的唯一依据，编号不是名字。
+            issues.append(
+                LintIssue(
+                    "error",
+                    f"{title} 的参考文件名 {path!r} 只是场景编号，没有语义；"
+                    "按该场景的故障含义改成英文名（如 reference/neighbor-down.md）",
                 )
             )
         elif path in seen:

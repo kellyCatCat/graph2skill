@@ -14,6 +14,18 @@ from subkg2skill.template import build_multi_doc, render_doc, render_package, sc
 from tests.conftest import ROOT
 
 MULTI = ROOT / "tests" / "data" / "multisource"
+#: multisource 夹具的两个场景，按语义起的参考文件名
+SLUGS = ["neighbor-down", "adjacency-flap"]
+
+
+def name_scenarios(manifest_path, name="isis-troubleshooting"):
+    """填好技能名和每个场景的参考文件名——占位名是不许交付的。"""
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["name"] = name
+    for entry, slug in zip(payload["scenarios"], SLUGS):
+        entry["slug"] = slug
+    manifest_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return payload
 
 
 @pytest.fixture()
@@ -39,10 +51,10 @@ def doc(scenarios):
 
 
 def _files(doc):
-    """把一份多场景 doc 渲染成交付的全部文件（场景名机械填充即可）。"""
+    """把一份多场景 doc 渲染成交付的全部文件。参考文件名必须有语义，不能用占位名。"""
     from subkg2skill.render import _assign_scenario_slugs
 
-    _assign_scenario_slugs(doc)
+    _assign_scenario_slugs(doc, [f"fault-{s.label.lower()}-down" for s in doc.scenarios])
     return render_package(doc, name="x", description="d")
 
 
@@ -173,7 +185,9 @@ def test_single_scenario_output_is_unchanged(scenarios):
 
 def test_package_description_covers_every_scenario(scenarios):
     graph, named = scenarios
-    package = build_package(graph, named, BuildOptions(name="isis-troubleshooting"))
+    package = build_package(
+        graph, named, BuildOptions(name="isis-troubleshooting", scenario_slugs=SLUGS)
+    )
     description = [
         line for line in package.files["SKILL.md"].splitlines() if line.startswith("description:")
     ][0]
@@ -184,7 +198,9 @@ def test_package_description_covers_every_scenario(scenarios):
 def test_evidence_lists_every_scenarios_sources(scenarios):
     graph, named = scenarios
     package = build_package(
-        graph, named, BuildOptions(name="isis-troubleshooting", emit_evidence=True)
+        graph,
+        named,
+        BuildOptions(name="isis-troubleshooting", emit_evidence=True, scenario_slugs=SLUGS),
     )
     evidence = package.internal["evidence.md"]
     assert "覆盖 2 个故障场景" in evidence
@@ -201,17 +217,33 @@ def test_export_then_build(tmp_path, capsys):
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["name"].startswith("<")  # 占位符，必须由人填
     assert len(payload["scenarios"]) == 2
-    payload["name"] = "isis-troubleshooting"
-    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    assert all(entry["slug"] == "" for entry in payload["scenarios"])  # 文件名也得人填
+    name_scenarios(manifest)
 
     out = tmp_path / "skill"
     assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
     text = (out / "SKILL.md").read_text(encoding="utf-8")
     assert "## 场景跳转表" in text and "→ **场景B：" in text
-    # slug 没填，用了占位名并报出来
-    assert "reference/scenario-a.md" in text
-    assert (out / "reference" / "scenario-a.md").exists()
+    assert "reference/neighbor-down.md" in text
+    assert (out / "reference" / "neighbor-down.md").exists()
     assert lint_path(out).ok
+
+
+def test_a_scenario_without_a_file_name_is_refused(tmp_path, capsys):
+    """参考文件名必须有语义：`scenario-a.md` 说不出文件里是哪个故障。"""
+    manifest = tmp_path / "scenarios.json"
+    main(["list", str(MULTI), "--export-scenarios", str(manifest)])
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["name"] = "isis-troubleshooting"  # 技能名填了，场景 slug 没填
+    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    capsys.readouterr()
+
+    out = tmp_path / "skill"
+    code = main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)])
+    assert code == 2
+    error = capsys.readouterr().err
+    assert "还没有英文文件名" in error and "scenario-a.md" in error
+    assert not out.exists()  # 拒绝就是拒绝，不留半份产物
 
 
 def test_placeholder_name_is_refused(tmp_path, capsys):
@@ -235,9 +267,7 @@ def test_missing_manifest_is_reported(tmp_path, capsys):
 def test_dry_run_lists_the_scenarios(tmp_path, capsys):
     manifest = tmp_path / "scenarios.json"
     main(["list", str(MULTI), "--export-scenarios", str(manifest)])
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
-    payload["name"] = "isis-troubleshooting"
-    manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    name_scenarios(manifest)
     capsys.readouterr()
 
     out = tmp_path / "skill"
@@ -382,7 +412,7 @@ def test_manifest_carries_a_per_scenario_exclude(tmp_path, capsys):
     main(["list", str(MULTI), "--export-scenarios", str(manifest)])
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert payload["scenarios"][0]["exclude"] == []  # 导出时就留好位置
-    payload["name"] = "isis-troubleshooting"
+    payload = name_scenarios(manifest)
     payload["scenarios"][0]["exclude"] = ["认证"]
     manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     capsys.readouterr()

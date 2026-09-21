@@ -111,6 +111,8 @@ def test_build_reports_metrics_that_fell_out_of_range(tmp_path, capsys):
     main(["list", str(MULTI), "--export-scenarios", str(manifest)])
     payload = json.loads(manifest.read_text(encoding="utf-8"))
     payload["name"] = "isis-troubleshooting"
+    for entry, slug in zip(payload["scenarios"], ["neighbor-down", "adjacency-flap"]):
+        entry["slug"] = slug
     manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     capsys.readouterr()
 

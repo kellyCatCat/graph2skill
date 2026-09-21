@@ -99,7 +99,7 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 | 文件 | 只有 `SKILL.md` | `SKILL.md` + `reference/<场景 slug>.md`，一个场景一份 |
 | 排查步骤 | `## 步骤N`，就在 `SKILL.md` 里 | `SKILL.md` 里只留一张「场景 / 参考文件 / 内容」表；步骤在各自文件里写 `## 步骤N`，**每个场景从 1 计数** |
 | 根因对照表 | `SKILL.md` 末尾一张表 | 每份参考文件末尾各一张，只含本场景的根因 |
-| 参考文件名 | — | 英文 slug，中文场景名无法机械翻译：自动分组时用 `--names` 的 `{node_id: slug}`，用清单时在场景里填 `slug`；没填用 `scenario-a` 占位并报出来 |
+| 参考文件名 | — | **必须有语义的英文 slug**（`neighbor-down.md`，不是 `scenario-a.md`）。中文场景名无法机械翻译：自动分组时用 `--names` 的 `{node_id: slug}`，用清单时在场景里填 `slug`；缺了就拒绝生成，`lint` 也会把占位名报成 ERROR |
 | 跳转"顺序执行步骤 N" | 全文唯一编号 | 指本场景内的第 N 步 |
 
 跳转表的判据取各场景入口检查能观测到的表达式；子图没给可判定的回显时，

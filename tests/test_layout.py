@@ -13,7 +13,7 @@ from subkg2skill.graph import Graph
 from subkg2skill.lint import document_kind, lint_files, lint_path, reference_paths
 from subkg2skill.loader import load
 from subkg2skill.playbook import build_merged_playbook, build_playbook, fault_groups
-from subkg2skill.render import BuildOptions, build_package
+from subkg2skill.render import BuildOptions, RenderError, build_package
 from subkg2skill.verify import verify_files, verify_path
 
 from tests.conftest import ROOT
@@ -109,16 +109,31 @@ def _headings(text):
 def test_the_caller_names_the_scenario_files(multi):
     _graph, package = build(multi, scenario_slugs=["neighbor-down", "adjacency-flap"])
     assert "reference/neighbor-down.md" in package.files
-    assert not package.unnamed_scenarios
 
 
-def test_an_unnamed_scenario_gets_a_placeholder_and_is_reported(multi):
-    # 中文场景名没法机械翻译，和技能名一样得由调用方给；没给就报出来
-    _graph, package = build(multi, scenario_slugs=["neighbor-down"])
-    assert "reference/scenario-b.md" in package.files
-    assert [name for name, _slug in package.unnamed_scenarios] and all(
-        slug.startswith("scenario-") for _name, slug in package.unnamed_scenarios
+def test_a_scenario_nobody_named_is_refused(multi):
+    """`scenario-b.md` 说不出文件里是哪个故障——中文场景名没法机械翻译，
+    和技能名一样必须由调用方按语义给出，给不出就不生成。"""
+    with pytest.raises(RenderError) as excinfo:
+        build(multi, scenario_slugs=["neighbor-down"])
+    message = str(excinfo.value)
+    assert "还没有英文文件名" in message
+    # 报出是哪个场景缺名字，以及怎么补
+    assert "协议邻居关系无法建立" in message and "--names" in message
+
+
+def test_lint_catches_a_placeholder_file_name(multi):
+    # 旧版本生成的、或手工改过的产物，同样不许留占位名
+    _graph, package = build(multi, scenario_slugs=["neighbor-down", "adjacency-flap"])
+    renamed = {
+        ("reference/scenario-b.md" if path == "reference/adjacency-flap.md" else path): text
+        for path, text in package.files.items()
+    }
+    renamed["SKILL.md"] = renamed["SKILL.md"].replace(
+        "reference/adjacency-flap.md", "reference/scenario-b.md"
     )
+    messages = " ".join(issue.message for issue in lint_files(renamed).errors)
+    assert "只是场景编号，没有语义" in messages
 
 
 def test_two_scenarios_never_share_a_file(multi):
@@ -220,7 +235,8 @@ def test_the_exported_manifest_leaves_a_place_for_the_file_names(tmp_path, capsy
     assert all(entry["slug"] == "" for entry in payload["scenarios"])
 
 
-def test_an_unnamed_scenario_is_reported_on_the_command_line(tmp_path, capsys):
+def test_plan_says_which_scenarios_still_need_a_file_name(tmp_path, capsys):
+    """plan 是在 build 之前发现这件事的地方。"""
     manifest = tmp_path / "scenarios.json"
     main(["list", str(MULTI), "--export-scenarios", str(manifest)])
     payload = json.loads(manifest.read_text(encoding="utf-8"))
@@ -228,6 +244,6 @@ def test_an_unnamed_scenario_is_reported_on_the_command_line(tmp_path, capsys):
     manifest.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     capsys.readouterr()
 
-    out = tmp_path / "skill"
-    assert main(["build", str(MULTI), "--scenarios", str(manifest), "--out", str(out)]) == 0
-    assert "没给英文名，用了占位文件名" in capsys.readouterr().out
+    assert main(["plan", str(MULTI), "--scenarios", str(manifest)]) == 0
+    output = capsys.readouterr().out
+    assert "还没有英文文件名" in output and "`build` 会拒绝生成" in output

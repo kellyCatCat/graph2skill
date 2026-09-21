@@ -298,18 +298,6 @@ def _print_omitted(omitted: Sequence, *, prefix: str = "  ", limit: int = 10) ->
         print(f"{prefix}  …另有 {len(omitted) - limit} 条（--with-evidence 导出完整清单）")
 
 
-def _print_unnamed_scenarios(package, *, prefix: str = "  ") -> None:
-    """Scenario files nobody named: the reader picks a file by its name."""
-    if not package.unnamed_scenarios:
-        return
-    print(
-        f"{prefix}{len(package.unnamed_scenarios)} 个场景没给英文名，用了占位文件名"
-        "（按语义拟英文名后重跑：--names 给 {node_id: slug}，或在场景清单里填 slug）："
-    )
-    for name, slug in package.unnamed_scenarios:
-        print(f"{prefix}  {name}  →  reference/{slug}.md")
-
-
 def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
     if not package.internal:
         return
@@ -627,7 +615,6 @@ def _build_one(
         print(f"  提示：{note}")
     _print_internal(package, out_dir)
     _print_omitted(package.omitted)
-    _print_unnamed_scenarios(package)
     _print_lint(result)
     _print_verify(grounding)
     _print_metrics(package.doc, files=package.files)
@@ -804,9 +791,9 @@ def cmd_plan(args) -> int:
     for spec, node_name in removed:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     plan = plan_document(doc)
+    unnamed = _assign_scenario_slugs(doc, scenario_slugs)
     # 文档规模要看渲染后的正文，而且要按交付时的拆分来看——多场景时读者读的是
     # 入口 + 他那一个场景，不是全部场景之和。技能名此时可能还是占位符，不影响行数。
-    _assign_scenario_slugs(doc, scenario_slugs)
     preview = render_package(doc, name="preview", description="预览")
 
     print(f"输入：{'、'.join(sources)}")
@@ -816,6 +803,12 @@ def cmd_plan(args) -> int:
         print(line)
     for line in render_metrics(metrics(doc, preview)):
         print(line)
+    if unnamed:
+        # build 会直接拒绝，在这里先说清楚要补哪几个
+        print(f"以下 {len(unnamed)} 个场景还没有英文文件名，`build` 会拒绝生成：")
+        for scenario_name, _slug in unnamed:
+            print(f"  {scenario_name}")
+        print("  按语义拟英文名：自动分组时 --names 给 {node_id: slug}，用清单时填每个场景的 slug\n")
     if report.issues:
         print(f"载入时有 {len(report.issues)} 条告警/丢弃（build --with-evidence 可导出明细）")
     if not args.scenarios:
@@ -897,7 +890,6 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         for relative in sorted(package.files):
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
         _print_omitted(package.omitted, prefix="")
-        _print_unnamed_scenarios(package, prefix="")
         _print_lint(result, prefix="")
         _print_verify(grounding, prefix="")
         return 0 if (result.ok and grounding.ok) else 1
@@ -917,7 +909,6 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         print(f"  提示：{note}")
     _print_internal(package, out_dir)
     _print_omitted(package.omitted)
-    _print_unnamed_scenarios(package)
     _print_lint(result)
     _print_verify(grounding)
     _print_metrics(package.doc, files=package.files)

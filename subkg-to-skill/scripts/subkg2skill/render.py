@@ -111,8 +111,7 @@ class SkillPackage:
     doc: Optional["SkillDoc"] = None
     #: Causes / checks left out of the document, with the reason for each.
     omitted: List[Tuple[str, str]] = field(default_factory=list)
-    #: Scenarios that got a placeholder file name: ``(场景名, 用了什么名字)``.
-    unnamed_scenarios: List[Tuple[str, str]] = field(default_factory=list)
+
 
     def internal_dir(self, out_dir: Path) -> Path:
         """Sibling directory for build-time material — outside the skill itself."""
@@ -163,13 +162,19 @@ def suggested_slug(symptom: Node, unit: str = "") -> str:
     return normalise_name(f"{base}-{unit_hint}" if unit_hint else base)
 
 
+#: ``scenario-a`` / ``scenario-a16`` — a label, not a name.  Only ever used for
+#: a preview; :func:`build_package` refuses to deliver one.
+PLACEHOLDER_SLUG_RE = re.compile(r"^scenario-[a-z]\d*$")
+
+
 def _assign_scenario_slugs(doc: SkillDoc, supplied: Sequence[str] = ()) -> List[Tuple[str, str]]:
-    """Give every scenario its file name; report the ones nobody named.
+    """Give every scenario its file name; return the ones nobody named.
 
     A Chinese scenario name cannot be turned into a meaningful English file
-    name mechanically — the same reason the skill's own name is the caller's
-    to give.  ``scenario-a`` keeps the build moving and is reported, so it does
-    not quietly ship as the name of a file an agent is meant to pick out.
+    name mechanically — the same reason the skill's own name is the caller's to
+    give.  A placeholder lets ``plan`` measure a document before the names are
+    settled; it is never delivered, because the file name is how a reader and
+    an agent tell one scenario from another.
     """
     if not doc.multi:
         return []
@@ -439,6 +444,15 @@ def build_package(
     for spec, node_name in options.excluded:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     unnamed = _assign_scenario_slugs(doc, options.scenario_slugs)
+    if unnamed:
+        # 文件名是读者和 agent 区分场景的唯一依据，占位名等于没名字。
+        listed = "\n".join(f"    {name}" for name, _slug in unnamed)
+        raise RenderError(
+            f"{len(unnamed)} 个场景还没有英文文件名，它们会写成 reference/scenario-a.md "
+            f"这种没有语义的名字：\n{listed}\n"
+            "请按语义拟英文名后重试——自动分组时用 --names 给 {node_id: slug}，"
+            "用场景清单时在每个场景里填 slug。"
+        )
     package = SkillPackage(
         notes=list(doc.notes),
         stats={
@@ -449,7 +463,6 @@ def build_package(
         },
         doc=doc,
         omitted=list(doc.omitted),
-        unnamed_scenarios=unnamed,
     )
     package.files.update(render_package(doc, name=name, description=description))
     # Everything below is build-time material: it is written beside the skill,
