@@ -146,12 +146,28 @@ python3 scripts/build_skill.py build <图> --entry symptom_7f1c --unit 28.21.3 \
 **必须用脚本生成，不要照着模板手写文档。** 手写会漏掉命令去重、案例内容剔除、
 跳转编号一致性这些机器保证的东西——这些恰恰是生成质量的关键。
 
+#### 批量生成时，让几份 skill 互相认得
+
+图里 `refers_to` / `leads_to` 是来源自己画的那条线——**两份 skill 之间唯一有来源的接缝**。
+生成器把它写成转向留在根因对照表（根因级在它自己那行，症状级在「未找到根因」兜底行）；
+要带上目标 skill 的名字，就得让它知道这一批都生成了什么：
+
+```bash
+python3 scripts/build_skill.py build-all <图> --out out/ --names names.json  # 自己算，不用管
+python3 scripts/build_skill.py build <图> … --skill-index names.json         # 一个子图一次时
+```
+
+没有索引就只写故障名；给了索引却没覆盖到的目标写成「本批次未生成对应 skill」并由 `lint`
+告警——这是真缺口，要么补生成那份，要么交付时说清这条线索到此为止。转向也归 `verify` 管，
+且比别的更严：**目标是图里存在的症状还不够，必须真有一条边指过去**。写法与索引格式见
+[`reference/output-spec.md`](reference/output-spec.md#跨-skill-的转向)。
+
 ### 阶段四 · 后校验：每条内容都回查原图，删掉幻觉
 
 `lint` 查**形状**，`verify` 查**出处**：命令、根因、判据、入参逐条回原图查，查不到就是 ERROR
 （自由文本报 WARNING）——命令只认 `check` / `repair` / `escalation` 的 `command_templates`，
 根因只认 `cause` 的名字，判据只认 `observation` 的表达式/字段/取值，入参只认 `required_slots`
-与正文命令里的 `<参数>`；口径见
+与正文命令里的 `<参数>`，转向只认图里真有 `refers_to` / `leads_to` 指过去的地方；口径见
 [`reference/evidence-rules.md`](reference/evidence-rules.md#后校验什么算有来源)。
 
 `build` 自动跑一遍；**要手动跑的是文档被人或智能体动过之后**——润色、补一句"看起来更完整"的

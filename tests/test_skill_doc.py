@@ -55,8 +55,9 @@ def test_reference_docs_are_all_linked(skill_text):
 
 def test_skill_md_stays_short(skill_text):
     # 入口文档要能一口气读完：细则进 reference/，这里只留流程和判断依据。
-    # 上限随阶段四（后校验）从 200 提到 220，不是给正文注水留的空间。
-    assert len(skill_text.splitlines()) < 220
+    # 上限随阶段四（后校验）从 200 提到 220，又随跨 skill 转向提到 240——
+    # 每次都是真多了一段要做的事，不是给正文注水留的空间。
+    assert len(skill_text.splitlines()) < 240
 
 
 def _run(*args):

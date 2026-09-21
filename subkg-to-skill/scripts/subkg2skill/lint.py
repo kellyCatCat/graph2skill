@@ -15,10 +15,26 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import hygiene
 from subkg2skill.playbook import fault_key
-from subkg2skill.template import NOT_FOUND, PARAM_RE, case_literals, command_signature, param_key
+from subkg2skill.template import (
+    HANDOFF_LABELS,
+    NO_SKILL,
+    NOT_FOUND,
+    PARAM_RE,
+    case_literals,
+    command_signature,
+    param_key,
+)
 
 SECTIONS = ("入参列表", "前置检查", "排查步骤", "根因对照表")
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+#: ``（skill: isis-neighbor-down）`` — the skill a hand-off points at.  A name
+#: that is not a slug names nothing the reader can open.
+SKILL_REF_RE = re.compile(r"skill:\s*([^），]+)")
+#: A hand-off whose fault no skill in this batch covers.
+DANGLING_HANDOFF_RE = re.compile(
+    "(?:" + "|".join(re.escape(label) for label in HANDOFF_LABELS.values()) + r")[：:]\s*「([^」]+)」"
+    r"（" + re.escape(NO_SKILL)
+)
 #: ``## 步骤N`` in a single-fault document, ``#### 步骤N`` inside a scenario.
 STEP_RE = re.compile(r"^(#{2,4})\s*步骤\s*(\d+)\s*[：:]\s*(.+?)\s*$")
 SCENARIO_RE = re.compile(r"^###\s*场景\s*([A-Za-z0-9]+)\s*[：:]\s*(.+?)\s*$")
@@ -582,6 +598,30 @@ def lint_text(text: str) -> LintResult:
                         "确认是否该合并（修复动作不同就别合）",
                     )
                 )
+
+    # -- 跨 skill 的转向 -------------------------------------------------
+    # 转向写的是另一份 skill 的名字，得是这个框架装得进去的 slug；写成中文或
+    # 带空格，读者照着找不到东西可开。
+    for slug in dict.fromkeys(SKILL_REF_RE.findall(text)):
+        if not NAME_RE.match(slug.strip()):
+            issues.append(
+                LintIssue(
+                    "error",
+                    f"转向引用的 skill 名 {slug.strip()!r} 不是合法 slug（^[a-z0-9-]+$）；"
+                    "按目标 skill 的 frontmatter name 写",
+                )
+            )
+    dangling = dict.fromkeys(DANGLING_HANDOFF_RE.findall(text))
+    if dangling:
+        issues.append(
+            LintIssue(
+                "warning",
+                f"{len(dangling)} 处转向的故障本批次没有对应 skill（"
+                + "、".join(list(dangling)[:4])
+                + "）；读者走到这里就断了——补生成这些故障的 skill，"
+                "或在交付时说清楚这几条线索到此为止",
+            )
+        )
 
     # -- 全文格式 -------------------------------------------------------
     for command in _commands_in(text.splitlines()):

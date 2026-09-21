@@ -98,6 +98,15 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
         default=[],
         help="剔除与本场景无关的节点：node_id 或名称关键词（如 MPLS），可重复",
     )
+    parser.add_argument(
+        "--skill-index",
+        default="",
+        help=(
+            "{node_id: slug} 的 JSON：本批次别的 skill 覆盖了哪些故障入口。"
+            "图里跨故障的边（refers_to / leads_to）据此写成可打开的 skill 引用；"
+            "不给也会写出转向，只是没有 slug。build-all 自己算，不用给"
+        ),
+    )
     internal = parser.add_argument_group(
         "构建期中间产物（写到 <输出目录>.internal/，不随 skill 交付）"
     )
@@ -521,6 +530,7 @@ def _build_one(
     sources,
     units: Sequence[str] = (),
     cache: Optional[Dict[str, Graph]] = None,
+    skill_index: Optional[Dict[str, str]] = None,
 ) -> int:
     symptoms = list(symptoms)
     units = [unit for unit in units if unit]
@@ -555,6 +565,7 @@ def _build_one(
         max_steps=args.max_steps,
         shared_coverage=args.shared_coverage,
         excluded=excluded,
+        skill_index=dict(skill_index or {}),
     )
     package = build_package(scoped, playbook, options)
     result = lint_text(package.files["SKILL.md"])
@@ -600,6 +611,29 @@ def _build_one(
     _print_verify(grounding)
     _print_metrics(package.doc, text=package.files["SKILL.md"])
     return 0 if (result.ok and grounding.ok) else 1
+
+
+def _load_slug_map(path: Path, what: str) -> Dict[str, str]:
+    """Read a ``{node_id: slug}`` JSON file (``--names`` / ``--skill-index``)."""
+    if not path.exists():
+        raise RenderError(f"{path}: {what}文件不存在")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
+    if not isinstance(payload, dict):
+        raise RenderError(f"{path}: 应为 {{node_id: slug}} 的对象")
+    return {str(key): str(value) for key, value in payload.items()}
+
+
+def _skill_index(args) -> Dict[str, str]:
+    """The batch's ``node_id -> slug`` map, when the caller supplied one.
+
+    Needed only when the skills are built one run at a time: a single
+    ``build-all`` already knows every slug it is about to write.
+    """
+    path = getattr(args, "skill_index", "")
+    return _load_slug_map(Path(path), "skill 索引") if path else {}
 
 
 def _load_manifest(path: Path) -> Dict:
@@ -782,6 +816,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         max_steps=args.max_steps,
         shared_coverage=args.shared_coverage,
         excluded=removed,
+        skill_index=_skill_index(args),
     )
     package = build_package(scoped, named, options)
     result = lint_text(package.files["SKILL.md"])
@@ -853,7 +888,9 @@ def cmd_build(args) -> int:
             "模板要求英文技能名，请用 --name 指定（`list` 会给出建议 slug，但请按语义改写）"
         )
     out_dir = Path(args.out)
-    code = _build_one(graph, symptoms, args.name, out_dir, args, sources, units)
+    code = _build_one(
+        graph, symptoms, args.name, out_dir, args, sources, units, None, _skill_index(args)
+    )
     if not args.dry_run:
         _install_hint(out_dir, normalise_name(args.name))
     return code
@@ -866,17 +903,7 @@ def cmd_build_all(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
-    names: Dict[str, str] = {}
-    if args.names:
-        path = Path(args.names)
-        if not path.exists():
-            raise RenderError(f"{path}: 命名映射文件不存在")
-        try:
-            names = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
-        if not isinstance(names, dict):
-            raise RenderError(f"{path}: 应为 {{node_id: slug}} 的对象")
+    names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
 
     skipped = 0
     if args.all_units:
@@ -896,6 +923,12 @@ def cmd_build_all(args) -> int:
     failures = 0
     unnamed: List[str] = []
     cache: Dict[str, Graph] = {}
+
+    # Name everything first.  A skill can only point at another one by its
+    # slug, and the batch does not know the slug of a skill it has not reached
+    # yet — so nothing is written until every name is settled.
+    planned: List[Tuple[Sequence[Node], Sequence[str], str]] = []
+    index: Dict[str, str] = _skill_index(args)
     for symptoms, units in scenarios:
         symptom = symptoms[0]
         unit = units[0] if units else ""
@@ -910,8 +943,16 @@ def cmd_build_all(args) -> int:
         if not name:
             name = suggested_slug(symptom, unit)
             unnamed.append(f"{key}  {symptom.name}  →  {name}")
-        slug = normalise_name(name)
-        code = _build_one(graph, symptoms, name, root / slug, args, sources, units, cache)
+        planned.append((symptoms, units, name))
+        # Every merged source of this fault answers to the same skill: a
+        # cross-fault edge may point at any one of their symptom nodes.
+        for node in symptoms:
+            index.setdefault(node.node_id, normalise_name(name))
+
+    for symptoms, units, name in planned:
+        code = _build_one(
+            graph, symptoms, name, root / normalise_name(name), args, sources, units, cache, index
+        )
         failures += 1 if code else 0
         print()
     print(f"共生成 {len(scenarios)} 份 skill，{failures} 份未通过模板检查。")

@@ -26,9 +26,10 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import hygiene, schema
+from subkg2skill.condition import format_condition
 from subkg2skill.describe import observation_expression
 from subkg2skill.graph import Graph, Node, _string_list, _text
-from subkg2skill.playbook import CauseBranch, CheckStep, Playbook, Verdict, fault_key
+from subkg2skill.playbook import CauseBranch, CheckStep, Link, Playbook, Verdict, fault_key
 
 #: ``{x}`` in source templates is re-bracketed to ``<x>``; the name never changes.
 #: ``[ ... ]`` is left alone — in CLI reference syntax it marks an optional
@@ -122,6 +123,18 @@ def cell(text: str, *, limit: int = 300) -> str:
     return flattened
 
 
+def _with_handoffs(text: str, handoffs: Sequence["Handoff"]) -> str:
+    """Append hand-offs to a cell, each one whole.
+
+    They go through :func:`cell` separately so that a long repair cannot push
+    a hand-off past the truncation limit — where the reader is sent next is
+    not the part to lose.
+    """
+    if not handoffs:
+        return text
+    return "<br>".join([text] + [cell(handoff.render()) for handoff in handoffs])
+
+
 def command_templates(node: Node) -> List[str]:
     """Usable command templates of *node*, with extraction noise removed."""
     return command_templates_with_rejections(node)[0]
@@ -206,6 +219,85 @@ class BuildPolicy:
     max_steps: int = 0
     #: How much of the document a collection step must serve to stay shared.
     shared_coverage: float = SHARED_COVERAGE
+    #: ``node_id -> slug`` of the skills this batch produced.  A hand-off names
+    #: the fault either way; the slug only turns it into something the reader
+    #: can open.
+    skill_index: Dict[str, str] = field(default_factory=dict)
+
+
+#: Edges whose target is a *different* fault: the source says so itself, which
+#: is why selection never walks them.  Dropping them entirely, though, leaves
+#: the reader at "结束排查" where the source went on to name somewhere to go —
+#: these are the only sourced seam between two generated skills.
+HANDOFF_EDGES = ("refers_to", "leads_to")
+
+#: Why the reader is being sent on, per edge type.
+HANDOFF_NOTES = {
+    "leads_to": "该根因会引发此故障，处置后复查",
+    "refers_to": "来源把这里转向该处",
+}
+
+#: Rendered markers.  Never a code span: the verifier reads those as commands.
+HANDOFF_LABELS = {"fault": "转向故障", "escalation": "转交"}
+NO_SKILL = "本批次未生成对应 skill"
+
+
+@dataclass
+class Handoff:
+    """Somewhere the source sends the reader once this document runs out."""
+
+    kind: str  # fault | escalation
+    name: str  # the target node's own name, verbatim
+    condition: str = ""  # the edge's condition, unevaluated
+    slug: str = ""  # the skill covering it, when this batch knows of one
+    note: str = ""
+    #: Whether a batch was in play at all.  Without one the generator has no
+    #: idea whether a skill covers this fault, and saying "none was generated"
+    #: would be a claim about a batch that does not exist.
+    batch: bool = False
+
+    def render(self) -> str:
+        text = f"{HANDOFF_LABELS.get(self.kind, self.kind)}：「{self.name}」"
+        # ``，`` not ``；``: the verifier splits fragments on the latter, and a
+        # hand-off cut in half stops being checkable as one.
+        detail: List[str] = []
+        if self.kind == "fault" and (self.slug or self.batch):
+            detail.append(f"skill: {self.slug}" if self.slug else NO_SKILL)
+        if self.condition:
+            detail.append(f"条件：{self.condition}")
+        if detail:
+            text += "（" + "，".join(detail) + "）"
+        return f"{text}——{self.note}" if self.note else text
+
+
+def handoffs_of(
+    links: Sequence[Link], policy: BuildPolicy, *, note: bool = True
+) -> List[Handoff]:
+    """Cross-fault links of one node, as hand-offs the document can render.
+
+    ``leads_to`` between two causes stays inside this document's own subject,
+    so only a symptom (another fault) or an escalation (a person) is a hand-off.
+    """
+    found: List[Handoff] = []
+    seen: Set[str] = set()
+    for link in links:
+        node = link.node
+        if node.node_type not in ("symptom", "escalation") or node.node_id in seen:
+            continue
+        if not _usable(node, policy):
+            continue
+        seen.add(node.node_id)
+        found.append(
+            Handoff(
+                kind="fault" if node.node_type == "symptom" else "escalation",
+                name=node.name,
+                condition=format_condition(link.edge.condition),
+                slug=policy.skill_index.get(node.node_id, ""),
+                note=HANDOFF_NOTES.get(link.edge.edge_type, "") if note else "",
+                batch=bool(policy.skill_index),
+            )
+        )
+    return found
 
 
 @dataclass
@@ -709,19 +801,28 @@ def _build_scenario(
         branch = branch_by_cause.get(fault_key(cause_name))
         fix, recheck, commands = _repair_fix(graph, cause_node, branch)
         repair_commands.extend(commands)
+        # This cause is where the source hands over to another fault; a reader
+        # who lands on this row is the one who needs to know.
+        handoffs = handoffs_of(branch.refers_to + branch.leads_to, policy) if branch else []
         scenario.root_causes.append(
             RootCause(
                 name=cause_name,
                 evidence=cell("；".join(criteria)),
-                fix=cell(fix),
+                fix=_with_handoffs(cell(fix), handoffs),
                 recheck=cell(recheck),
             )
         )
+    # Nothing matched and the document is out of steps — if the source said
+    # where to go next, this is the row that has to say so, instead of
+    # telling the reader to stop where the source did not.
     scenario.root_causes.append(
         RootCause(
             name=NOT_FOUND,
             evidence="全部步骤走完仍未命中任何故障特征",
-            fix="输出已执行的全部检查步骤及结果摘要",
+            fix=_with_handoffs(
+                "输出已执行的全部检查步骤及结果摘要",
+                handoffs_of(playbook.referrals, policy, note=False),
+            ),
             recheck="-",
         )
     )

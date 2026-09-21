@@ -109,6 +109,11 @@ python3 $S verify  out/isis-neighbor-down --graph examples/subgraph   # 后校�
 python3 $S build-all examples/subgraph --out out/ --names names.json
 ```
 
+批量生成的 skill 之间会互相引用：图里 `refers_to` / `leads_to` 指向的另一个故障，写成
+`转向故障：「承载业务中断」（skill: bearer-service-interrupted）` 留在根因对照表里。
+`build-all` 先把整批 slug 定下来再写盘，自己就知道；一个子图跑一次 `build` 时，把同一份
+`{node_id: slug}` 用 `--skill-index` 传进去。
+
 参数全表见 [`subkg-to-skill/reference/cli.md`](subkg-to-skill/reference/cli.md)。
 
 ## 生成的 skill 长什么样
@@ -161,6 +166,7 @@ python3 out/isis-neighbor-down.internal/kg_query.py expand symptom_7f1c --depth 
 | 单故障 skill 里同一条命令每步下发一遍 | 同一条门槛按排查步骤算：被 ≥80% 步骤读到的提成公共前置采一次，各步骤复用；某条回显只指向一个步骤时进 `## 步骤跳转表`，读者采完直接进那一步 |
 | 优化有没有到位说不清 | `plan` / `build` 给交付统计：步骤:根因、判据密度、命令复用率、复检覆盖率等对照健康值 |
 | 润色时补出图里没有的命令/根因 | `verify` 后校验逐条回查原图，没来源的报 ERROR，必须删掉或改回原文 |
+| 批量生成的几份 skill 互不相认，读者走到头就断了 | 图里 `refers_to` / `leads_to` 写成转向留在根因对照表：根因级写在它自己那行，症状级写在「未找到根因」兜底行。`build-all` 自己解析整批 slug，分开跑用 `--skill-index`；转向同样回查原图，**目标存在还不够，必须真有一条边指过去** |
 
 剔除了什么、为什么剔除，构建输出里逐条列出（`--with-evidence` 导出完整清单），不会静默丢失。
 
@@ -216,7 +222,7 @@ python3 $S verify out/isis-neighbor-down --graph examples/subgraph
 | `examples/subgraph/` | 可运行的最小示例：17 节点 / 26 边，六类节点与十一类边全覆盖 |
 | `tests/data/messy/` | 回归用的“脏”子图：跨三个诊断单元、命令重复、案例特定内容、无判据原因 |
 | `tests/data/multisource/` | 同一故障被手册 / 作战树 / 案例库各写一遍的子图，用于验证跨来源合并 |
-| `tests/` | pytest 用例（349 个） |
+| `tests/` | pytest 用例（403 个） |
 
 ## 开发
 

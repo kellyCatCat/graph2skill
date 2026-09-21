@@ -20,6 +20,9 @@ What counts as grounded:
 * **根因** — the name of a ``cause`` node.
 * **判据** — an observation's expression, field or value.
 * **入参** — a symptom's ``required_slots``, or a parameter of a grounded command.
+* **转向** — a node a ``refers_to`` / ``leads_to`` edge actually points at.  The
+  target existing in the graph is not enough: one skill may only send a reader
+  to another where the source drew that link itself.
 * **自由文本** — a substring of some string the export actually carried.
 
 Fixed wording the template itself contributes (``未找到根因``, ``复用前置检查
@@ -40,6 +43,8 @@ from subkg2skill.lint import CODE_RE, SCENARIO_RE, STEP_RE, _split_sections, _ta
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import fault_key
 from subkg2skill.template import (
+    HANDOFF_EDGES,
+    HANDOFF_LABELS,
     NOT_FOUND,
     command_templates,
     command_variants,
@@ -166,6 +171,10 @@ class Ground:
         self.criteria: List[str] = []
         self.params: Set[str] = set()
         self.texts: List[str] = []
+        #: Where the source itself sends the reader on: the name of every node
+        #: a cross-fault edge points at.  Being a symptom in the graph is not
+        #: enough — nothing may send the reader somewhere the source did not.
+        self.handoffs: Dict[str, str] = {}
 
         for node in graph.iter_nodes():
             self.texts.extend(_norm(text) for text in _strings_in(node.raw))
@@ -190,6 +199,10 @@ class Ground:
                         self.params.add(key)
         for edge in graph.edges:
             self.texts.extend(_norm(text) for text in _strings_in(edge.raw))
+            if edge.edge_type in HANDOFF_EDGES:
+                target = graph.get(edge.target)
+                if target is not None and target.node_type in ("symptom", "escalation"):
+                    self.handoffs[_norm(target.name)] = target.name
 
         for command in self.commands:
             for token in parameters_in([command]):
@@ -223,6 +236,14 @@ class Ground:
 
     def has_param(self, name: str) -> bool:
         return param_key(name) in self.params
+
+    def handoff_match(self, name: str) -> Tuple[bool, str]:
+        """``(grounded, source wording)`` for somewhere the document sends the reader."""
+        key = _norm(name)
+        if key in self.handoffs:
+            return True, self.handoffs[key]
+        loose = {fault_key(text): wording for text, wording in self.handoffs.items()}
+        return (False, loose.get(fault_key(name), ""))
 
     def has_text(self, fragment: str) -> bool:
         needle = _norm(fragment)
@@ -307,6 +328,32 @@ def _fragments(text: str) -> List[str]:
     return parts
 
 
+#: ``转向故障：「承载业务中断」（skill: x，条件：y）`` — where the document sends
+#: the reader once it runs out.  Written without code spans on purpose: a span
+#: here would be read as a command and reported as a fabricated one.
+_HANDOFF_RE = re.compile(
+    r"^(?:" + "|".join(re.escape(label) for label in HANDOFF_LABELS.values()) + r")\s*[：:]\s*「([^」]+)」"
+)
+#: The condition carried alongside it, which is sourced text of its own.
+_HANDOFF_CONDITION_RE = re.compile(r"条件[：:]\s*([^）]+)")
+
+
+def _text_claims(fragment: str, where: str) -> List[Claim]:
+    """A rendered fragment as what it actually asserts.
+
+    A hand-off names a node the source points at, not a phrase lifted from the
+    source, so checking it as prose would report every one of them as unfound.
+    """
+    handoff = _HANDOFF_RE.match(fragment)
+    if not handoff:
+        return [Claim("text", fragment, where)]
+    claims = [Claim("link", handoff.group(1), where)]
+    condition = _HANDOFF_CONDITION_RE.search(fragment)
+    if condition:
+        claims.append(Claim("text", condition.group(1).strip(), where))
+    return claims
+
+
 def _routing_claims(row: Sequence[str], where: str) -> List[Claim]:
     """One 场景跳转表 row: a precheck command, a criterion, a scenario label."""
     claims: List[Claim] = []
@@ -353,7 +400,8 @@ def _precheck_claims(lines: Sequence[str]) -> List[Claim]:
         if "采集内容" in line:
             collecting = False
             claims += [Claim("criterion", span, where) for span in _spans(line)]
-            claims += [Claim("text", fragment, where) for fragment in _fragments(_plain(line))]
+            for fragment in _fragments(_plain(line)):
+                claims += _text_claims(fragment, where)
             continue
         if "根因定位" in line:
             collecting = False
@@ -416,7 +464,8 @@ def _step_claims(lines: Sequence[str]) -> List[Claim]:
                 continue
             if "采集内容" in line:
                 claims += [Claim("criterion", span, where) for span in _spans(line)]
-                claims += [Claim("text", fragment, where) for fragment in _fragments(_plain(line))]
+                for fragment in _fragments(_plain(line)):
+                    claims += _text_claims(fragment, where)
                 continue
             if "根因定位" in line:
                 claims += [Claim("criterion", span, where) for span in _spans(line)]
@@ -467,11 +516,9 @@ def _table_claims(lines: Sequence[str]) -> List[Claim]:
             claims += [Claim("criterion", span, where) for span in _spans(row[1])]
         for column in row[2:4]:
             claims += [Claim("command", span, where) for span in _spans(column)]
-            claims += [
-                Claim("text", fragment, where)
-                for fragment in _fragments(_plain(column))
-                if fragment != "-"
-            ]
+            for fragment in _fragments(_plain(column)):
+                if fragment != "-":
+                    claims += _text_claims(fragment, where)
     return claims
 
 
@@ -539,6 +586,22 @@ def verify_text(text: str, graph: Graph) -> VerifyResult:
                         "error", "根因", claim.text, claim.where, "子图里没有同名 cause 节点，应删除"
                     )
                 )
+        elif claim.kind == "link":
+            grounded, wording = ground.handoff_match(claim.text)
+            if grounded:
+                continue
+            result.findings.append(
+                Finding(
+                    "error",
+                    "转向",
+                    claim.text,
+                    claim.where,
+                    f"来源里写作“{wording}”，改回来源写法"
+                    if wording
+                    else "子图里没有 refers_to / leads_to 边指向它；"
+                    "一份 skill 只能把读者交给来源自己指过去的地方",
+                )
+            )
         elif claim.kind == "criterion":
             if not ground.has_criterion(claim.text):
                 result.findings.append(

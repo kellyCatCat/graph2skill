@@ -75,6 +75,8 @@ class BuildOptions:
     shared_coverage: float = SHARED_COVERAGE
     #: 人工剔除的条目：(匹配到它的 exclude 写法, 节点名)
     excluded: Sequence[Tuple[str, str]] = ()
+    #: 本批次已生成的 skill：``node_id -> slug``，用来把跨故障的边写成可打开的引用
+    skill_index: Dict[str, str] = field(default_factory=dict)
 
     def policy(self) -> BuildPolicy:
         return BuildPolicy(
@@ -82,6 +84,7 @@ class BuildOptions:
             keep_undecidable=self.keep_undecidable,
             max_steps=self.max_steps,
             shared_coverage=self.shared_coverage,
+            skill_index=dict(self.skill_index),
         )
 
 
