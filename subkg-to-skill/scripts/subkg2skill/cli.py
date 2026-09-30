@@ -28,10 +28,10 @@ from subkg2skill.graph import Graph, Node, ValidationReport
 from subkg2skill.lint import lint_files, lint_path
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import (
-    cluster_same_name,
     build_merged_playbook,
     build_playbook,
     build_playbooks,
+    cluster_same_name,
     entry_scenarios,
     entry_symptoms,
     fault_groups,
