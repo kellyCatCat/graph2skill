@@ -195,19 +195,6 @@ def test_package_description_covers_every_scenario(scenarios):
     assert "场景跳转表" in description
 
 
-def test_evidence_lists_every_scenarios_sources(scenarios):
-    graph, named = scenarios
-    package = build_package(
-        graph,
-        named,
-        BuildOptions(name="isis-troubleshooting", emit_evidence=True, scenario_slugs=SLUGS),
-    )
-    evidence = package.internal["evidence.md"]
-    assert "覆盖 2 个故障场景" in evidence
-    for node_id in ("symptom_manual", "symptom_tree", "symptom_case", "symptom_generic"):
-        assert node_id in evidence
-
-
 # -- CLI -----------------------------------------------------------------
 def test_export_then_build(tmp_path, capsys):
     manifest = tmp_path / "scenarios.json"
@@ -395,15 +382,14 @@ def test_an_exclusion_that_matches_nothing_is_an_error(capsys):
     assert "没有匹配到任何节点" in capsys.readouterr().err
 
 
-def test_build_records_exclusions_in_the_evidence(tmp_path):
+def test_build_reports_every_exclusion(tmp_path, capsys):
     out = tmp_path / "skill"
     code = main(
         ["build", str(MULTI), "--entry", "symptom_manual", "--merge-same-name",
-         "--exclude", "认证", "--name", "isis", "--out", str(out), "--with-evidence"]
+         "--exclude", "认证", "--name", "isis", "--out", str(out)]
     )
     assert code == 0
-    evidence = (out.parent / (out.name + ".internal") / "evidence.md").read_text(encoding="utf-8")
-    assert "按 exclude 剔除" in evidence
+    assert "按 exclude 剔除" in capsys.readouterr().out
     assert "认证" not in (out / "SKILL.md").read_text(encoding="utf-8")
 
 

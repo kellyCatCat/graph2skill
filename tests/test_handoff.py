@@ -96,10 +96,10 @@ def test_a_batch_that_misses_the_target_says_the_line_stops_here(example_graph):
     assert "本批次没有对应 skill" in warnings and "承载业务中断" in warnings
 
 
-def test_build_all_links_the_skills_it_is_about_to_write(tmp_path, example_dir, capsys):
+def test_build_each_links_the_skills_it_is_about_to_write(tmp_path, example_dir, capsys):
     # 批量时 slug 要先全定下来，否则先生成的那份不知道后生成的那份叫什么
     out = tmp_path / "batch"
-    assert main(["build-all", str(example_dir), "--out", str(out), "--min-causes", "0"]) == 0
+    assert main(["build", str(example_dir), "--each", "--out", str(out), "--min-causes", "0"]) == 0
     written = {path.name for path in out.iterdir()}
     assert len(written) == 2
     isis = next(path for path in out.iterdir() if path.name.startswith("is-is"))

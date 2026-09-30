@@ -10,21 +10,18 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 | 阶段 | 子命令 |
 | --- | --- |
-| 一 · 数据摸底 | `inspect`、`validate` |
+| 一 · 数据摸底 | `inspect` |
 | 二 · 语义判断与编排 | `list`（`--show-causes` / `--suggest-merge` / `--export-scenarios`） |
-| 三 · 生成前规划与生成 | `plan` → `build` / `build-all` |
-| 四 · 交付前检查 | `lint`（形状）→ `verify`（出处） |
+| 三 · 生成前规划与生成 | `plan` → `build`（`--each` 每个故障一份） |
+| 四 · 交付前检查 | `check`：模板检查（形状）+ 后校验（出处） |
 
 | 子命令 | 用途 | 退出码 |
 | --- | --- | --- |
-| `plan` | 生成前预览：每个场景实际会有多少步骤/根因/修复命令，以及还能合并什么。不写盘 | 0 / 2 |
+| `inspect` | 看规模、类型分布、章节、质量标记，并做结构校验 | 0 无错误；1 有校验错误；2 输入错误 |
 | `list` | 列出故障（默认跨来源归并）、规模、触发说法、建议 slug 与生成命令 | 0 / 2 |
-| `build` | 把**一个子图**编成一份 skill（`--entry` 则只做其中一个故障） | 0 成功；1 模板检查有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
-| `build-all` | 每个故障各自**独立成一份** skill——不是一个子图一份 | 同上 |
-| `inspect` | 看规模、类型分布、章节、质量标记 | 0 / 2 |
-| `validate` | 只做结构校验 | 0 无错误；1 有错误；2 输入错误 |
-| `lint` | 检查已生成的 skill 是否符合模板 | 0 通过；1 有 ERROR |
-| `verify` | 后校验：命令/根因/判据/入参逐条回查原图，报出没有来源的内容 | 0 通过；1 有 ERROR；2 输入错误 |
+| `plan` | 生成前预览：每个场景实际会有多少步骤/根因/修复命令，以及还能合并什么。不写盘 | 0 / 2 |
+| `build` | 把**一个子图**编成一份 skill（`--entry` 只做其中一个故障；`--each` 每个故障各自一份） | 0 成功；1 模板检查/后校验有错误或 `--strict` 下有校验错误；2 输入/参数错误 |
+| `check` | 已生成的 skill：模板检查，给了 `--graph` 再逐条回查原图 | 0 通过；1 有 ERROR；2 输入错误 |
 
 **默认粒度是一个子图一份 skill**：`build <子图> --name <slug> --out <目录>` 把这张图里的
 每个故障编成一个场景，公共前置共用，步骤按场景写进 `reference/`。一个故障 = 跨来源归并后的
@@ -37,7 +34,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | --- | --- |
 | 只做子图里的某一个故障 | `--entry`（可重复，多个即合并）；单症状横跨多个单元时再加 `--unit` |
 | 编排要人工过一遍（改场景名、拆并、剔除） | `list --export-scenarios` → 编辑 → `build --scenarios` |
-| 每个故障各自独立成一份 skill | `build-all` |
+| 每个故障各自独立成一份 skill | `build --each` |
 
 ## 输入
 
@@ -51,7 +48,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 支持 `.json`、`.jsonc`（`//`、`/* */`、尾逗号、BOM）、`.jsonl` / `.ndjson`，
 以及 `{"nodes": [...], "edges": [...]}` 整包对象。
 
-## 子图选择（`build` 与 `inspect`）
+## 子图选择（`inspect` / `list` / `plan` / `build`）
 
 都不给就用全部输入；给了则先选**种子节点**，再沿诊断方向向前闭包，
 并把 `supports` / `confirms` / `excludes` / `observes` 反向证据拉回来。
@@ -67,7 +64,7 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 同时给 `--root` 和其他筛选条件时取交集；筛不中任何节点会报错退出（码 2）。
 
-## 输出参数（`build` / `build-all` 共用）
+## 输出参数（`build`）
 
 交付的是**整个 skill 目录**：单故障只有 `SKILL.md`；多场景是 `SKILL.md` +
 `reference/<场景 slug>.md`（一个场景一份，`reference/` 是 skill 的一部分，装的时候一起拷）。
@@ -75,28 +72,15 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 
 | 参数 | 默认 | 说明 |
 | --- | --- | --- |
-| `--out DIR` | 必填 | 输出目录；`build-all` 在其下按 slug 建子目录 |
+| `--out DIR` | 必填 | 输出目录；`--each` 时在其下按 slug 建子目录 |
 | `--include-example-specific` | 关 | 保留 `example_specific` 条目（含案例地址、设备名与组网）；默认剔除，剔了什么在构建输出里逐条列出 |
 | `--keep-undecidable` | 关 | 保留既无判定观测也无修复动作的原因（默认剔除，这类步骤没有信息量） |
 | `--max-steps N` | 0（不限） | 排查步骤上限；被截掉的原因会在构建输出里列出，不会静默丢失 |
 | `--shared-coverage R` | 0.8 | 公共前置的门槛：一条采集要被这个比例的**子场景**读到才留在公共层（两个 → 两个都读；十个 → 八个）。多场景文档里子场景是各个场景，低于门槛的下沉成「本场景采集」；单场景文档里子场景是各个排查步骤，低于门槛且只有一个步骤读的还给那个步骤自己下发。分流判据与采集期判根因的采集不受此限 |
 | `--exclude VALUE` | 无 | 剔除与本场景无关的节点：`node_id` 或名称关键词（如 `MPLS`），可重复。整条链一起走（原因带着它的检查、观测、修复），并逐条列出；**匹配不到任何节点会报错**，避免写错静默漏掉 |
-| `--skill-index FILE` | 无 | `{node_id: slug}` JSON（格式同 `--names`）：本批次别的 skill 覆盖了哪些故障入口。图里 `refers_to` / `leads_to` 指向的故障据此写成 `（skill: <slug>）`。**`build-all` 自己算好，不用给**；分开跑 `build` 时才需要。不给也照样写转向，只是不带 slug；给了却没覆盖到的目标写成「本批次未生成对应 skill」并由 `lint` 告警 |
+| `--skill-index FILE` | 无 | `{node_id: slug}` JSON（格式同 `--names`）：本批次别的 skill 覆盖了哪些故障入口。图里 `refers_to` / `leads_to` 指向的故障据此写成 `（skill: <slug>）`。**`--each` 自己算好，不用给**；分开跑 `build` 时才需要。不给也照样写转向，只是不带 slug；给了却没覆盖到的目标写成「本批次未生成对应 skill」并由模板检查告警 |
 | `--force` | 关 | 覆盖已有目录 |
 | `--dry-run` | 关 | 只打印将写出的文件、模板检查与后校验结果，不落盘 |
-
-### 构建期中间产物（默认都不生成）
-
-写到 **`<输出目录>.internal/`**，和 skill 目录并排——所以 `cp -r <skill>` 永远不会把它们带走。
-它们是内部核对用的，不要随 skill 交付。
-
-| 参数 | 说明 |
-| --- | --- |
-| `--with-evidence` | 导出 `evidence.md`：每条判据/命令/修复的出处、证据强度、未求值条件、被剔除与被拒绝的条目 |
-| `--with-subgraph` | 导出 `subgraph.json`：该故障的子图切片 + meta（来源、生成时间、计数） |
-| `--with-script` | 导出 `kg_query.py`：零依赖查询脚本，读同目录的 `subgraph.json` |
-| `--evidence N`（默认 3） | `evidence.md` 里每个条目展示几条来源 |
-| `--data full\|slim`（默认 `full`） | `subgraph.json` 的详细程度；`slim` 去掉 `canonical_key`、`semantic_review` 等簿记字段并截断证据 |
 
 ### `build` 专有
 
@@ -111,18 +95,21 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 | `--all-units` | 合并该症状的全部诊断单元；会把多个故障场景写进一份文档，仅在用户明确要求时用 |
 | `--name SLUG` | **必填**，英文技能名（`^[a-z0-9-]+$`）。模板硬性要求，中文名会报错 |
 | `--description TEXT` | frontmatter 描述；不给则由症状的名称、别名、`match_phrases`、`trigger_context` 生成 |
+| `--each` | 每个故障各自独立成一份 skill，写到 `<输出目录>/<slug>/`；不能与 `--entry` / `--scenarios` / `--name` 同用 |
 
-### `build-all` 专有
+### `build --each`
+
+每个故障（跨来源归并后的症状 × 诊断单元）各自一份，其余参数含义随之变化：
 
 | 参数 | 说明 |
 | --- | --- |
-| `--names FILE` | `{node_id: slug}` 或 `{"node_id@unit": slug}` 的 JSON 映射；没给的场景会用机械 slug 并在结尾列出，提醒改名 |
+| `--names FILE` | 每份 skill 的名字：`{node_id: slug}` 或 `{"node_id@unit": slug}`；没给的用机械 slug 并在结尾列出，提醒改名 |
 | `--limit N` | 最多生成多少份（0=不限） |
 | `--min-causes N` | 候选原因少于 N 个的场景不生成（默认 1；这类 skill 排查步骤会是空的） |
 | `--all-units` | 每个症状一份，不按诊断单元拆分 |
 | `--no-merge` | 不按故障跨来源归并，一个场景一份 |
 
-`build-all` 先把整批的 slug 全定下来，再逐份写盘：跨故障的转向要写出目标 skill 的名字，
+`--each` 先把整批的 slug 全定下来，再逐份写盘：跨故障的转向要写出目标 skill 的名字，
 边生成边命名的话，先写的那份不知道后写的那份叫什么。所以这里不需要 `--skill-index`。
 
 ### `list` 专有
@@ -149,29 +136,24 @@ python3 scripts/build_skill.py <子命令> [输入...] [参数]
 输出的「步骤 / 根因 / 修复命令」是**文档里实际会有的量**（已算进剔除、命令去重、根因折叠），
 不是图上的原始计数；「复用的公共前置检查」列出该场景的步骤读了哪几条采集步骤。
 
-### `lint`
+### `check`
 
 ```bash
-python3 scripts/build_skill.py lint <skill 目录或 SKILL.md> [更多路径...]
-```
-
-### `verify`
-
-```bash
-python3 scripts/build_skill.py verify <skill 目录或 SKILL.md> [更多路径...] --graph <原图>
+python3 scripts/build_skill.py check <skill 目录或 SKILL.md> [更多路径...] --graph <原图>
 ```
 
 | 参数 | 说明 |
 | --- | --- |
-| `--graph PATH` | 回查用的**原图**（node/edge 文件或目录），可重复。不给时去找 `<skill>.internal/subgraph.json`（需先 `build --with-subgraph`），找不到就报错 |
+| `--graph PATH` | 回查用的**原图**（node/edge 文件或目录），可重复。不给就只做模板检查，并提示后校验被跳过——交付前必须补跑 |
 
-命令只认 `check` / `repair` / `escalation` 的 `command_templates`（经与生成器相同的清洗：
+**模板检查**查形状：四章节顺序、步骤编号、跳转目标、根因可查、入参覆盖、占位符写法。
+**后校验**查出处：命令只认 `check` / `repair` / `escalation` 的 `command_templates`（经与生成器相同的清洗：
 `{x}` 规整成 `<x>`、去设备提示符、缩写与全称折叠），根因只认 `cause` 的名字，
 判据只认 `observation` 的表达式/字段/取值，入参只认 `required_slots` 与正文命令里的 `<参数>`；
 查不到的报 ERROR，自由文本查不到原文报 WARNING。模板自带的固定说法不算断言，不会误报。
 判定口径见 [`evidence-rules.md`](evidence-rules.md#后校验什么算有来源)。
 
-`build` / `build-all` 会自动对自己的产物跑一遍（对照的是**剔除前**的图：`exclude` 是编排决定，
+`build` 会自动对自己的产物跑一遍两道检查（对照的是**剔除前**的图：`exclude` 是编排决定，
 不是"图里没有"），有 ERROR 退出码为 1。
 
 ## 例子
@@ -185,12 +167,12 @@ python3 scripts/build_skill.py list /data/kg
 python3 scripts/build_skill.py build /data/kg --entry symptom_7f1c --unit 28.21.3 \
     --name isis-neighbor-down --out out/isis-neighbor-down --dry-run
 
-# 按章节切一块，批量生成并指定英文名
-python3 scripts/build_skill.py build-all /data/node.json /data/edge.json \
+# 按章节切一块，每个故障一份并指定英文名
+python3 scripts/build_skill.py build /data/node.json /data/edge.json --each \
     --section 28.21 --out out/ --names names.json
 
-# 自检
-python3 scripts/build_skill.py lint out/isis-neighbor-down
+# 交付前检查（改过文档后必须重跑）
+python3 scripts/build_skill.py check out/isis-neighbor-down --graph /data/kg
 ```
 
 `scenarios.json` 形如：
@@ -230,13 +212,13 @@ python3 scripts/build_skill.py lint out/isis-neighbor-down
 
 ## 性能
 
-全量 17,392 节点 / 17,088 边的图，`build-all` 会产出 1,352 份 skill（每个故障入口一份）；
+全量 17,392 节点 / 17,088 边的图，`build --each` 会产出 1,352 份 skill（每个故障入口一份）；
 每份只带自己那一片子图，所以单份体积很小。先用 `--section` / `--vendor` / `--limit` 收窄范围
 通常更实用。
 
 ## 交付统计
 
-`plan` 末尾、以及 `build` 之后会给出这张表。它衡量的不是文档合不合模板（那是 `lint` 的事），
+`plan` 末尾、以及 `build` 之后会给出这张表。它衡量的不是文档合不合模板（那是 `check` 的事），
 而是这一轮优化有没有真的落地——一份结构挑不出毛病的文档，仍然可能每步一条命令、每步一条判据。
 
 | 指标 | 健康值 | 不达标意味着 | 回哪一步 |

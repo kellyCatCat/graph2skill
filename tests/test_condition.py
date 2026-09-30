@@ -1,12 +1,8 @@
-"""Condition rendering, including the source-side spellings."""
+"""Condition and observation rendering, including the source-side spellings."""
 
-from subkg2skill.condition import (
-    condition_is_binding,
-    describe_edge_condition,
-    format_condition,
-    format_value,
-)
-from subkg2skill.graph import Edge
+from subkg2skill.condition import format_condition, format_value, observation_expression
+from subkg2skill.graph import Node
+from tests.conftest import make_node
 
 
 def test_atomic_condition_reads_as_a_sentence():
@@ -93,36 +89,19 @@ def test_format_value_keeps_types_distinct():
     assert format_value([1, "a"]) == "[1, a]"
 
 
-def test_edge_condition_states_it_is_unevaluated():
-    edge = Edge(
-        {
-            "edge_id": "edge_1",
-            "edge_type": "supports",
-            "source": "observation_a",
-            "target": "cause_b",
-            "condition": {"type": "text", "expression": "对端未收到 Hello"},
-            "condition_status": "text_only",
-        }
+def _observation(name, attrs):
+    return Node(make_node("observation_x", "observation", name, attrs=attrs))
+
+
+def test_observation_prefers_the_normalized_expression():
+    observation = _observation("邻居 Init", {"normalized_expression": "状态 == 'Init'"})
+    assert observation_expression(observation) == "状态 == 'Init'"
+
+
+def test_observation_falls_back_to_field_operator_value():
+    observation = _observation(
+        "收光低",
+        {"object_type": "光模块", "field": "收光功率", "operator": "lt", "value": -18, "unit": "dBm"},
     )
-    rendered = describe_edge_condition(edge)
-    assert "未求值" in rendered and "对端未收到 Hello" in rendered
-    assert condition_is_binding(edge)
-
-
-def test_unconditional_edge_has_no_condition_line():
-    edge = Edge({"edge_type": "supports", "condition": None, "condition_status": "unconditional"})
-    assert describe_edge_condition(edge) == ""
-    assert not condition_is_binding(edge)
-
-
-def test_original_condition_is_shown_when_condition_is_empty():
-    edge = Edge(
-        {
-            "edge_type": "supports",
-            "condition": None,
-            "condition_status": "preserved_unparsed",
-            "original_condition": {"type": "atomic", "expression": "原文条件"},
-        }
-    )
-    rendered = describe_edge_condition(edge)
-    assert "原文条件" in rendered and "未规范化" in rendered
+    rendered = observation_expression(observation)
+    assert "光模块.收光功率" in rendered and "小于" in rendered and "-18" in rendered and "(dBm)" in rendered

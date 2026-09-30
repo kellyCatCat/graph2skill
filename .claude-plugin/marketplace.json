@@ -9,7 +9,7 @@
       "name": "subkg-to-skill",
       "source": "./subkg-to-skill",
       "displayName": "子图 → skill 生成器",
-      "description": "把 JSON 格式的故障诊断知识图谱子图（node.json + edge.json）编译成符合四章节模板的排障 skill：入参列表 / 前置检查 / 排查步骤 / 根因对照表，附出处与查询脚本。",
+      "description": "把 JSON 格式的故障诊断知识图谱子图（node.json + edge.json）编译成符合四章节模板的排障 skill：入参列表 / 前置检查 / 排查步骤 / 根因对照表，生成后逐条回查原图。",
       "license": "MIT",
       "keywords": ["knowledge-graph", "fault-diagnosis", "skill-generator", "ip-ran"]
     }

@@ -1,17 +1,15 @@
 """Command line interface.
 
-    build_skill.py list     <子图>                       # 有哪些故障入口，各自建议的 slug
-    build_skill.py build    <子图> --name <slug> --out <目录>          # 一个子图一份
-    build_skill.py build    <子图> --entry <症状> --name <slug> --out <目录>   # 只做一个故障
-    build_skill.py build-all <子图> --out <目录> [--names names.json]  # 每个故障各一份
-    build_skill.py inspect  <子图>                       # 规模与分布
-    build_skill.py validate <子图>                       # 只做结构校验
-    build_skill.py lint     <skill 目录或 SKILL.md>      # 模板符合性检查
-    build_skill.py verify   <skill 目录或 SKILL.md> --graph <原图>   # 后校验：逐条回查原图
+    build_skill.py inspect <子图>                        # 规模、分布与结构校验
+    build_skill.py list    <子图>                        # 故障分组、根因构成、合并建议
+    build_skill.py plan    <子图> [--scenarios s.json]   # 生成前预览规模与交付统计
+    build_skill.py build   <子图> --name <slug> --out <目录>                # 一个子图一份
+    build_skill.py build   <子图> --entry <症状> --name <slug> --out <目录>  # 只做一个故障
+    build_skill.py build   <子图> --each --out <目录>                       # 每个故障各一份
+    build_skill.py check   <skill 目录> --graph <原图>   # 模板检查 + 后校验
 
 默认粒度是**一个子图一份 skill**：图里的每个故障成为它的一个场景，公共前置共用，
-步骤按场景写进 `reference/`。`--entry` 只做那一个故障；`build-all` 则是每个故障各自
-独立成一份。文档遵循四章节模板。
+步骤按场景写进 `reference/`。文档遵循四章节模板。
 """
 
 from __future__ import annotations
@@ -108,24 +106,8 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "{node_id: slug} 的 JSON：本批次别的 skill 覆盖了哪些故障入口。"
             "图里跨故障的边（refers_to / leads_to）据此写成可打开的 skill 引用；"
-            "不给也会写出转向，只是没有 slug。build-all 自己算，不用给"
+            "不给也会写出转向，只是没有 slug。--each 自己算，不用给"
         ),
-    )
-    internal = parser.add_argument_group(
-        "构建期中间产物（写到 <输出目录>.internal/，不随 skill 交付）"
-    )
-    internal.add_argument(
-        "--with-evidence", action="store_true", help="导出 evidence.md：出处、证据强度、被剔除的条目"
-    )
-    internal.add_argument(
-        "--with-subgraph", action="store_true", help="导出 subgraph.json：该故障的子图切片"
-    )
-    internal.add_argument(
-        "--with-script", action="store_true", help="导出 kg_query.py（需配合 --with-subgraph）"
-    )
-    internal.add_argument("--evidence", type=int, default=3, help="evidence.md 里每个条目展示的来源条数")
-    internal.add_argument(
-        "--data", choices=("full", "slim"), default="full", help="subgraph.json 的详细程度"
     )
 
 
@@ -228,7 +210,7 @@ def _resolve_entry(graph: Graph, entry: str) -> Node:
             return symptoms[0]
         raise RenderError(
             f"子图里有 {len(symptoms)} 个故障入口，请用 --entry 指定一个"
-            "（先跑 `list` 看清单），或用 build-all 批量生成"
+            "（先跑 `list` 看清单），或用 build --each 批量生成"
         )
     if entry in graph and graph.nodes[entry].node_type == "symptom":
         return graph.nodes[entry]
@@ -288,24 +270,14 @@ def _print_verify(result: VerifyResult, *, prefix: str = "  ") -> None:
 
 
 def _print_omitted(omitted: Sequence, *, prefix: str = "  ", limit: int = 10) -> None:
-    """List what was left out — evidence.md no longer ships, so say it here."""
+    """List what was left out, with the reason for each."""
     if not omitted:
         return
     print(f"{prefix}未进入正文的条目（{len(omitted)} 条）：")
     for name, reason in list(omitted)[:limit]:
         print(f"{prefix}  {name}：{reason}")
     if len(omitted) > limit:
-        print(f"{prefix}  …另有 {len(omitted) - limit} 条（--with-evidence 导出完整清单）")
-
-
-def _print_internal(package, out_dir: Path, *, prefix: str = "  ") -> None:
-    if not package.internal:
-        return
-    print(
-        f"{prefix}构建期中间产物：{package.internal_dir(out_dir)}（"
-        + "、".join(sorted(package.internal))
-        + "）——内部核对用，不要随 skill 交付"
-    )
+        print(f"{prefix}  …另有 {len(omitted) - limit} 条")
 
 
 def _print_metrics(doc, *, prefix: str = "  ", files=None) -> None:
@@ -480,6 +452,7 @@ def cmd_list(args) -> int:
 
 
 def cmd_inspect(args) -> int:
+    """Phase 1: what the export holds, and whether it loads cleanly."""
     graph, report, sources = _load_graph(args)
     graph = _select(graph, args)
     print(f"输入：{'、'.join(sources)}")
@@ -511,18 +484,7 @@ def cmd_inspect(args) -> int:
     playbooks = build_playbooks(graph)
     print(f"\n可生成 skill：{len(playbooks)} 份（一个故障入口一份，用 list 看清单）")
     print()
-    _print_report(report)
-    return 0
-
-
-def cmd_validate(args) -> int:
-    graph, report, sources = _load_graph(args)
-    print(f"输入：{'、'.join(sources)}")
-    print(f"通过校验的节点 {len(graph)}；关系 {len(graph.edges)}")
     _print_report(report, limit=args.limit)
-    orphans = graph.orphan_nodes()
-    if orphans:
-        print(f"\n提示：{len(orphans)} 个节点没有任何关系。")
     if report.errors:
         print(f"\n发现 {len(report.errors)} 条错误。")
         return 1
@@ -561,13 +523,6 @@ def _build_one(
     options = BuildOptions(
         name=name,
         description=args.description,
-        evidence_limit=args.evidence,
-        data_mode=args.data,
-        emit_evidence=args.with_evidence,
-        emit_subgraph=args.with_subgraph,
-        emit_script=args.with_script,
-        sources=sources,
-        unit="、".join(units),
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
@@ -613,7 +568,6 @@ def _build_one(
     )
     for note in package.notes:
         print(f"  提示：{note}")
-    _print_internal(package, out_dir)
     _print_omitted(package.omitted)
     _print_lint(result)
     _print_verify(grounding)
@@ -638,7 +592,7 @@ def _skill_index(args) -> Dict[str, str]:
     """The batch's ``node_id -> slug`` map, when the caller supplied one.
 
     Needed only when the skills are built one run at a time: a single
-    ``build-all`` already knows every slug it is about to write.
+    ``build --each`` already knows every slug it is about to write.
     """
     path = getattr(args, "skill_index", "")
     return _load_slug_map(Path(path), "skill 索引") if path else {}
@@ -810,7 +764,7 @@ def cmd_plan(args) -> int:
             print(f"  {scenario_name}")
         print("  按语义拟英文名：自动分组时 --names 给 {node_id: slug}，用清单时填每个场景的 slug\n")
     if report.issues:
-        print(f"载入时有 {len(report.issues)} 条告警/丢弃（build --with-evidence 可导出明细）")
+        print(f"载入时有 {len(report.issues)} 条告警/丢弃（inspect 可看明细）")
     if not args.scenarios:
         print(
             "把编排固化下来：list --export-scenarios scenarios.json（改名/调整分组）"
@@ -840,7 +794,7 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     else:
         named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
         manifest_name, manifest_description = "", ""
-        # 自动分组时场景名从 --names 的 {node_id: slug} 取，和 build-all 同一份映射
+        # 自动分组时场景名从 --names 的 {node_id: slug} 取，和 --each 同一份映射
         names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
         scenario_slugs = [
             names.get(book.symptom.node_id) or names.get(fault_key(book.symptom.name)) or ""
@@ -859,13 +813,6 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
     options = BuildOptions(
         name=name,
         description=args.description or manifest_description,
-        evidence_limit=args.evidence,
-        data_mode=args.data,
-        emit_evidence=args.with_evidence,
-        emit_subgraph=args.with_subgraph,
-        emit_script=args.with_script,
-        sources=sources,
-        unit="、".join(dict.fromkeys(units)),
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
@@ -907,7 +854,6 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
         print(f"    场景{scenario_label(index)}：{scenario_name}")
     for note in package.notes:
         print(f"  提示：{note}")
-    _print_internal(package, out_dir)
     _print_omitted(package.omitted)
     _print_lint(result)
     _print_verify(grounding)
@@ -923,9 +869,13 @@ def cmd_build(args) -> int:
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
     graph = _select(graph, args)
+    if args.each:
+        if args.entry or args.scenarios or args.name:
+            raise RenderError("--each 按故障逐个命名输出，不能与 --entry / --scenarios / --name 同用")
+        return cmd_build_each(args, graph, sources)
     # 默认粒度是**一个子图一份 skill**：不指定入口时，把这张图里的每个故障编成
     # 一个场景，公共前置共用，步骤各进各的 reference/ 文件。指定了 --entry 才是
-    # 只做那一个故障（`build-all` 则是每个故障各自独立成一份）。
+    # 只做那一个故障（--each 则是每个故障各自独立成一份）。
     if args.scenarios or not (args.entry or args.unit or args.all_units):
         return cmd_build_scenarios(args, graph, sources)
     entries = args.entry or [""]
@@ -955,13 +905,8 @@ def cmd_build(args) -> int:
     return code
 
 
-def cmd_build_all(args) -> int:
-    graph, report, sources = _load_graph(args)
-    if args.strict and report.errors:
-        _print_report(report)
-        print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
-        return 1
-    graph = _select(graph, args)
+def cmd_build_each(args, graph: Graph, sources) -> int:
+    """Every fault in the subgraph as a skill of its own."""
     names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
 
     skipped = 0
@@ -1032,25 +977,21 @@ def cmd_build_all(args) -> int:
     return 1 if failures else 0
 
 
-def cmd_verify(args) -> int:
-    """Check a finished skill back against the graph it claims to come from."""
-    graph_inputs = list(args.graph)
+def cmd_check(args) -> int:
+    """Shape against the template, then provenance against the original graph."""
     failures = 0
     for target in args.targets:
         print(f"{target}:")
-        result = verify_path(Path(target), graph_inputs)
-        _print_verify(result)
-        failures += 1 if not result.ok else 0
-    return 1 if failures else 0
-
-
-def cmd_lint(args) -> int:
-    failures = 0
-    for target in args.targets:
         result = lint_path(Path(target))
-        print(f"{target}:")
         _print_lint(result)
-        failures += 1 if not result.ok else 0
+        ok = result.ok
+        if args.graph:
+            grounding = verify_path(Path(target), list(args.graph))
+            _print_verify(grounding)
+            ok = ok and grounding.ok
+        else:
+            print("  后校验：未给 --graph，已跳过（交付前必须对原图补跑）")
+        failures += 0 if ok else 1
     return 1 if failures else 0
 
 
@@ -1116,14 +1057,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-merge", action="store_true", help="自动分组时不跨来源归并同名症状"
     )
     build.add_argument(
-        "--limit", type=int, default=0, help="自动分组时最多收几个场景（0=不限）"
+        "--limit", type=int, default=0, help="自动分组时最多收几个场景 / --each 时最多生成几份（0=不限）"
     )
     build.add_argument(
         "--names",
         default="",
         help=(
-            "{node_id: slug} 的 JSON：自动分组时每个场景的参考文件名（reference/<slug>.md）。"
-            "不给则用 scenario-a 这类占位名并在输出里列出来；用 --scenarios 时改在清单里填 slug"
+            "{node_id: slug} 的 JSON：自动分组时每个场景的参考文件名（reference/<slug>.md），"
+            "--each 时每份 skill 的名字。用 --scenarios 时改在清单里填 slug"
         ),
     )
     build.add_argument(
@@ -1132,37 +1073,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="把其他来源里同名的症状一并合并进来（手册 + 作战树 + 案例库）",
     )
     build.add_argument(
-        "--all-units", action="store_true", help="合并该症状的全部诊断单元（会混合多个故障场景）"
+        "--all-units",
+        action="store_true",
+        help="合并该症状的全部诊断单元（会混合多个故障场景）；--each 时每个症状一份、不按单元拆",
+    )
+    build.add_argument(
+        "--each", action="store_true", help="每个故障各自独立成一份 skill，写到 <输出目录>/<slug>/"
     )
     build.add_argument("--name", default="", help="技能名（英文 slug，模板硬性要求）")
     build.add_argument("--description", default="", help="frontmatter 描述（不给则由症状自动生成）")
     build.set_defaults(func=cmd_build)
 
-    build_all = sub.add_parser(
-        "build-all", help="每个故障各自独立成一份 skill（不是一个子图一份）"
-    )
-    _add_input_arguments(build_all)
-    _add_selection_arguments(build_all)
-    _add_output_arguments(build_all)
-    build_all.add_argument("--names", default="", help="{node_id: slug} 的 JSON 映射文件")
-    build_all.add_argument("--limit", type=int, default=0, help="最多生成多少份（0=不限）")
-    build_all.add_argument("--all-units", action="store_true", help="每个症状一份，不按诊断单元拆分")
-    build_all.add_argument(
-        "--no-merge", action="store_true", help="不按故障归并同名症状，一个场景一份"
-    )
-    build_all.add_argument("--min-causes", type=int, default=1, help="至少几个候选原因才生成")
-    build_all.add_argument("--description", default="", help="统一的 frontmatter 描述（一般不用）")
-    build_all.set_defaults(func=cmd_build_all)
-
-    inspect = sub.add_parser("inspect", help="查看子图规模与分布")
+    inspect = sub.add_parser("inspect", help="查看子图规模与分布，并做结构校验（有错误退出码为 1）")
     _add_input_arguments(inspect)
     _add_selection_arguments(inspect)
+    inspect.add_argument("--limit", type=int, default=20, help="校验明细最多打印多少条")
     inspect.set_defaults(func=cmd_inspect)
-
-    validate = sub.add_parser("validate", help="只做结构校验")
-    _add_input_arguments(validate)
-    validate.add_argument("--limit", type=int, default=50, help="最多打印多少条明细")
-    validate.set_defaults(func=cmd_validate)
 
     plan = sub.add_parser(
         "plan", help="生成前预览：每个场景的步骤/根因/修复命令数，以及还能合并什么"
@@ -1189,21 +1115,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan.set_defaults(func=cmd_plan)
 
-    verify = sub.add_parser(
-        "verify", help="后校验：文档里的命令/根因/判据/入参逐条回查原图，报出没有来源的内容"
+    check = sub.add_parser(
+        "check", help="交付前检查：模板形状（lint）+ 逐条回查原图（verify，需 --graph）"
     )
-    verify.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")
-    verify.add_argument(
-        "--graph",
-        action="append",
-        default=[],
-        help="原图（node/edge 文件或目录），可重复；不给时找 <skill>.internal/subgraph.json",
+    check.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")
+    check.add_argument(
+        "--graph", action="append", default=[], help="原图（node/edge 文件或目录），可重复"
     )
-    verify.set_defaults(func=cmd_verify)
-
-    lint = sub.add_parser("lint", help="检查已生成的 skill 是否符合模板")
-    lint.add_argument("targets", nargs="+", help="skill 目录或 SKILL.md 路径")
-    lint.set_defaults(func=cmd_lint)
+    check.set_defaults(func=cmd_check)
     return parser
 
 

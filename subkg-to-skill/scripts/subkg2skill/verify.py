@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
-from subkg2skill.describe import observation_expression
+from subkg2skill.condition import observation_expression
 from subkg2skill.graph import Graph, Node
 from subkg2skill.lint import (
     CAUSE_TABLE,
@@ -701,27 +701,16 @@ def read_skill(path: Path) -> Dict[str, str]:
     return files
 
 
-def verify_path(path: Path, graph_inputs: Sequence[str] = ()) -> VerifyResult:
+def verify_path(path: Path, graph_inputs: Sequence[str]) -> VerifyResult:
     """Verify a skill directory (or ``SKILL.md``) against the graph it came from.
 
-    The graph is not shipped with the skill, so normally ``graph_inputs`` names
-    the original export — that is the point of the check: the document is held
-    against the source of truth, not against a copy that travelled with it.  A
-    slice dumped at build time (``<skill>.internal/subgraph.json``) is used when
-    no graph is given, which is the shortest path right after a build.
+    The graph is not shipped with the skill, so ``graph_inputs`` names the
+    original export — the document is held against the source of truth.
     """
     path = Path(path)
     document = path / "SKILL.md" if path.is_dir() else path
     if not document.exists():
         raise SubgraphLoadError(f"{document}: 文件不存在")
-    files = read_skill(path)
-    if graph_inputs:
-        return verify_files(files, load_graph(graph_inputs))
-    skill_dir = document.parent
-    dumped = skill_dir.parent / (skill_dir.name + ".internal") / "subgraph.json"
-    if not dumped.exists():
-        raise SubgraphLoadError(
-            f"没有可校验的参照图：用 --graph 指定原始 node/edge 文件"
-            f"（或先用 build --with-subgraph 导出 {dumped}）"
-        )
-    return verify_files(files, load_graph([str(dumped)]))
+    if not graph_inputs:
+        raise SubgraphLoadError("没有可校验的参照图：用 --graph 指定原始 node/edge 文件")
+    return verify_files(read_skill(path), load_graph(graph_inputs))

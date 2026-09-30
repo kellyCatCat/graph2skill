@@ -226,27 +226,13 @@ def test_verify_path_reads_the_original_export(tmp_path, example_dir):
     assert result.ok and result.total_checked() > 10
 
 
-def test_verify_path_falls_back_to_a_dumped_slice(tmp_path, example_dir):
-    out = tmp_path / "skill"
-    assert (
-        main(
-            [
-                "build", str(example_dir), "--entry", ISIS, "--name", "x",
-                "--out", str(out), "--with-subgraph",
-            ]
-        )
-        == 0
-    )
-    assert verify_path(out).ok
-
-
 def test_verify_path_without_any_graph_explains_itself(tmp_path, example_dir):
     from subkg2skill.loader import SubgraphLoadError
 
     out = tmp_path / "skill"
     assert main(["build", str(example_dir), "--entry", ISIS, "--name", "x", "--out", str(out)]) == 0
     with pytest.raises(SubgraphLoadError) as excinfo:
-        verify_path(out)
+        verify_path(out, [])
     assert "--graph" in str(excinfo.value)
 
 

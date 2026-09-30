@@ -74,9 +74,9 @@ def test_all_units_is_an_explicit_opt_in(tmp_path):
     assert code == 0
 
 
-def test_build_all_produces_one_skill_per_scenario(tmp_path):
+def test_build_each_produces_one_skill_per_scenario(tmp_path):
     out = tmp_path / "all"
-    assert main(["build-all", str(MESSY), "--out", str(out)]) == 0
+    assert main(["build", str(MESSY), "--each", "--out", str(out)]) == 0
     assert len(list(out.iterdir())) == 3
 
 
@@ -165,15 +165,15 @@ def test_generated_document_has_no_case_literal_warnings(messy_graph, tmp_path):
     assert not [issue for issue in result.warnings if "案例字面量" in issue.message]
 
 
-def test_evidence_file_explains_every_omission(messy_graph):
+def test_every_omission_is_recorded_with_a_reason(messy_graph):
     scoped = messy_graph.scope_to_unit("28.21.3")
     package = build_package(
         scoped,
         build_playbook(scoped, scoped.nodes[SYMPTOM]),
-        BuildOptions(name="isis", emit_evidence=True),
+        BuildOptions(name="isis"),
     )
-    evidence = package.internal["evidence.md"]
-    assert "未进入正文的条目" in evidence and "疑似底层故障" in evidence
+    reasons = dict(package.omitted)
+    assert reasons["疑似底层故障"] == "既无判定观测也无修复动作"
 
 
 def test_lint_flags_an_oversized_hand_written_document(tmp_path):

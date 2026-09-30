@@ -2,7 +2,7 @@
 
 本技能读取的是 IP-RAN 故障诊断知识图谱导出的两个 JSON 数组：`node.json` 与 `edge.json`。
 本页只写工具依赖的部分——节点角色、关系方向、`attrs` 业务字段、`scope`、`condition`、来源定位与质量标记。
-校验（`python3 scripts/build_skill.py validate`）只验证结构：ID 唯一、端点存在、端点类型组合合法；**结构合法不等于关系语义正确**。
+校验（`python3 scripts/build_skill.py inspect`）只验证结构：ID 唯一、端点存在、端点类型组合合法；**结构合法不等于关系语义正确**。
 
 ## 1. 节点类型
 
@@ -17,7 +17,7 @@
 
 ## 2. 关系类型与允许的端点
 
-方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入构建输出（`--with-evidence` 可导出明细）。
+方向即语义，工具据此展开手册；端点组合不合法的边会被丢弃并记入 `inspect` 的校验明细。
 
 | edge_type | 允许的 source → target | 含义 |
 | --- | --- | --- |

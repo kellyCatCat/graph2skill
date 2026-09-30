@@ -26,8 +26,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import hygiene, schema
-from subkg2skill.condition import format_condition
-from subkg2skill.describe import observation_expression
+from subkg2skill.condition import format_condition, observation_expression
 from subkg2skill.graph import Graph, Node, _string_list, _text
 from subkg2skill.playbook import CauseBranch, CheckStep, Link, Playbook, Verdict, fault_key
 
@@ -400,7 +399,6 @@ class SkillDoc:
     notes: List[str] = field(default_factory=list)
     #: Causes left out of the steps, with the reason — reported, never silently dropped.
     omitted: List[Tuple[str, str]] = field(default_factory=list)
-    unit: str = ""
 
     @property
     def multi(self) -> bool:

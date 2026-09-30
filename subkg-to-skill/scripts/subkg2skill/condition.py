@@ -1,4 +1,4 @@
-"""Render edge conditions as text a human (or an agent) can act on.
+"""Render edge conditions and observation expressions as one line of text.
 
 Conditions are recursive — ``atomic`` / ``text`` / ``and`` / ``or`` / ``not`` —
 and ``original_condition`` additionally keeps source-side spellings (``var``,
@@ -12,6 +12,7 @@ import json
 from typing import Any, Dict, List
 
 from subkg2skill import schema
+from subkg2skill.graph import Node, _text
 
 MAX_DEPTH = 12
 
@@ -100,25 +101,25 @@ def format_condition(cond: Any, *, depth: int = 0) -> str:
     return f"{kind}：" + json.dumps(cond, ensure_ascii=False)
 
 
-def describe_edge_condition(edge) -> str:
-    """Condition line for *edge*, including its unevaluated-status caveat."""
-    status = edge.condition_status
-    text = format_condition(edge.condition)
-    if not text and status in ("", "unconditional"):
-        return ""
-    label = schema.CONDITION_STATUS_LABELS.get(status, status)
-    if not text:
-        original = format_condition(edge.original_condition)
-        if original:
-            return f"条件（{label}，未求值）：{original}【原始条件，未规范化】"
-        return f"条件状态：{label}" if label else ""
-    line = f"条件（{label}，未求值）：{text}"
-    original = format_condition(edge.original_condition)
-    if original and original != text:
-        line += f"｜原始写法：{original}"
-    return line
-
-
-def condition_is_binding(edge) -> bool:
-    """True when the relation carries a branch condition that must be checked."""
-    return bool(edge.condition) or edge.condition_status not in ("", "unconditional")
+def observation_expression(node: Node) -> str:
+    """Best available reading of what the observation asserts."""
+    attrs = node.attrs
+    normalized = _text(attrs.get("normalized_expression"))
+    if normalized:
+        return normalized
+    field = _text(attrs.get("field"))
+    operator = _text(attrs.get("operator"))
+    parts: List[str] = []
+    object_type = _text(attrs.get("object_type"))
+    subject = ".".join(part for part in (object_type, field) if part)
+    if subject:
+        parts.append(subject)
+    if operator:
+        parts.append(schema.operator_label(operator))
+    if "value" in attrs and operator not in ("exists", "not_exists"):
+        parts.append(format_value(attrs.get("value")))
+    unit = _text(attrs.get("unit"))
+    if unit:
+        parts.append(f"({unit})")
+    rendered = " ".join(parts).strip()
+    return rendered or node.name

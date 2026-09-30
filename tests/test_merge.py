@@ -152,15 +152,6 @@ def test_merged_document_passes_the_linter(multi_graph, merged):
     assert result.ok, [issue.render() for issue in result.errors]
 
 
-def test_evidence_names_every_merged_source(multi_graph, merged):
-    scoped = multi_graph.scope_to_units(merged.units)
-    package = build_package(scoped, merged, BuildOptions(name="isis", emit_evidence=True))
-    evidence = package.internal["evidence.md"]
-    assert "合并了 3 个来源" in evidence
-    for node_id in ("symptom_manual", "symptom_tree", "symptom_case"):
-        assert node_id in evidence
-
-
 # -- CLI -----------------------------------------------------------------
 def test_merge_same_name_pulls_in_the_other_sources(tmp_path, capsys):
     out = tmp_path / "skill"
@@ -195,16 +186,16 @@ def test_entry_can_be_repeated_for_unrelated_names(tmp_path):
     assert len(re.findall(r"^## 步骤\d", (out / "SKILL.md").read_text(encoding="utf-8"), re.M)) == 3
 
 
-def test_build_all_emits_one_skill_for_the_merged_fault(tmp_path):
+def test_build_each_emits_one_skill_for_the_merged_fault(tmp_path):
     out = tmp_path / "all"
-    assert main(["build-all", str(MULTI), "--out", str(out)]) == 0
+    assert main(["build", str(MULTI), "--each", "--out", str(out)]) == 0
     # 三来源的那个故障合成一份，另一个重叠但不同名的故障单独一份
     assert len(list(out.iterdir())) == 2
 
 
-def test_build_all_no_merge_emits_one_per_source(tmp_path):
+def test_build_each_no_merge_emits_one_per_source(tmp_path):
     out = tmp_path / "all"
-    assert main(["build-all", str(MULTI), "--out", str(out), "--no-merge"]) == 0
+    assert main(["build", str(MULTI), "--each", "--out", str(out), "--no-merge"]) == 0
     assert len(list(out.iterdir())) == 4
 
 

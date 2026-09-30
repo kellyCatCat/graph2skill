@@ -122,19 +122,16 @@ def test_dry_run_writes_nothing(tmp_path, example_dir, capsys):
     assert "将写出" in output and "模板检查" in output
 
 
-def test_internal_material_is_opt_in_and_lands_outside_the_skill(tmp_path, example_dir, capsys):
-    code, out = build(tmp_path, example_dir, "--with-evidence", "--with-subgraph")
+def test_build_writes_nothing_beside_the_skill(tmp_path, example_dir):
+    code, out = build(tmp_path, example_dir)
     assert code == 0
-    assert {path.name for path in out.iterdir()} == {"SKILL.md"}
-    beside = out.parent / (out.name + ".internal")
-    assert {path.name for path in beside.iterdir()} == {"evidence.md", "subgraph.json"}
-    assert "不要随 skill 交付" in capsys.readouterr().out
+    assert {path.name for path in out.parent.iterdir()} == {"skill"}
 
 
 def test_verify_traces_every_claim_back_to_the_graph(tmp_path, example_dir, capsys):
     code, out = build(tmp_path, example_dir)
     assert code == 0
-    assert main(["verify", str(out), "--graph", str(example_dir)]) == 0
+    assert main(["check", str(out), "--graph", str(example_dir)]) == 0
     assert "后校验：通过" in capsys.readouterr().out
 
 
@@ -148,16 +145,17 @@ def test_verify_catches_an_invented_command(tmp_path, example_dir, capsys):
         ),
         encoding="utf-8",
     )
-    assert main(["verify", str(out), "--graph", str(example_dir)]) == 1
+    assert main(["check", str(out), "--graph", str(example_dir)]) == 1
     output = capsys.readouterr().out
     assert "display isis hallucinated-counters" in output and "没有来源" in output
 
 
-def test_verify_without_a_graph_says_what_it_needs(tmp_path, example_dir, capsys):
+def test_check_without_a_graph_says_provenance_was_skipped(tmp_path, example_dir, capsys):
     code, out = build(tmp_path, example_dir)
     assert code == 0
-    assert main(["verify", str(out)]) == 2
-    assert "--graph" in capsys.readouterr().err
+    assert main(["check", str(out)]) == 0
+    output = capsys.readouterr().out
+    assert "模板检查：通过" in output and "未给 --graph" in output
 
 
 def test_list_shows_entries_and_suggested_slugs(example_dir, capsys):
@@ -168,21 +166,21 @@ def test_list_shows_entries_and_suggested_slugs(example_dir, capsys):
     assert "建议 slug" in output
 
 
-def test_build_all_uses_the_name_mapping(tmp_path, example_dir, capsys):
+def test_build_each_uses_the_name_mapping(tmp_path, example_dir, capsys):
     names = tmp_path / "names.json"
     names.write_text(
         json.dumps({ISIS: "isis-neighbor-down", "symptom_2ad4471b8c0f4e2ab7d31f55": "service-down"}),
         encoding="utf-8",
     )
     out = tmp_path / "all"
-    assert main(["build-all", str(example_dir), "--out", str(out), "--names", str(names)]) == 0
+    assert main(["build", str(example_dir), "--each", "--out", str(out), "--names", str(names)]) == 0
     # 承载业务中断没有 has_cause，排查步骤会是空的，默认跳过并说明
     assert {path.name for path in out.iterdir()} == {"isis-neighbor-down"}
     assert (out / "isis-neighbor-down" / "SKILL.md").exists()
     assert "候选原因少于" in capsys.readouterr().out
 
 
-def test_build_all_can_include_causeless_scenarios(tmp_path, example_dir):
+def test_build_each_can_include_causeless_scenarios(tmp_path, example_dir):
     names = tmp_path / "names.json"
     names.write_text(
         json.dumps({ISIS: "isis-neighbor-down", "symptom_2ad4471b8c0f4e2ab7d31f55": "service-down"}),
@@ -190,42 +188,42 @@ def test_build_all_can_include_causeless_scenarios(tmp_path, example_dir):
     )
     out = tmp_path / "all"
     code = main(
-        ["build-all", str(example_dir), "--out", str(out), "--names", str(names), "--min-causes", "0"]
+        ["build", str(example_dir), "--each", "--out", str(out), "--names", str(names), "--min-causes", "0"]
     )
     assert code == 0
     assert {path.name for path in out.iterdir()} == {"isis-neighbor-down", "service-down"}
 
 
-def test_build_all_warns_about_mechanical_slugs(tmp_path, example_dir, capsys):
+def test_build_each_warns_about_mechanical_slugs(tmp_path, example_dir, capsys):
     out = tmp_path / "all"
-    assert main(["build-all", str(example_dir), "--out", str(out)]) == 0
+    assert main(["build", str(example_dir), "--each", "--out", str(out)]) == 0
     assert "请按语义改写" in capsys.readouterr().out
 
 
-def test_build_all_limit(tmp_path, example_dir):
+def test_build_each_limit(tmp_path, example_dir):
     out = tmp_path / "all"
-    assert main(["build-all", str(example_dir), "--out", str(out), "--limit", "1", "--min-causes", "0"]) == 0
+    assert main(["build", str(example_dir), "--each", "--out", str(out), "--limit", "1", "--min-causes", "0"]) == 0
     assert len(list(out.iterdir())) == 1
 
 
 def test_missing_names_file_is_an_error(tmp_path, example_dir, capsys):
     out = tmp_path / "all"
-    code = main(["build-all", str(example_dir), "--out", str(out), "--names", str(tmp_path / "x.json")])
+    code = main(["build", str(example_dir), "--each", "--out", str(out), "--names", str(tmp_path / "x.json")])
     assert code == 2
     assert "命名映射文件不存在" in capsys.readouterr().err
 
 
-def test_lint_passes_on_generated_output(tmp_path, example_dir, capsys):
+def test_check_passes_on_generated_output(tmp_path, example_dir, capsys):
     _, out = build(tmp_path, example_dir)
-    assert main(["lint", str(out)]) == 0
+    assert main(["check", str(out)]) == 0
     assert "模板检查：通过" in capsys.readouterr().out
 
 
-def test_lint_fails_on_a_broken_document(tmp_path, capsys):
+def test_check_fails_on_a_broken_document(tmp_path, capsys):
     skill = tmp_path / "broken"
     skill.mkdir()
     (skill / "SKILL.md").write_text("# 排查步骤\n", encoding="utf-8")
-    assert main(["lint", str(skill)]) == 1
+    assert main(["check", str(skill)]) == 1
     assert "ERROR" in capsys.readouterr().out
 
 
@@ -245,19 +243,19 @@ def test_filters_that_match_nothing_are_an_error(tmp_path, example_dir, capsys):
     assert "没有选中任何节点" in capsys.readouterr().err
 
 
-def test_validate_reports_clean_input(example_dir, capsys):
-    assert main(["validate", str(example_dir)]) == 0
+def test_inspect_reports_clean_input(example_dir, capsys):
+    assert main(["inspect", str(example_dir)]) == 0
     assert "结构完整" in capsys.readouterr().out
 
 
-def test_validate_fails_on_dangling_edges(write_bundle, capsys):
+def test_inspect_fails_on_dangling_edges(write_bundle, capsys):
     from tests.conftest import make_edge, make_node
 
     directory = write_bundle(
         [make_node("symptom_a", "symptom", "现象")],
         [make_edge("edge_1", "has_cause", "symptom_a", "cause_missing")],
     )
-    assert main(["validate", str(directory)]) == 1
+    assert main(["inspect", str(directory)]) == 1
     assert "edge_dangling" in capsys.readouterr().out
 
 
@@ -288,3 +286,9 @@ def test_missing_input_is_a_usage_error():
 def test_missing_file_is_reported(tmp_path, capsys):
     assert main(["inspect", str(tmp_path / "nope.json")]) == 2
     assert "文件不存在" in capsys.readouterr().err
+
+
+def test_each_refuses_a_single_skill_name(tmp_path, example_dir, capsys):
+    code = main(["build", str(example_dir), "--each", "--out", str(tmp_path / "all"), "--name", "x"])
+    assert code == 2
+    assert "--each" in capsys.readouterr().err
