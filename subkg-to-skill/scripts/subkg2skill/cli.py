@@ -28,6 +28,7 @@ from subkg2skill.graph import Graph, Node, ValidationReport
 from subkg2skill.lint import lint_files, lint_path
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import (
+    cluster_same_name,
     build_merged_playbook,
     build_playbook,
     build_playbooks,
@@ -329,15 +330,26 @@ def _install_hint(out_dir: Path, name: str) -> None:
     print(f"  cp -r {out_dir} ~/.config/opencode/skill/{name}")
 
 
+def _skipped_note(skipped: int, min_causes: int) -> str:
+    """Say what the skipped scenarios are, so nobody mistakes them for a decision."""
+    if min_causes <= 1:
+        return (
+            f"另有 {skipped} 个场景在各自诊断单元里一个候选原因都没有（只有检查或什么都没有），"
+            "做出来排查步骤是空的，已跳过——照实报数即可，不是需要决策的事"
+        )
+    return f"另有 {skipped} 个场景候选原因少于 {min_causes} 个，已跳过"
+
+
 # ------------------------------------------------------------- commands
 def cmd_list(args) -> int:
     graph, _report, sources = _load_graph(args)
     graph = _select(graph, args)
     print(f"输入：{'、'.join(sources)}")
+    shown = args.limit if args.limit > 0 else None
     if args.all_units:
         symptoms = entry_symptoms(graph)
         print(f"故障入口（symptom）共 {len(symptoms)} 个（未按诊断单元拆分）：\n")
-        for symptom in symptoms[: args.limit]:
+        for symptom in symptoms[:shown]:
             playbook = build_playbook(graph, symptom)
             print(f"  {symptom.name}")
             print(f"    node_id : {symptom.node_id}")
@@ -347,22 +359,22 @@ def cmd_list(args) -> int:
             )
             print(f"    诊断单元: {len(_units_of(graph, symptom))} 个（不拆分会把多个场景混在一起）")
             print()
-        if len(symptoms) > args.limit:
-            print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
+        if shown is not None and len(symptoms) > shown:
+            print(f"  …另有 {len(symptoms) - shown} 个未列出（--limit 0 列出全部）")
         return 0
 
     groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
     total_scenarios = len(entry_scenarios(graph, min_causes=args.min_causes))
     skipped = len(entry_scenarios(graph, min_causes=0)) - total_scenarios
     if args.no_merge:
-        print(f"故障场景（症状 × 诊断单元）共 {len(groups)} 个，一个场景一份 skill：\n")
+        print(f"故障场景（症状 × 诊断单元）共 {len(groups)} 个：\n")
     else:
         print(
             f"故障（跨来源合并后）共 {len(groups)} 个，来自 {total_scenarios} 个场景；"
-            "一个故障一份 skill：\n"
+            "一个故障是一个场景：\n"
         )
     cache: Dict[str, Graph] = {}
-    for group in groups[: args.limit]:
+    for group in groups[:shown]:
         unit_key = "|".join(sorted(group.units))
         scoped = cache.setdefault(unit_key, graph.scope_to_units(group.units))
         playbook = build_merged_playbook(scoped, group.symptoms, group.units)
@@ -402,10 +414,13 @@ def cmd_list(args) -> int:
         command += "".join(f" --unit {unit}" for unit in group.units)
         print(f"    生成命令 : {command} --name <english-slug>")
         print()
-    if len(groups) > args.limit:
-        print(f"  …另有 {len(groups) - args.limit} 个（--limit 调整）")
+    if shown is not None and len(groups) > shown:
+        print(
+            f"  …另有 {len(groups) - shown} 个未列出——不是被剔除，只是没打印；"
+            "分类、编排前用 --limit 0 看全（--export-scenarios 导出的始终是全部）"
+        )
     if skipped:
-        print(f"  另有 {skipped} 个场景候选原因少于 {args.min_causes} 个，已跳过（--min-causes 0 可包含）")
+        print(f"  {_skipped_note(skipped, args.min_causes)}（--min-causes 0 可包含）")
 
     if args.export_scenarios:
         manifest = {
@@ -434,18 +449,48 @@ def cmd_list(args) -> int:
         )
 
     if args.suggest_merge:
-        suggestions = suggest_merges(graph, groups)
+        clusters, suggestions = cluster_same_name(graph, suggest_merges(graph, groups))
         print()
-        if not suggestions:
+        if not clusters and not suggestions:
             print("没有发现名字不同但内容高度重叠的故障。")
             return 0
+        if clusters:
+            print(
+                f"以下 {len(clusters)} 个症状在多个诊断单元各写了一遍，这些单元之间根因大量重叠、"
+                "修复动作一致或可互补——多半是同一个故障，并成一个场景（清单里写进同一场景的 "
+                "units）；并后根因数偏大时先 plan 再定：\n"
+            )
+            for cluster in clusters[:shown]:
+                print(f"  {cluster.name}")
+                print(f"    诊断单元 : {len(cluster.units)} 个 — " + "、".join(cluster.units))
+                print(
+                    f"    并后根因 : {len(cluster.causes)} 个 — " + "、".join(cluster.causes[:6])
+                    + ("…" if len(cluster.causes) > 6 else "")
+                )
+                if len(cluster.causes) > 25:
+                    print("    ⚠ 并后根因过多，重叠是一对对传递出来的，可能串起了两类故障，用 --show-causes 核对")
+                command = "build " + " ".join(f"--entry {node.node_id}" for node in cluster.entries)
+                command += "".join(f" --unit {unit}" for unit in cluster.units)
+                print(f"    合并命令 : {command} --name <english-slug>")
+                print()
+            if shown is not None and len(clusters) > shown:
+                print(f"  …另有 {len(clusters) - shown} 个未列出（--limit 0 列出全部）\n")
+        if not suggestions:
+            return 0
         print(
-            f"以下 {len(suggestions)} 组故障名字不同，但根因大量重叠，可能是同一故障的两种写法。"
+            f"以下 {len(suggestions)} 组故障各成一个场景（名字不同，或同名但修复动作有出入），"
+            "但根因大量重叠，可能是同一故障的几种写法。"
             "**要不要合并由你判断，判断标准是修复动作是否相同，不是名字像不像**——"
             "下面按修复列给出对比：\n"
         )
-        for suggestion in suggestions[: args.limit]:
-            print(f"  {suggestion.left.name}  ＋  {suggestion.right.name}")
+        for suggestion in suggestions[:shown]:
+            if suggestion.same_name:
+                print(
+                    f"  {suggestion.left.name}（{'、'.join(suggestion.left.units)}）"
+                    f"  ＋  （{'、'.join(suggestion.right.units)}）  同名、分属不同诊断单元"
+                )
+            else:
+                print(f"  {suggestion.left.name}  ＋  {suggestion.right.name}")
             print(
                 f"    根因重叠 : {len(suggestion.shared_causes)} 个"
                 f"（重叠度 {suggestion.overlap:.0%}）— " + "、".join(suggestion.shared_causes[:4])
@@ -476,6 +521,8 @@ def cmd_list(args) -> int:
             command += "".join(f" --unit {unit}" for unit in suggestion.units)
             print(f"    合并命令 : {command} --name <english-slug>")
             print()
+        if shown is not None and len(suggestions) > shown:
+            print(f"  …另有 {len(suggestions) - shown} 组未列出（--limit 0 列出全部）")
     return 0
 
 
@@ -726,9 +773,14 @@ def _scenarios_from_manifest(
 
 
 def _scenarios_from_groups(
-    graph: Graph, args, removed_ids: Optional[Set[str]] = None
+    graph: Graph, args, removed_ids: Optional[Set[str]] = None, *, limit: int = 0
 ) -> Tuple[List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
-    """Group this subgraph's faults into the scenarios of one skill."""
+    """Group this subgraph's faults into the scenarios of one skill.
+
+    ``limit`` caps the scenarios only for ``build --limit``; ``plan --limit``
+    caps how many hints get printed, and a plan of the first twenty scenarios
+    is not a plan of what ``build`` writes.
+    """
     groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
     if not groups and args.min_causes and entry_symptoms(graph):
         # 这张图的故障全都候选原因不足。门槛是用来挑"值不值得单独成一份 skill"的，
@@ -740,8 +792,8 @@ def _scenarios_from_groups(
                 f"提示：{len(groups)} 个故障的候选原因都少于 {args.min_causes} 个，"
                 "仍按本子图生成一份（排查步骤会是空的）"
             )
-    if args.limit:
-        groups = groups[: args.limit]
+    if limit:
+        groups = groups[:limit]
     if not groups:
         raise RenderError("子图里没有可生成的故障场景")
     units = list(dict.fromkeys(unit for group in groups for unit in group.units))
@@ -838,7 +890,9 @@ def cmd_build_scenarios(args, graph: Graph, sources) -> int:
             scenario_slugs,
         ) = _scenarios_from_manifest(graph, Path(args.scenarios), args.exclude, removed_ids)
     else:
-        named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
+        named, units, removed = _scenarios_from_groups(
+            graph, args, removed_ids, limit=args.limit
+        )
         manifest_name, manifest_description = "", ""
         # 自动分组时场景名从 --names 的 {node_id: slug} 取，和 build-all 同一份映射
         names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
@@ -1016,10 +1070,7 @@ def cmd_build_all(args) -> int:
         print()
     print(f"共生成 {len(scenarios)} 份 skill，{failures} 份未通过模板检查。")
     if skipped:
-        print(
-            f"另有 {skipped} 个场景候选原因少于 {args.min_causes} 个未生成"
-            "（排查步骤会是空的；--min-causes 0 可强制生成）"
-        )
+        print(f"{_skipped_note(skipped, args.min_causes)}（--min-causes 0 可强制生成）")
     if unnamed:
         print(
             f"\n以下 {len(unnamed)} 份用了机械生成的 slug（模板要求英文名，请按语义改写后重跑，"

@@ -51,8 +51,13 @@ python3 scripts/build_skill.py validate <图文件或目录>    # 结构校验�
 ```bash
 python3 scripts/build_skill.py list <图>                    # 故障分组（默认已跨来源归并）
 python3 scripts/build_skill.py list <图> --show-causes      # 每组的根因按来源列出 → 判断该不该拆
-python3 scripts/build_skill.py list <图> --suggest-merge    # 名字不同但根因重叠 → 按修复动作判断该不该合
+python3 scripts/build_skill.py list <图> --suggest-merge    # 根因重叠（名字不同，或同名分属不同章节）→ 按修复动作判断该不该合
 ```
+
+`list` 默认只打印 30 个，分类、报数前先 `--limit 0` 看全；「一个候选原因都没有」的入口报数即可，不是决策项。
+同一症状散在几十个章节时，按 `--suggest-merge` 的簇合并，别整个主题一把合、也别凭印象按"技术域"拆。
+**决策带着方案去问**：给出编排（几份、各含哪些场景、并/剔了什么，附 `plan` 数字）请用户确认。数据判不了的
+只有交付范围：用户的场景清单（如 Excel）定交付什么、不定怎么分组，清单外的故障建议"另做一份/不做"，别塞进清单项。
 
 要做的四类决策：
 

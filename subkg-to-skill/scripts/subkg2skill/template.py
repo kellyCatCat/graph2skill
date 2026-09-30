@@ -474,24 +474,27 @@ def _repair_fix(
     for repair in repairs:
         commands = command_templates(repair)
         used.extend(commands)
+        block: List[str] = []
         if commands:
-            fixes.append("<br>".join(f"`{cmd}`" for cmd in commands))
+            block.append("<br>".join(f"`{cmd}`" for cmd in commands))
         else:
             steps = _string_list(repair.attrs.get("procedure"))
-            fixes.append("；".join(steps) if steps else f"{repair.name}（{NO_FIX}）")
+            block.append("；".join(steps) if steps else f"{repair.name}（{NO_FIX}）")
         impact = _text(repair.attr("service_impact"))
         if impact:
-            fixes.append(f"影响：{impact}")
+            block.append(f"影响：{impact}")
         rollback = _text(repair.attr("rollback"))
         if rollback:
-            fixes.append(f"回退：{rollback}")
+            block.append(f"回退：{rollback}")
+        fixes.append("<br>".join(block))
         # A verification command only counts when the source links one.
         for node, _edge in graph.targets(repair.node_id, "next_step"):
             if node.node_type == "check":
                 verification = command_templates(node)
                 used.extend(verification)
                 rechecks.extend(f"`{cmd}`" for cmd in verification)
-    fix = "<br>".join(fixes) if fixes else NO_FIX
+    # 几个章节（或来源）各有一个修复节点、写的是同一条命令时，只写一遍
+    fix = "<br>".join(dict.fromkeys(fixes)) if fixes else NO_FIX
     recheck = "<br>".join(dict.fromkeys(rechecks)) if rechecks else "-"
     return fix, recheck, used
 

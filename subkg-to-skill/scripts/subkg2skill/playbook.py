@@ -353,7 +353,18 @@ def build_merged_playbook(
     merged = parts[0]
     merged.merged = list(symptoms)
     merged.units = [unit for unit in units if unit]
-    by_cause: Dict[str, CauseBranch] = {fault_key(b.cause.name): b for b in merged.causes}
+    # 同一症状跨几个诊断单元时，每个单元各有一个同名的原因节点；和跨来源一样按名折成一步，
+    # 否则并了单元还是一个原因排几遍
+    by_cause: Dict[str, CauseBranch] = {}
+    folded: List[CauseBranch] = []
+    for branch in merged.causes:
+        key = fault_key(branch.cause.name)
+        if key in by_cause:
+            _merge_branches(by_cause[key], branch)
+        else:
+            by_cause[key] = branch
+            folded.append(branch)
+    merged.causes = folded
     seen_checks = {step.check.node_id for step in merged.entry_checks}
     seen_links = {link.node.node_id for link in merged.referrals}
 
@@ -503,8 +514,15 @@ class MergeSuggestion:
         return "两边都没有修复动作可比，只能按根因名判断，务必人工确认"
 
     @property
+    def same_name(self) -> bool:
+        """One symptom written up in two diagnostic units, not two names."""
+        return fault_key(self.left.name) == fault_key(self.right.name)
+
+    @property
     def entries(self) -> List[Node]:
-        return self.left.symptoms + self.right.symptoms
+        # 同名的两组常是同一个症状节点的两个单元，--entry 只该出现一次
+        unique = {node.node_id: node for node in self.left.symptoms + self.right.symptoms}
+        return list(unique.values())
 
     @property
     def units(self) -> List[str]:
@@ -577,8 +595,10 @@ def suggest_merges(
 ) -> List[MergeSuggestion]:
     """Faults worth a human look before they are generated as separate skills.
 
-    Names differ, but the causes largely coincide — usually one fault written
-    from two angles.  Overlap only nominates the pair; what settles it is
+    Names differ — or one name sits in two diagnostic units, which ``list``
+    keeps apart on purpose — but the causes largely coincide: usually one
+    fault written from two angles.  A symptom spread over twenty chapters is
+    exactly where a person needs this evidence and cannot eyeball it.  Overlap only nominates the pair; what settles it is
     whether the shared causes are *repaired* the same way, so each suggestion
     carries that comparison.  This still only ever suggests: two causes named
     alike can need different fixes, and the decision stays with a person.
@@ -598,7 +618,7 @@ def suggest_merges(
         for index, left in enumerate(candidates):
             for right in candidates[index + 1 :]:
                 pair = tuple(sorted((id(left), id(right))))
-                if pair in seen or fault_key(left.name) == fault_key(right.name):
+                if pair in seen:
                     continue
                 seen.add(pair)
                 left_signature = signatures[id(left)]
@@ -633,6 +653,71 @@ def suggest_merges(
         key=lambda s: (-len(s.same_fix) - len(s.one_sided_fix), -s.overlap, s.left.name)
     )
     return suggestions
+
+
+@dataclass
+class MergeCluster:
+    """One symptom written up in several diagnostic units that agree with each other."""
+
+    groups: List[FaultGroup]
+    causes: List[str]
+
+    @property
+    def name(self) -> str:
+        return self.groups[0].name
+
+    @property
+    def entries(self) -> List[Node]:
+        unique = {node.node_id: node for group in self.groups for node in group.symptoms}
+        return list(unique.values())
+
+    @property
+    def units(self) -> List[str]:
+        return list(dict.fromkeys(unit for group in self.groups for unit in group.units))
+
+
+def cluster_same_name(
+    graph: Graph, suggestions: Sequence[MergeSuggestion]
+) -> Tuple[List[MergeCluster], List[MergeSuggestion]]:
+    """Fold the same-name suggestions whose repairs agree into clusters.
+
+    A symptom that a manual writes up in twenty chapters yields up to 190
+    pairs, and nobody decides anything from a list like that.  Pairs whose
+    repairs agree chain into one cluster — a candidate scenario with its units
+    listed; pairs whose repairs differ stay as pairs, since that difference is
+    exactly what a person has to look at.  The rest pass through untouched.
+    """
+    parent: Dict[int, int] = {}
+    groups: Dict[int, FaultGroup] = {}
+
+    def find(key: int) -> int:
+        while parent[key] != key:
+            parent[key] = parent[parent[key]]
+            key = parent[key]
+        return key
+
+    rest: List[MergeSuggestion] = []
+    for suggestion in suggestions:
+        if not suggestion.same_name or suggestion.different_fix:
+            rest.append(suggestion)
+            continue
+        for group in (suggestion.left, suggestion.right):
+            parent.setdefault(id(group), id(group))
+            groups[id(group)] = group
+        parent[find(id(suggestion.left))] = find(id(suggestion.right))
+
+    members: Dict[int, List[FaultGroup]] = defaultdict(list)
+    for key, group in groups.items():
+        members[find(key)].append(group)
+    clusters: List[MergeCluster] = []
+    for grouped in members.values():
+        grouped.sort(key=lambda group: (-group.causes, group.units))
+        causes: Dict[str, str] = {}
+        for group in grouped:
+            causes.update(_group_signature(graph, group).causes)
+        clusters.append(MergeCluster(groups=grouped, causes=sorted(causes.values())))
+    clusters.sort(key=lambda cluster: (-len(cluster.groups), cluster.name))
+    return clusters, rest
 
 
 @dataclass

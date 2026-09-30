@@ -179,7 +179,7 @@ def test_build_all_uses_the_name_mapping(tmp_path, example_dir, capsys):
     # 承载业务中断没有 has_cause，排查步骤会是空的，默认跳过并说明
     assert {path.name for path in out.iterdir()} == {"isis-neighbor-down"}
     assert (out / "isis-neighbor-down" / "SKILL.md").exists()
-    assert "候选原因少于" in capsys.readouterr().out
+    assert "一个候选原因都没有" in capsys.readouterr().out
 
 
 def test_build_all_can_include_causeless_scenarios(tmp_path, example_dir):
