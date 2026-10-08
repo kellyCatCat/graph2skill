@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import hygiene
 from subkg2skill.commands import PARAM_RE, case_literals, command_signature, param_key
-from subkg2skill.doc import HANDOFF_LABELS, NO_SKILL, NOT_FOUND
+from subkg2skill.doc import CONDITION_RE, HANDOFF_LABELS, NO_SKILL, NOT_FOUND
 from subkg2skill.playbook import fault_key
 
 CAUSE_TABLE = "根因对照表"
@@ -169,7 +169,8 @@ def _jump_lines(body: Sequence[str]) -> List[str]:
         if "根因定位" in line:
             inside = False
         if inside:
-            lines.append(line)
+            # A condition is source text; a "步骤 3" inside one is not a jump.
+            lines.append(CONDITION_RE.sub("", line))
     return lines
 
 

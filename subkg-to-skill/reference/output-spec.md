@@ -103,10 +103,11 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 来自 `symptom -diagnosed_by-> check`，以及 `symptom -next_step-> check` 及其 `next_step` 链
 （最长 6 步，遇环即停）。每条：
 
-- **CLI 命令**：该 check 的 `attrs.command_templates`（`{}` / `[]` 规整为 `<>`）；来源没有命令模板时
+- **CLI 命令**：该 check 的 `attrs.command_templates`（`{x}` 规整为 `<x>`；`[x]` 是命令行的可选参数写法，保持原样）；来源没有命令模板时
   写“来源未给出命令模板，按来源步骤说明人工采集”。
 - **采集内容**：`attrs.intent` + 该检查可能观测到的 `attrs.field` 字段名；两者都没有时用 `attrs.procedure`。
 - **根因定位**：只在该观测判定的原因**没有自己的排查步骤**时才写，避免同一根因判两遍。
+- **执行条件**：引出这条检查的 `diagnosed_by` / `next_step` 边带条件时写，`〔条件：…（未求值）〕`。
 
 ## `# 排查步骤`
 
@@ -118,8 +119,10 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 | CLI 命令 | 判据观测由某条前置检查产生 → “复用前置检查步骤 N 回显（检查名，查看 `字段` 字段）”；否则用该原因 `diagnosed_by` 检查的命令模板 |
 | 跳转信息 | `confirms` / `supports` 观测 → “定位根因……结束排查”；`excludes` 观测 → “排除根因……顺序执行步骤 N+1”；末尾补“以上判据均不命中”一行 |
 | 根因定位 | 该步骤能判定的原因名 |
+| 适用条件 / 执行条件（可选子项） | `has_cause` 边的条件写在「步骤名称」下；该原因 `diagnosed_by` 边的条件写在「CLI 命令」下 |
 
 - `supports` 判定的根因一律带“（仅支持性证据 `supports`，需人工确认）”。
+- 判据边带条件时，条件写在冒号之后：`` `判据`：〔条件：…（未求值）〕定位根因“…” ``。
 - 最后一步的兜底写“判定‘未找到根因’，输出已执行的全部检查步骤及结果摘要，结束排查”。
 - 原因没有任何判据观测时，跳转信息写“本子图未给出该原因的判定观测”，仍把它列进根因定位，
   对照表里的现象列注明“本子图未给出判定观测”。
@@ -131,9 +134,9 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 | 列 | 数据来源 |
 | --- | --- |
 | 根因 | `cause.name`，与「根因定位」逐字一致 |
-| 现象 | 判定该原因的观测表达式（优先 `normalized_expression`）+ 证据强度标注 |
-| 修复CLI和方法 | `cause -repaired_by-> repair` 的 `command_templates`；没有命令就照抄 `procedure` 文字；都没有写“无直接修复CLI”。附 `service_impact` 作“影响”、`rollback` 作“回退” |
-| 复检命令（可选） | 仅当 `repair -next_step-> check` 存在时取该检查的命令；否则 `-` |
+| 现象 | 判定该原因的观测表达式（优先 `normalized_expression`）+ 判据边的条件 + 证据强度标注 |
+| 修复CLI和方法 | `cause -repaired_by-> repair` 的 `command_templates`（边带条件时紧跟其后）；没有命令就照抄 `procedure` 文字；都没有写“无直接修复CLI”。再依次写 `preconditions` 作“前置条件”、`service_impact` 作“影响”、`rollback` 作“回退”，缺的几项合成一行“来源未给出：…” |
+| 复检命令（可选） | 仅当 `repair -next_step-> check` 存在时取该检查的命令（边带条件时紧跟其后）；否则 `-` |
 
 多条命令在表格内用 `<br>` 分行。
 
@@ -147,7 +150,7 @@ frontmatter 的 `description` 由症状生成：`name`（+ `attrs.abnormal_behav
 | --- | --- | --- |
 | `cause -leads_to-> symptom` | 该根因自己那一行的「修复CLI和方法」 | `转向故障：「<症状名>」（skill: <slug>）——该根因会引发此故障，处置后复查` |
 | `cause -refers_to-> symptom` / `escalation` | 同上 | `转向故障：「…」` / `转交：「…」——来源把这里转向该处` |
-| `symptom -refers_to-> symptom` / `escalation` | 「未找到根因」兜底行 | 同上；边上有 `condition` 时附 `（条件：…）` |
+| `symptom -refers_to-> symptom` / `escalation` | 「未找到根因」兜底行 | 同上；边上有 `condition` 时附 `〔条件：…（未求值）〕` |
 
 `leads_to` 落在另一个 `cause` 上**不算转向**：那是本图内的传播，不是另一份 skill。
 

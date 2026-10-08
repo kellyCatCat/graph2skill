@@ -123,3 +123,18 @@ def observation_expression(node: Node) -> str:
         parts.append(f"({unit})")
     rendered = " ".join(parts).strip()
     return rendered or node.name
+
+
+def edge_condition(edge) -> str:
+    """The condition *edge* holds under, on one line — ``""`` when it holds unconditionally.
+
+    ``original_condition`` stands in only when nothing was normalised but the
+    status says a condition exists: the source's own wording is better than
+    silently dropping the restriction.
+    """
+    if edge is None:
+        return ""
+    text = format_condition(edge.condition)
+    if not text and edge.condition_status not in ("", "unconditional"):
+        text = format_condition(edge.original_condition)
+    return " ".join(text.split())

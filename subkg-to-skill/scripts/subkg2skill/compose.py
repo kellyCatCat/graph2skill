@@ -44,8 +44,9 @@ from subkg2skill.commands import (
     parameters_in,
     same_command_set,
 )
-from subkg2skill.condition import format_condition, observation_expression
+from subkg2skill.condition import edge_condition, observation_expression
 from subkg2skill.doc import (
+    MISSING_PREFIX,
     NO_FIX,
     NOT_FOUND,
     HANDOFF_NOTES,
@@ -59,6 +60,7 @@ from subkg2skill.doc import (
     RoutingRow,
     SkillDoc,
     Step,
+    condition_notes,
     scenario_label,
 )
 from subkg2skill.graph import Graph, Node, _string_list, _text
@@ -220,6 +222,7 @@ def _build_scenario(
             shared.prechecks.append(precheck)
             index = len(shared.prechecks)
         precheck.add_owner(label)
+        _add_condition(precheck.conditions, step.edge)
         shared.of_check[check.node_id] = index
 
         # What this reading tells the reader to open next.
@@ -247,13 +250,14 @@ def _build_scenario(
             if not (_usable(verdict.cause, policy) and _usable(observation, policy)):
                 continue
             strength = _verdict_strength(verdict.kind)
+            note = condition_notes([edge_condition(verdict.edge)])
             precheck.verdicts.append(
-                f"若 {_criterion(observation)}，判定根因为“{verdict.cause.name}”{strength}"
+                f"若 {_criterion(observation)}{note}，判定根因为“{verdict.cause.name}”{strength}"
                 + (f"（{scenario.title}）" if not single else "")
                 + "，结束排查。"
             )
             entry = precheck_causes.setdefault(verdict.cause.name, ([], verdict.cause.node_id))
-            criterion = f"{_criterion(observation)}{strength}"
+            criterion = f"{_criterion(observation)}{note}{strength}"
             if criterion not in entry[0]:
                 entry[0].append(criterion)
 
@@ -299,16 +303,21 @@ def _build_scenario(
         causes: List[str] = []
         for observation, verdict in decisive:
             criterion = _criterion(observation)
+            # The condition goes after the colon: lint and verify split a branch
+            # on the first one, and the condition's own text may contain one.
+            note = condition_notes([edge_condition(verdict.edge)])
             if verdict.kind == "excludes":
-                branches.append(Branch(criterion, f"排除根因“{verdict.cause.name}”，{{next}}"))
+                branches.append(Branch(criterion, f"{note}排除根因“{verdict.cause.name}”，{{next}}"))
                 continue
             strength = _verdict_strength(verdict.kind)
-            branches.append(Branch(criterion, f"定位根因“{verdict.cause.name}”{strength}，结束排查。"))
+            branches.append(
+                Branch(criterion, f"{note}定位根因“{verdict.cause.name}”{strength}，结束排查。")
+            )
             if verdict.cause.name not in causes:
                 causes.append(verdict.cause.name)
             entry = step_causes.setdefault(verdict.cause.name, ([], verdict.cause.node_id))
-            if f"{criterion}{strength}" not in entry[0]:
-                entry[0].append(f"{criterion}{strength}")
+            if f"{criterion}{note}{strength}" not in entry[0]:
+                entry[0].append(f"{criterion}{note}{strength}")
         if not any(verdict.kind != "excludes" for _obs, verdict in decisive):
             # No observation decides this cause: say so instead of inventing a criterion.
             branches.append(
@@ -333,6 +342,8 @@ def _build_scenario(
                 causes=causes,
                 literals=case_literals(" ".join(commands)),
                 check_id=issued_by,
+                applies_when=_conditions(branch.cause_edges),
+                run_when=_conditions(own.edge for own in branch.checks),
             )
         )
 
@@ -395,6 +406,20 @@ def _usable(node: Node, policy: BuildPolicy) -> bool:
     return policy.include_example_specific or not node.example_specific
 
 
+def _add_condition(conditions: List[str], edge) -> None:
+    text = edge_condition(edge)
+    if text and text not in conditions:
+        conditions.append(text)
+
+
+def _conditions(edges) -> List[str]:
+    """Distinct conditions on *edges*, in order; unconditional edges add nothing."""
+    found: List[str] = []
+    for edge in edges:
+        _add_condition(found, edge)
+    return found
+
+
 def handoffs_of(
     links: Sequence[Link], policy: BuildPolicy, *, note: bool = True
 ) -> List[Handoff]:
@@ -416,7 +441,7 @@ def handoffs_of(
             Handoff(
                 kind="fault" if node.node_type == "symptom" else "escalation",
                 name=node.name,
-                condition=format_condition(link.edge.condition),
+                condition=edge_condition(link.edge),
                 slug=policy.skill_index.get(node.node_id, ""),
                 note=HANDOFF_NOTES.get(link.edge.edge_type, "") if note else "",
                 batch=bool(policy.skill_index),
@@ -434,7 +459,12 @@ def cell(text: str, *, limit: int = 300) -> str:
     flattened = re.sub(r"[\r\n]+", "<br>", _text(text)).replace("|", "\\|")
     flattened = re.sub(r"[ \t]{2,}", " ", flattened).strip()
     if len(flattened) > limit:
-        flattened = flattened[:limit].rstrip() + "…"
+        flattened = flattened[:limit]
+        # Never cut a condition in half: a criterion without the end of its
+        # condition reads as a different, wider criterion.
+        if flattened.rfind("〔") > flattened.rfind("〕"):
+            flattened = flattened[: flattened.rfind("〔")]
+        flattened = flattened.rstrip() + "…"
     return flattened
 
 
@@ -541,33 +571,51 @@ def _step_commands(
 def _repair_fix(
     graph: Graph, cause_node: Optional[Node], branch: Optional[CauseBranch]
 ) -> Tuple[str, str, List[str]]:
-    """Return (修复CLI和方法, 复检命令, 用到的命令) — copied from the source, never expanded."""
-    repairs = [link.node for link in branch.repairs] if branch else []
-    if not repairs:
+    """Return (修复CLI和方法, 复检命令, 用到的命令) — copied from the source, never expanded.
+
+    What a repair does not say is said once, by name: an empty
+    ``service_impact`` is not "no impact", and silence would read as if it were.
+    """
+    links = list(branch.repairs) if branch else []
+    if not links:
         return NO_FIX, "-", []
     fixes: List[str] = []
     rechecks: List[str] = []
     used: List[str] = []
-    for repair in repairs:
+    for link in links:
+        repair = link.node
         commands = command_templates(repair)
         used.extend(commands)
         if commands:
-            fixes.append("<br>".join(f"`{cmd}`" for cmd in commands))
+            action = "<br>".join(f"`{cmd}`" for cmd in commands)
         else:
             steps = _string_list(repair.attrs.get("procedure"))
-            fixes.append("；".join(steps) if steps else f"{repair.name}（{NO_FIX}）")
-        impact = _text(repair.attr("service_impact"))
-        if impact:
-            fixes.append(f"影响：{impact}")
-        rollback = _text(repair.attr("rollback"))
-        if rollback:
-            fixes.append(f"回退：{rollback}")
+            action = "；".join(steps) if steps else f"{repair.name}（{NO_FIX}）"
+        fixes.append(action + condition_notes([edge_condition(link.edge)]))
+        missing: List[str] = []
+        preconditions = _string_list(repair.attrs.get("preconditions"))
+        if preconditions:
+            fixes.append("前置条件：" + "；".join(preconditions))
+        else:
+            missing.append("前置条件")
+        for key, prefix, label in (
+            ("service_impact", "影响：", "业务影响"),
+            ("rollback", "回退：", "回退方法"),
+        ):
+            value = _text(repair.attr(key))
+            if value:
+                fixes.append(f"{prefix}{value}")
+            else:
+                missing.append(label)
+        if missing:
+            fixes.append(MISSING_PREFIX + "、".join(missing))
         # A verification command only counts when the source links one.
-        for node, _edge in graph.targets(repair.node_id, "next_step"):
+        for node, edge in graph.targets(repair.node_id, "next_step"):
             if node.node_type == "check":
                 verification = command_templates(node)
                 used.extend(verification)
-                rechecks.extend(f"`{cmd}`" for cmd in verification)
+                note = condition_notes([edge_condition(edge)])
+                rechecks.extend(f"`{cmd}`{note}" for cmd in verification)
     fix = "<br>".join(fixes) if fixes else NO_FIX
     recheck = "<br>".join(dict.fromkeys(rechecks)) if rechecks else "-"
     return fix, recheck, used

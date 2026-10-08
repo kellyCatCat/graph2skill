@@ -7,8 +7,9 @@ here so they can recognise it as scaffolding rather than a claim.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 
 from subkg2skill.graph import Node
 
@@ -17,6 +18,20 @@ NO_FIX = "无直接修复CLI（来源未给出修复命令，只能定位）"
 
 
 NOT_FOUND = "未找到根因"
+
+#: A relation the source only asserts under a condition says so where it is
+#: used, and says the condition has not been evaluated.  Dropping it would
+#: widen a criterion past what the source claims.  The brackets are rare on
+#: purpose: ``verify`` cuts these out and checks each one against the edges.
+CONDITION_RE = re.compile(r"〔条件：(.+?)（未求值）〕")
+
+
+def condition_notes(texts: Iterable[str]) -> str:
+    """``〔条件：…（未求值）〕`` for each distinct condition, in order."""
+    return "".join(f"〔条件：{text}（未求值）〕" for text in dict.fromkeys(texts) if text)
+
+#: What a repair is missing, named once instead of implied by silence.
+MISSING_PREFIX = "来源未给出："
 
 
 @dataclass
@@ -87,15 +102,9 @@ class Handoff:
 
     def render(self) -> str:
         text = f"{HANDOFF_LABELS.get(self.kind, self.kind)}：「{self.name}」"
-        # ``，`` not ``；``: the verifier splits fragments on the latter, and a
-        # hand-off cut in half stops being checkable as one.
-        detail: List[str] = []
         if self.kind == "fault" and (self.slug or self.batch):
-            detail.append(f"skill: {self.slug}" if self.slug else NO_SKILL)
-        if self.condition:
-            detail.append(f"条件：{self.condition}")
-        if detail:
-            text += "（" + "，".join(detail) + "）"
+            text += f"（skill: {self.slug}）" if self.slug else f"（{NO_SKILL}）"
+        text += condition_notes([self.condition])
         return f"{text}——{self.note}" if self.note else text
 
 
@@ -120,6 +129,9 @@ class Precheck:
     #: True when a routing row is decided by this reading, which is why a
     #: single-scenario check can still belong to the shared phase.
     routes: bool = False
+    #: Conditions on the edges that lead to this collection (the source says
+    #: when to run it); unevaluated.
+    conditions: List[str] = field(default_factory=list)
 
     def add_owner(self, label: str) -> None:
         if label and label not in self.owners:
@@ -149,6 +161,10 @@ class Step:
     literals: List[str] = field(default_factory=list)
     #: The check whose command this step issues, while it issues one of its own.
     check_id: str = ""
+    #: Conditions on the symptom → cause edges: when this cause is a candidate at all.
+    applies_when: List[str] = field(default_factory=list)
+    #: Conditions on the cause → check edges: when its checks are to be run.
+    run_when: List[str] = field(default_factory=list)
 
 
 @dataclass

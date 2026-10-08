@@ -4,11 +4,13 @@
 本页只写工具依赖的部分——节点角色、关系方向、`attrs` 业务字段、`scope`、`condition`、来源定位与质量标记。
 校验（`python3 scripts/build_skill.py inspect`）只验证结构：ID 唯一、端点存在、端点类型组合合法；**结构合法不等于关系语义正确**。
 
+本页不写数量：节点、边、各类型的条数随每次导出变化，以 `inspect` 对手里这份数据的输出为准。
+
 ## 1. 节点类型
 
 | node_type | 中文 | 含义 |
 | --- | --- | --- |
-| `symptom` | 故障症状 | 用户可感知的异常现象或诊断入口。每个 symptom 生成一份排查手册。 |
+| `symptom` | 故障症状 | 用户可感知的异常现象或诊断入口。一个症状在一个诊断单元下是一个故障，即生成的 skill 里的一个场景。 |
 | `cause` | 故障原因 | 解释症状的候选原因或故障机制；存在此节点不表示现场已确认。 |
 | `check` | 检查动作 | 采集状态、查看配置或日志、探测连通性等诊断动作。 |
 | `observation` | 观测结果 | 检查可能得到的状态、数值或现象；也可包含正常、否定结果。 |
@@ -50,12 +52,12 @@
 | `diagnostic_contexts` | array | `{section, title}` 数组，作为“诊断单元”，也是 `--section` 与索引分片的依据。 |
 | `provenance` | array | 来源证据，见第 7 节。 |
 | `quality_flags` | array | 质量与待核查标记，见第 8 节。 |
-| `semantic_review` | object | 语义复核元数据；`human_reviewed` 决定手册里写“人工复核=是/否”。 |
-| `canonical_key`、`scope_context_ids`、`source_keys`、`concept_alignment_ids`、`automatic_resolution` | — | 原样保留在导出的 `subgraph.json` 里（`--data slim` 会去掉其中的簿记字段），手册不展开。 |
+| `semantic_review` | object | 语义复核元数据；`human_reviewed` 为 `false` 时只是机器复核。工具不读。 |
+| `canonical_key`、`scope_context_ids`、`source_keys`、`concept_alignment_ids`、`automatic_resolution` | — | 身份、来源分类与历史修正的簿记字段。工具不读，生成的 skill 里也不出现。 |
 
 ## 4. `attrs` 业务字段
 
-工具只读它认识的键，其余原样保留在数据文件里。
+工具只读下面加粗说明的几个键；其余字段后校验时仍算作“来源原文”，但不进文档。
 
 **symptom**：`object_type`、`abnormal_behavior`、`expected_behavior`、`trigger_context`、
 `required_slots`（现场需补齐的信息槽位）、`match_phrases`、`example_specific`。
@@ -81,7 +83,10 @@
 几条读法约定：
 
 - `command_templates` 是**模板**，含待绑定参数（`parameters`）或案例常量，不是可直接下发的脚本。
-- `preconditions: []` 不证明无需前置条件；`service_impact` / `rollback` 为空只表示来源没写。
+- 修复动作的 `preconditions` / `service_impact` / `rollback` 有值就写进根因对照表；为空只表示来源没写，
+  文档里写“来源未给出：…”，不当作“无前置条件 / 无影响 / 无需回退”。
+- `execution_policy`、`expected_effect`、`collection_spec`、`execution_context`，以及 escalation 的
+  `destination_role` / `collection_requirements` / `instructions`，工具目前不写进文档。
 - `example_specific: true` 表示带案例特定背景，不能推广到其他设备。
 - `check_kind` / `repair_kind` 是自由文本分类，没有统一枚举，工具不按枚举解析。
 
@@ -92,8 +97,12 @@
 （`document_product`、`document_solution`、`case_metadata`、`source_scenario`、`source_explicit`、
 `technote_specific_scope_required`）。
 
+`scope.vendor` 保留来源写法，`Huawei`、`HUAWEI`、`华为` 并存；`--vendor` 只做大小写无关比较，
+不会把中英文写法认作同一个，按厂商筛选时要把几种写法都给上。
+
 `diagnostic_contexts[].section` 是诊断单元标识：PDF 通常是章节号，其他来源可能是
 `ipran_battle_tree:s0:r56` 这类 ID——**不要一律当数字处理**。`--section` 做前缀匹配（`28.21` 命中 `28.21.4`）。
+切分故障用的是**边**的 `diagnostic_context.section`，不是节点的：节点可以跨多个诊断单元复用，边保存自己的上下文。
 
 ## 6. 边字段与 `condition`
 
@@ -101,12 +110,18 @@
 
 - `condition`：递归结构，`type` 为 `atomic` / `text` / `and` / `or` / `not`；
   `and`/`or` 用 `conditions` 数组，`not` 用 `condition` 单子条件。
+  **任何类型的边都可能带条件**；文档里用到这条关系的地方就把条件写成 `〔条件：…（未求值）〕`，
+  写在哪见 [`evidence-rules.md`](evidence-rules.md#条件)。
 - `condition_status`：`unconditional`、`parsed`、`preserved_unparsed`、`text_only`、`requires_interpretation`。
-  它描述**解析状态**，不是现场求值结果——手册里一律标注“未求值”。
+  它描述**解析状态**，不是现场求值结果——文档里一律标注“未求值”。
 - `original_condition`：融合时保留的来源写法，可能带 `var`、`comparison`、`other`、`negate`；
-  与 `condition` 不同时会并列显示，供核查原意。
-- `rank`：顺序号/排序提示（当前 1–12），**不是概率或置信度**。
-- `diagnostic_context`、`evidence`、`quality_flags`、`review_status`：随行标注在手册里。
+  `condition` 为空而 `condition_status` 又不是 `unconditional` 时，用它代替。
+- `rank`：流程中的顺序号/排序提示，**不是概率、置信度或全图统一的优先级**；工具用它给排查步骤排序，
+  多个来源合并时各来源的 `rank` 并不可比。
+- `source_contexts`：极少数边由多个来源的同一关系合并而成，这里保留各来源的上下文；
+  工具只按边自己的 `diagnostic_context` 切分诊断单元。
+- `review_status`：边有 `machine_checked` 和 `unreviewed` 两种，文档目前不区分。
+- `diagnostic_context`、`evidence`、`quality_flags`：工具不写进文档；`evidence` 等原文在后校验时算作来源。
 
 操作符：`eq`、`ne`、`gt`、`ge`、`lt`、`le`、`in`、`not_in`、`exists`、`not_exists`、`contains`、`trend`；
 另有来源写法 `not_contains`、`not_eq`、`==`、`!=`、`>`、`is_null` 等，会带“来源写法”标注输出，
@@ -120,19 +135,18 @@
 `anchor_method`、`source_key`；Excel 来源另有 `sheet`、`cell`、`row`、`column`、`field`、`context`；
 案例来源另有 `record`、`json_path`、`case_uuid`、`original_source`。
 
-手册把它们压成一行可回查的定位，例如
-`《NE40E 维护宝典.pdf》 v07、物理页 1149（印刷页 1109）、§28.21.3、p1149_b001、pdf_text：“…”`。
+工具不把来源定位写进文档；`quote` 等原文在后校验时算作来源。
 引文可定位只说明**文字依据可查**，不自动证明关系方向或诊断结论正确；`image_ocr` 尤其不能证明流程图箭头。
 
 ## 8. 质量标记
 
-`quality_flags` 会带解释输出，常见值：`non_executable_knowledge`、`ocr_only`、
+`inspect` 会统计 `quality_flags`，文档里不写。常见值：`non_executable_knowledge`、`ocr_only`、
 `ocr_only_requires_visual_review`、`procedure_uses_source_quote`、`semantic_review_pending`、
 `human_review_pending`、`condition_requires_semantic_interpretation`、`verify_technote_product_and_version`、
 `cause_kind_pending`，以及 `unmapped_cause_kind:<原始值>`、`ungrounded_<字段>_removed`、
 `unverified_<字段>_removed` 这类前缀形式。
 
-`machine_checked` 不能替代 `human_reviewed`；本快照的节点与边通常全部是 `candidate`。
+`machine_checked` 不能替代 `human_reviewed`；节点与边通常全部是 `candidate`（候选知识）。
 
 ## 9. 输入形状
 

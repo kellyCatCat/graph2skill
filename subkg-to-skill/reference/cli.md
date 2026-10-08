@@ -212,9 +212,9 @@ python3 scripts/build_skill.py check out/isis-neighbor-down --graph /data/kg
 
 ## 性能
 
-全量 17,392 节点 / 17,088 边的图，`build --each` 会产出 1,352 份 skill（每个故障入口一份）；
-每份只带自己那一片子图，所以单份体积很小。先用 `--section` / `--vendor` / `--limit` 收窄范围
-通常更实用。
+对全量图跑 `build --each`，份数等于 `list` 报告的故障数（跨来源归并后的“症状 × 诊断单元”），
+通常成百上千；每份只带自己那一片子图，单份体积很小。先用 `--section` / `--vendor` / `--limit`
+收窄范围通常更实用。
 
 ## 交付统计
 

@@ -44,8 +44,8 @@ from subkg2skill.commands import (
     param_key,
     parameters_in,
 )
-from subkg2skill.condition import observation_expression
-from subkg2skill.doc import HANDOFF_EDGES, HANDOFF_LABELS, NOT_FOUND
+from subkg2skill.condition import edge_condition, format_condition, observation_expression
+from subkg2skill.doc import CONDITION_RE, HANDOFF_EDGES, HANDOFF_LABELS, MISSING_PREFIX, NOT_FOUND
 from subkg2skill.graph import Graph, Node
 from subkg2skill.lint import (
     CAUSE_TABLE,
@@ -104,10 +104,11 @@ SCAFFOLDING = (
     "其他场景可跳过",
     "读数用于分流判断",
     "全部场景",
+    MISSING_PREFIX,
 )
 
 #: Prefixes the renderer puts in front of a sourced fragment.
-TEXT_PREFIXES = ("影响：", "回退：", "关注字段：", "采集内容：", "说明：")
+TEXT_PREFIXES = ("影响：", "回退：", "前置条件：", "关注字段：", "采集内容：", "说明：")
 
 _WS_RE = re.compile(r"\s+")
 
@@ -181,6 +182,9 @@ class Ground:
         #: a cross-fault edge points at.  Being a symptom in the graph is not
         #: enough — nothing may send the reader somewhere the source did not.
         self.handoffs: Dict[str, str] = {}
+        #: The condition of every edge, as the renderer writes it, plus the
+        #: source's own original wording.
+        self.conditions: Set[str] = set()
 
         for node in graph.iter_nodes():
             self.texts.extend(_norm(text) for text in _strings_in(node.raw))
@@ -205,6 +209,9 @@ class Ground:
                         self.params.add(key)
         for edge in graph.edges:
             self.texts.extend(_norm(text) for text in _strings_in(edge.raw))
+            for text in (edge_condition(edge), format_condition(edge.original_condition)):
+                if text:
+                    self.conditions.add(_norm(" ".join(text.split())))
             if edge.edge_type in HANDOFF_EDGES:
                 target = graph.get(edge.target)
                 if target is not None and target.node_type in ("symptom", "escalation"):
@@ -239,6 +246,10 @@ class Ground:
         # A hand-written criterion may quote a value or field the observation
         # only carries in its raw record.
         return any(needle in text for text in self.texts)
+
+    def has_condition(self, text: str) -> bool:
+        # cell() escapes a pipe; the edge never had the backslash.
+        return _norm(text.replace("\\|", "|")) in self.conditions
 
     def has_param(self, name: str) -> bool:
         return param_key(name) in self.params
@@ -288,7 +299,7 @@ def _observation_terms(node: Node) -> List[str]:
 # ------------------------------------------------------------------ claims
 @dataclass
 class Claim:
-    kind: str  # command | cause | criterion | param | text
+    kind: str  # command | cause | criterion | param | link | condition | text
     text: str
     where: str
 
@@ -340,8 +351,6 @@ def _fragments(text: str) -> List[str]:
 _HANDOFF_RE = re.compile(
     r"^(?:" + "|".join(re.escape(label) for label in HANDOFF_LABELS.values()) + r")\s*[：:]\s*「([^」]+)」"
 )
-#: The condition carried alongside it, which is sourced text of its own.
-_HANDOFF_CONDITION_RE = re.compile(r"条件[：:]\s*([^）]+)")
 
 
 def _text_claims(fragment: str, where: str) -> List[Claim]:
@@ -353,11 +362,7 @@ def _text_claims(fragment: str, where: str) -> List[Claim]:
     handoff = _HANDOFF_RE.match(fragment)
     if not handoff:
         return [Claim("text", fragment, where)]
-    claims = [Claim("link", handoff.group(1), where)]
-    condition = _HANDOFF_CONDITION_RE.search(fragment)
-    if condition:
-        claims.append(Claim("text", condition.group(1).strip(), where))
-    return claims
+    return [Claim("link", handoff.group(1), where)]
 
 
 def _routing_claims(row: Sequence[str], where: str) -> List[Claim]:
@@ -537,6 +542,29 @@ def _param_claims(lines: Sequence[str]) -> List[Claim]:
     return claims
 
 
+_HEADING_RE = re.compile(r"^#{1,4}\s*(.+?)\s*$")
+
+
+def _condition_claims(text: str) -> Tuple[str, List[Claim]]:
+    """Cut every ``〔条件：…（未求值）〕`` out of *text* as a claim of its own.
+
+    A condition is checked against the edges, not as prose — and once it is
+    out, the line around it reads exactly as it did before conditions were
+    rendered, so nothing else here has to know about them.
+    """
+    claims: List[Claim] = []
+    where = "文档"
+    lines: List[str] = []
+    for line in text.splitlines():
+        heading = _HEADING_RE.match(line)
+        if heading:
+            where = heading.group(1)
+        for match in CONDITION_RE.finditer(line):
+            claims.append(Claim("condition", match.group(1).strip(), where))
+        lines.append(CONDITION_RE.sub("", line))
+    return "\n".join(lines), claims
+
+
 def claims_of(text: str) -> List[Claim]:
     """Every checkable assertion one delivered file makes, with where it sits.
 
@@ -545,9 +573,9 @@ def claims_of(text: str) -> List[Claim]:
     fabricated root cause.  The steps it points at are checked in their own
     files.
     """
+    text, claims = _condition_claims(text)
     sections, order = _split_sections(text)
     kind = document_kind(order)
-    claims: List[Claim] = []
     claims += _param_claims(sections.get("入参列表", []))
     claims += _precheck_claims(sections.get("前置检查", []))
     if kind == "scenario":
@@ -627,6 +655,17 @@ def verify_text(text: str, graph: Graph) -> VerifyResult:
                         claim.text,
                         claim.where,
                         "判据只能来自 observation 的表达式、字段或取值",
+                    )
+                )
+        elif claim.kind == "condition":
+            if not ground.has_condition(claim.text):
+                result.findings.append(
+                    Finding(
+                        "error",
+                        "条件",
+                        claim.text,
+                        claim.where,
+                        "子图里没有哪条边带这个条件；条件只能照抄边上的 condition，删掉或改回原样",
                     )
                 )
         elif claim.kind == "param":

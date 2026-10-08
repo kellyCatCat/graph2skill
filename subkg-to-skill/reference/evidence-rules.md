@@ -19,22 +19,29 @@
 
 ## 条件
 
+任何一条边都可能带条件，它限定这条关系在什么情况下成立。**用到这条关系的地方就把条件带上**，
+写成 `〔条件：…（未求值）〕`；丢掉条件等于把判据放宽到来源没说过的范围。
+
 | 数据情况 | 写法 |
 | --- | --- |
-| `condition` 非空 | `条件（<condition_status 的中文解释>，未求值）：…` |
-| `condition_status=parsed` | 补一句“仍需绑定对象/字段/采样数据后判断” |
-| `text_only` / `requires_interpretation` | 明确写“需解释”，不要把文本里的 AND/OR 当可执行逻辑 |
-| `original_condition` 与 `condition` 不同 | 并列显示原始写法，供核查原意 |
+| `supports` / `confirms` / `excludes` 带条件 | 跳转信息里写在冒号之后：`` `判据`：〔条件：…（未求值）〕定位根因“…” ``；现象列紧跟在判据后面；前置检查的「根因定位」同样 |
+| `has_cause` 带条件 | 该排查步骤「步骤名称」下一行：`适用条件：〔条件：…（未求值）〕` |
+| `diagnosed_by`（原因 → 检查）带条件 | 该排查步骤「CLI 命令」之下：`执行条件：〔…〕` |
+| 引出前置检查的 `diagnosed_by` / `next_step` 带条件 | 该条前置检查的 `执行条件：〔…〕` |
+| `repaired_by` / 修复后的 `next_step`（复检）带条件 | 紧跟在那条修复或复检命令之后 |
+| `refers_to` / `leads_to` 带条件 | 紧跟在转向之后 |
+| `condition` 为空但 `condition_status` 不是 `unconditional` | 用 `original_condition` 的原始写法 |
+| `text_only` / `requires_interpretation` | 照抄文本，不要把文本里的 AND/OR 当可执行逻辑 |
 | 现场数据不足以判断 | 标“未验证”，不要默认成立或默认不成立 |
+
+条件标注**润色时不能删**：后校验能查出编造的条件，查不出被删掉的条件。
 
 ## 属性缺失
 
 | 数据情况 | 写法 |
 | --- | --- |
-| `service_impact` 为空 | “来源未给出（空值不表示无影响）” |
-| `rollback` 为空 | “来源未给出（空值不表示无需回退）” |
-| `expected_effect` 为空 | “来源未给出（不要自行补充）” |
-| `preconditions: []` | “空数组不证明无需前置条件” |
+| 修复动作的 `preconditions` / `service_impact` / `rollback` | 有值分别写“前置条件：…”“影响：…”“回退：…”；缺哪项就在这条修复末尾写一行“来源未给出：前置条件、业务影响、回退方法”（只列缺的）。空值不表示无前置条件、无影响或无需回退 |
+| `expected_effect` | 文档不写；为空时也不要自行补充 |
 | `command_templates` | “参数需绑定现场上下文后才可执行”，并列出 `parameters` |
 | `execution_policy` 有值 | 照写“模板需绑定现场上下文”或“原文操作需解释后使用” |
 
@@ -74,6 +81,7 @@ Excel 来源给 `sheet`/`cell`，案例来源给 `case_uuid`。
 | 判据（跳转信息、场景跳转表、现象列、采集字段） | `observation` 的表达式、`field`、取值、`normalized_expression` | ERROR |
 | 入参列表的「信息」列 | 症状的 `required_slots`，或正文命令里真实出现的 `<参数>`；抽取哈希（`peer ip c8be5e6454` 的 `c8be5e6454`）不算名字的一部分，去掉后同一个输入只问一次 | ERROR |
 | 跨 skill 的转向（`转向故障：「…」` / `转交：「…」`） | 图里真有一条 `refers_to` / `leads_to` 指向它——目标节点存在还不够 | ERROR |
+| 条件标注（`〔条件：…（未求值）〕`） | 图里某条边的 `condition`（按生成器同样的单行写法）或 `original_condition` | ERROR |
 | 修复说法、采集说明等自由文本 | 来源记录里出现过的原文（含 `procedure`、`service_impact`、`rollback`） | WARNING |
 
 不查的：模板自带的固定说法（"未找到根因""复用前置检查步骤 N 回显""无直接修复CLI""现场提供"

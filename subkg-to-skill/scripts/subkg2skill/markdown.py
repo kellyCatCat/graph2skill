@@ -10,7 +10,15 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence, Tuple
 
-from subkg2skill.doc import DocScenario, Precheck, RootCause, RoutingRow, SkillDoc, Step
+from subkg2skill.doc import (
+    DocScenario,
+    Precheck,
+    RootCause,
+    RoutingRow,
+    SkillDoc,
+    Step,
+    condition_notes,
+)
 
 
 #: Where a multi-scenario skill keeps one file per scenario.
@@ -197,6 +205,8 @@ def _render_collection(
             + "、".join(precheck.hardcoded[:4])
             + "），按现场实际替换"
         )
+    if precheck.conditions:
+        lines.append(f"{indent}- 执行条件：{condition_notes(precheck.conditions)}")
     lines.append(f"{indent}- 采集内容：{precheck.collect}")
     if audience:
         lines.append(f"{indent}- {audience_label}：{audience}")
@@ -241,6 +251,8 @@ def _audience(precheck: Precheck, doc: "SkillDoc") -> str:
 def _render_step(step: Step, *, heading: str) -> List[str]:
     lines = [f"{heading} 步骤{step.index}：{step.name}", ""]
     lines.append(f"1. **步骤名称**：{step.name}")
+    if step.applies_when:
+        lines.append(f"   - 适用条件：{condition_notes(step.applies_when)}")
     if step.commands:
         if len(step.commands) == 1:
             lines.append(f"2. **CLI 命令**：`{step.commands[0]}`")
@@ -253,6 +265,8 @@ def _render_step(step: Step, *, heading: str) -> List[str]:
         lines.append(
             "   - 注意：命令含案例字面量（" + "、".join(step.literals[:4]) + "），执行前替换为现场对象"
         )
+    if step.run_when:
+        lines.append(f"   - 执行条件：{condition_notes(step.run_when)}")
     lines.append("3. **跳转信息**：")
     for branch in step.branches:
         lines.append(f"   - {branch.criterion}：{branch.outcome}")

@@ -19,7 +19,7 @@ guesses a canonical spelling: the longest form wins because it is the one a
 reader can look up.
 
 Everything this module rejects is returned with a reason, never dropped
-silently — the caller reports it, and records it in the exported ``evidence.md``.
+silently — the caller lists it in the build output.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class Rejection:
         return f"{self.text} — {self.reason}"
 
 
-#: Human wording for each rejection kind, reused in evidence.md.
+#: Human wording for each rejection kind, as the build output lists it.
 REJECTION_REASONS: Dict[str, str] = {
     "echo": "回显行被当成命令（名值对，来自某台设备的现状而不是命令模板）",
     "table": "表格数据被当成命令或步骤名（纯数字与状态词）",
@@ -339,7 +339,7 @@ def generalise_slot(name: str) -> str:
     The same input is hashed differently by every source, so ``peer ip
     c8be5e6454`` and ``peer ip 4f2ab19c07`` reach the 入参列表 as two rows
     asking the field for one thing.  Dropping the hash is what lets them merge;
-    the source wording is still what ``reference/evidence.md`` quotes.
+    the source wording stays in the graph, where ``verify`` reads it.
     """
     parts = [part for part in re.split(r"[\s_\-]+", (name or "").strip()) if part]
     kept = [part for part in parts if not is_hash_token(part)]

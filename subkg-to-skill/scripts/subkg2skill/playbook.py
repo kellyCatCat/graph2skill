@@ -80,6 +80,13 @@ class CauseBranch:
     refines: List[Link] = field(default_factory=list)
     leads_to: List[Link] = field(default_factory=list)
     refers_to: List[Link] = field(default_factory=list)
+    #: has_cause edges of other sources folded into this branch.
+    merged_edges: List[Edge] = field(default_factory=list)
+
+    @property
+    def cause_edges(self) -> List[Edge]:
+        """Every symptom → cause edge behind this branch, one per source."""
+        return [self.edge] + self.merged_edges
 
     def verdicts_of(self, kind: str) -> List[Verdict]:
         return [verdict for verdict in self.verdicts if verdict.kind == kind]
@@ -312,6 +319,7 @@ def entry_symptoms(graph: Graph) -> List[Node]:
 
 def _merge_branches(target: CauseBranch, extra: CauseBranch) -> None:
     """Fold *extra* into *target*: same cause, documented by another source."""
+    target.merged_edges.extend(extra.cause_edges)
     seen_checks = {step.check.node_id for step in target.checks}
     for step in extra.checks:
         if step.check.node_id not in seen_checks:

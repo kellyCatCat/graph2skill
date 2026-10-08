@@ -159,7 +159,8 @@ def test_a_reworded_destination_is_pointed_back_at_the_source_wording(example_gr
 def test_an_invented_handoff_condition_is_reported(example_graph):
     document = build(example_graph).replace("上述检查均无异常", "确认光功率低于门限")
     result = verify_text(document, example_graph)
-    assert any(finding.kind == "说法" for finding in result.warnings)
+    # 条件按边回查，不按说法：编造的条件是 ERROR，不是 WARNING。
+    assert any(finding.kind == "条件" for finding in result.errors)
 
 
 def test_a_slug_that_is_not_a_slug_is_an_error(example_graph):
