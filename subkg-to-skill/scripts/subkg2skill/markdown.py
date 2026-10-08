@@ -32,6 +32,11 @@ ENTER_SCENARIO = (
 )
 
 
+def _cell(text: str) -> str:
+    """A value as a table cell: one line, pipes escaped (lint and verify unescape them)."""
+    return " ".join(str(text).split()).replace("|", "\\|")
+
+
 def scenario_path(slug: str) -> str:
     return f"{REFERENCE_DIR}/{slug}.md"
 
@@ -93,13 +98,14 @@ def render_index(doc: SkillDoc, *, name: str, description: str) -> str:
     lines, _routing = _render_head(doc, name=name, description=description)
     lines += ["# 排查步骤", ""]
     if not doc.steps:
-        lines += ["本子图未给出该症状的候选原因，无法展开排查步骤。", ""]
-        return "\n".join(lines)
+        # The scenario files are still delivered, so the table that leads to
+        # them still has to be here.
+        lines += ["本子图未给出这些场景的候选原因，各场景文件里没有排查步骤。", ""]
     lines += [ENTER_SCENARIO, ""]
     lines += ["| 场景 | 参考文件 | 内容 |", "| --- | --- | --- |"]
     for scenario in doc.scenarios:
         content = "排查步骤 + 根因对照表" if scenario.steps else "（本场景没有可展开的候选原因）"
-        lines.append(f"| {scenario.title} | {scenario_path(scenario.slug)} | {content} |")
+        lines.append(f"| {_cell(scenario.title)} | {scenario_path(scenario.slug)} | {content} |")
     lines.append("")
     return "\n".join(lines)
 
@@ -131,7 +137,9 @@ def _render_head(doc: SkillDoc, *, name: str, description: str) -> Tuple[List[st
     if doc.params:
         lines += ["| 信息 | 是否必填 | 说明 |", "| --- | --- | --- |"]
         for param in doc.params:
-            lines.append(f"| {param.display} | {'是' if param.required else '否'} | {param.note} |")
+            lines.append(
+                f"| {_cell(param.display)} | {'是' if param.required else '否'} | {_cell(param.note)} |"
+            )
     else:
         lines.append("本排查流程不需要额外入参（子图未给出必填槽位与命令参数）。")
     lines.append("")
@@ -160,7 +168,9 @@ def _render_head(doc: SkillDoc, *, name: str, description: str) -> Tuple[List[st
         lines.append("")
         lines += ["| 前置检查步骤 | 判据 | 跳转步骤 |", "| --- | --- | --- |"]
         for row in routing:
-            lines.append(f"| {row.precheck} | {row.criterion} | → **{row.scenario}** |")
+            lines.append(
+                f"| {_cell(row.precheck)} | {_cell(row.criterion)} | → **{_cell(row.scenario)}** |"
+            )
         lines.append("")
 
     if doc.multi:
@@ -170,7 +180,9 @@ def _render_head(doc: SkillDoc, *, name: str, description: str) -> Tuple[List[st
         lines += ["| 前置检查步骤 | 判据 | 跳转场景 |", "| --- | --- | --- |"]
         for scenario in doc.scenarios:
             for row in scenario.routing:
-                lines.append(f"| {row.precheck} | {row.criterion} | → **{row.scenario}** |")
+                lines.append(
+                    f"| {_cell(row.precheck)} | {_cell(row.criterion)} | → **{_cell(row.scenario)}** |"
+                )
         lines.append("")
     return lines, routing
 
@@ -282,6 +294,7 @@ def _render_step(step: Step, *, heading: str) -> List[str]:
 def _render_cause_table(causes: Sequence[RootCause]) -> List[str]:
     lines = ["| 根因 | 现象 | 修复CLI和方法 | 复检命令（可选） |", "| --- | --- | --- | --- |"]
     for cause in causes:
-        lines.append(f"| {cause.name} | {cause.evidence} | {cause.fix} | {cause.recheck} |")
+        # The other columns were made table-safe by compose.cell already.
+        lines.append(f"| {_cell(cause.name)} | {cause.evidence} | {cause.fix} | {cause.recheck} |")
     lines.append("")
     return lines

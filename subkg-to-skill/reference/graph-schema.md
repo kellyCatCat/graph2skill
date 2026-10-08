@@ -152,7 +152,8 @@
 
 以下都能读：
 
-- 目录：自动识别 `node*.json` / `edge*.json`（也接受 `nodes` / `edges` 命名）；
+- 目录：自动识别 `node*.json` / `edge*.json`（也接受 `nodes` / `edges` 命名）；目录里有这样命名的文件时，
+  其他 JSON（例如放在旁边的 `scenarios.json`、`names.json`）不读，并在输出里列出；
 - 两个数组文件：`python3 scripts/build_skill.py build node.json edge.json ...`；
 - 整包对象：`{"nodes": [...], "edges": [...]}`；
 - 混合数组：带 `edge_type` 或同时带 `source`+`target` 的记录算作边；

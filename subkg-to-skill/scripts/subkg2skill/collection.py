@@ -18,7 +18,7 @@ from subkg2skill import hygiene, schema
 from subkg2skill.commands import command_signature, command_variants, same_command_set
 from subkg2skill.condition import observation_expression
 from subkg2skill.doc import DocScenario, Precheck, RoutingRow, Step
-from subkg2skill.graph import Graph, Node, _string_list, _text
+from subkg2skill.graph import Graph, Node, _string_list, _text, plain
 from subkg2skill.playbook import fault_key
 
 
@@ -46,12 +46,12 @@ def _observations_of(graph: Graph, check: Node) -> List[Node]:
 def collect_line(check: Node, observations: Sequence[Node]) -> str:
     """What this check is being run to read off the screen."""
     parts: List[str] = []
-    intent = _text(check.attr("intent"))
+    intent = plain(_text(check.attr("intent")))
     if intent:
         parts.append(intent)
     fields: List[str] = []
     for observation in observations:
-        field_name = _text(observation.attr("field"))
+        field_name = plain(_text(observation.attr("field")))
         if field_name and field_name not in fields:
             fields.append(field_name)
     if fields:
@@ -59,7 +59,7 @@ def collect_line(check: Node, observations: Sequence[Node]) -> str:
     if not parts:
         procedure = _string_list(check.attrs.get("procedure"))
         if procedure:
-            parts.append("；".join(procedure))
+            parts.append(plain("；".join(procedure)))
     return "；".join(parts) or "按命令回显记录结果"
 
 

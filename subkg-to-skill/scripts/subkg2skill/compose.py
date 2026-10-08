@@ -64,7 +64,7 @@ from subkg2skill.doc import (
     condition_notes,
     scenario_label,
 )
-from subkg2skill.graph import Graph, Node, _string_list, _text
+from subkg2skill.graph import Graph, Node, _string_list, _text, plain
 from subkg2skill.playbook import CauseBranch, CheckStep, Link, Playbook, Verdict, fault_key
 
 
@@ -482,7 +482,8 @@ def _with_handoffs(text: str, handoffs: Sequence["Handoff"]) -> str:
     """
     if not handoffs:
         return text
-    return "<br>".join([text] + [cell(handoff.render()) for handoff in handoffs])
+    # Never truncated: a hand-off cut short names a skill or a node that does not exist.
+    return "<br>".join([text] + [cell(handoff.render(), limit=10**6) for handoff in handoffs])
 
 
 def _observed(step: CheckStep) -> List[Node]:
@@ -497,14 +498,30 @@ def _criterion(observation: Node) -> str:
     return f"`{observation_expression(observation)}`"
 
 
+def _strongest(pairs: Sequence[Tuple[Node, Verdict]]) -> List[Tuple[Node, Verdict]]:
+    """One verdict per (observation, cause), the strongest the source states.
+
+    A source that says an observation both supports and confirms a cause is
+    saying it once; two rows with the same criterion would tell the reader
+    two different things about one reading.  The cause is matched by name,
+    as branches are folded by name when sources merge.
+    """
+    ordered = sorted(pairs, key=lambda pair: schema.VERDICT_EDGES.index(pair[1].kind))
+    kept: List[Tuple[Node, Verdict]] = []
+    seen: Set[Tuple[str, str]] = set()
+    for observation, verdict in ordered:
+        key = (observation.node_id, fault_key(verdict.cause.name))
+        if key not in seen:
+            seen.add(key)
+            kept.append((observation, verdict))
+    return kept
+
+
 def _decisive(step: CheckStep) -> List[Tuple[Node, Verdict]]:
     """Observations of *step* that decide a cause, strongest first."""
-    decisive: List[Tuple[Node, Verdict]] = []
-    for outcome in step.outcomes:
-        for verdict in outcome.verdicts:
-            decisive.append((outcome.observation, verdict))
-    decisive.sort(key=lambda pair: schema.VERDICT_EDGES.index(pair[1].kind))
-    return decisive
+    return _strongest(
+        [(outcome.observation, verdict) for outcome in step.outcomes for verdict in outcome.verdicts]
+    )
 
 
 def _branch_decisive(branch: CauseBranch) -> List[Tuple[Node, "Verdict"]]:
@@ -525,8 +542,7 @@ def _branch_decisive(branch: CauseBranch) -> List[Tuple[Node, "Verdict"]]:
                 continue
             seen.add(key)
             decisive.append((observation, verdict))
-    decisive.sort(key=lambda pair: schema.VERDICT_EDGES.index(pair[1].kind))
-    return decisive
+    return _strongest(decisive)
 
 
 def _judge_from(commands: Sequence[str], reuse_note: str) -> str:
@@ -552,7 +568,7 @@ def _step_commands(
         name = _text(observation.attr("field"))
         if name and name not in fields:
             fields.append(name)
-    field_note = ("，查看 " + "、".join(f"`{name}`" for name in fields) + " 字段") if fields else ""
+    field_note = ("，查看 " + "、".join(f"`{plain(name)}`" for name in fields) + " 字段") if fields else ""
 
     def cite(index: int) -> Tuple[List[str], str]:
         precheck = prechecks[index - 1]
@@ -614,12 +630,12 @@ def _repair_fix(
             action = "<br>".join(f"`{cmd}`" for cmd in commands)
         else:
             steps = _string_list(repair.attrs.get("procedure"))
-            action = "；".join(steps) if steps else f"{repair.name}（{NO_FIX}）"
+            action = plain("；".join(steps)) if steps else f"{repair.name}（{NO_FIX}）"
         fixes.append(action + condition_notes([edge_condition(link.edge)]))
         missing: List[str] = []
         preconditions = _string_list(repair.attrs.get("preconditions"))
         if preconditions:
-            fixes.append("前置条件：" + "；".join(preconditions))
+            fixes.append("前置条件：" + plain("；".join(preconditions)))
         else:
             missing.append("前置条件")
         for key, prefix, label in (
@@ -628,7 +644,7 @@ def _repair_fix(
         ):
             value = _text(repair.attr(key))
             if value:
-                fixes.append(f"{prefix}{value}")
+                fixes.append(f"{prefix}{plain(value)}")
             else:
                 missing.append(label)
         if missing:

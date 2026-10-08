@@ -113,6 +113,11 @@ def _add_output_arguments(parser: argparse.ArgumentParser) -> None:
 
 def _load_graph(args):
     bundle, sources = load(args.inputs, node_files=args.nodes, edge_files=args.edges)
+    if bundle.skipped:
+        print(
+            "提示：目录里这些文件不像节点/边文件，没有读入（要读用 --nodes / --edges 指定）："
+            + "、".join(bundle.skipped)
+        )
     graph, report = Graph.from_bundle(bundle, strict=bool(args.strict))
     return graph, report, sources
 

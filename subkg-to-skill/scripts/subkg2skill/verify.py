@@ -125,7 +125,8 @@ _WS_RE = re.compile(r"\s+")
 
 def _norm(text: str) -> str:
     """Whitespace-insensitive, case-insensitive form used for every comparison."""
-    return _WS_RE.sub(" ", (text or "").replace("　", " ")).strip().lower()
+    # Backticks are rendered as ' (graph.plain), so they compare as one.
+    return _WS_RE.sub(" ", (text or "").replace("　", " ").replace("`", "'")).strip().lower()
 
 
 def _strings_in(value: object) -> Iterable[str]:
@@ -359,7 +360,10 @@ def _fragments(text: str) -> List[str]:
 #: the reader once it runs out.  Written without code spans on purpose: a span
 #: here would be read as a command and reported as a fabricated one.
 _HANDOFF_RE = re.compile(
-    r"^(?:" + "|".join(re.escape(label) for label in HANDOFF_LABELS.values()) + r")\s*[：:]\s*「([^」]+)」"
+    r"^(?:" + "|".join(re.escape(label) for label in HANDOFF_LABELS.values()) + r")\s*[：:]\s*「(.+?)」"
+    # A name may itself contain 」; the one that closes it is followed by the
+    # hand-off's own tail, or ends the fragment.
+    r"(?=（|〔|——|$)"
 )
 
 

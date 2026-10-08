@@ -12,7 +12,7 @@ import json
 from typing import Any, Dict, List
 
 from subkg2skill import schema
-from subkg2skill.graph import Node, _text
+from subkg2skill.graph import Node, _text, plain
 
 MAX_DEPTH = 12
 
@@ -106,7 +106,7 @@ def observation_expression(node: Node) -> str:
     attrs = node.attrs
     normalized = _text(attrs.get("normalized_expression"))
     if normalized:
-        return normalized
+        return plain(normalized)
     field = _text(attrs.get("field"))
     operator = _text(attrs.get("operator"))
     parts: List[str] = []
@@ -121,7 +121,7 @@ def observation_expression(node: Node) -> str:
     unit = _text(attrs.get("unit"))
     if unit:
         parts.append(f"({unit})")
-    rendered = " ".join(parts).strip()
+    rendered = plain(" ".join(parts).strip())
     return rendered or node.name
 
 
@@ -137,4 +137,4 @@ def edge_condition(edge) -> str:
     text = format_condition(edge.condition)
     if not text and edge.condition_status not in ("", "unconditional"):
         text = format_condition(edge.original_condition)
-    return " ".join(text.split())
+    return plain(" ".join(text.split()))

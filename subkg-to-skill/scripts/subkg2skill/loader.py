@@ -33,11 +33,14 @@ class RawBundle:
     nodes: List[Dict[str, Any]] = field(default_factory=list)
     edges: List[Dict[str, Any]] = field(default_factory=list)
     sources: List[str] = field(default_factory=list)
+    #: Files in a given directory that were not read, and why.
+    skipped: List[str] = field(default_factory=list)
 
     def extend(self, other: "RawBundle") -> None:
         self.nodes.extend(other.nodes)
         self.edges.extend(other.edges)
         self.sources.extend(other.sources)
+        self.skipped.extend(other.skipped)
 
 
 def _strip_comments_and_trailing_commas(text: str) -> str:
@@ -197,7 +200,12 @@ def load_paths(
 
 
 def load_directory(directory: Path) -> RawBundle:
-    """Load ``*.json`` / ``*.jsonl`` from *directory*, nodes before edges."""
+    """Load ``*.json`` / ``*.jsonl`` from *directory*, nodes before edges.
+
+    When the directory has files named like nodes / edges, only those are
+    read: a scenario manifest or a names map saved next to the export is not
+    graph data, and reading it as records turns it into a node with no id.
+    """
     candidates = sorted(
         p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in LOADABLE_SUFFIXES
     )
@@ -205,8 +213,11 @@ def load_directory(directory: Path) -> RawBundle:
         raise SubgraphLoadError(f"{directory}: 目录下没有 .json/.jsonc/.jsonl 文件")
     ordered = [p for p in candidates if _looks_like(p, NODE_FILE_HINTS)]
     ordered += [p for p in candidates if _looks_like(p, EDGE_FILE_HINTS) and p not in ordered]
-    ordered += [p for p in candidates if p not in ordered]
     bundle = RawBundle()
+    if ordered:
+        bundle.skipped = [str(p) for p in candidates if p not in ordered]
+    else:
+        ordered = candidates
     for path in ordered:
         bundle.extend(_split_bundle(_read(path), path))
     return bundle

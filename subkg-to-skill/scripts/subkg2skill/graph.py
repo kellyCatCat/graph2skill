@@ -33,6 +33,16 @@ def _text(value: Any) -> str:
     return str(value)
 
 
+def plain(text: str) -> str:
+    """Source text as the documents may carry it: no backtick of its own.
+
+    The documents mark commands and criteria with backticks; one inside a
+    source string would pair with the wrong one and turn prose into a code
+    span.  ``verify`` makes the same substitution before comparing.
+    """
+    return (text or "").replace("`", "'")
+
+
 def _string_list(value: Any) -> List[str]:
     """Normalise the ``array | string | null`` fields into a list of strings."""
     if value is None:
@@ -79,7 +89,9 @@ class Node:
 
     @property
     def name(self) -> str:
-        return _text(self.raw.get("name")) or self.node_id
+        # One line: a name is a heading, a table cell and a list item, and a
+        # line break inside it tears all three apart.
+        return plain(" ".join(_text(self.raw.get("name")).split())) or self.node_id
 
     @property
     def description(self) -> str:
@@ -555,7 +567,9 @@ class Graph:
 
     def subgraph(self, node_ids: Iterable[str]) -> "Graph":
         keep = {nid for nid in node_ids if nid in self.nodes}
-        nodes = [self.nodes[nid] for nid in keep]
+        # In the source's order, never the set's: iterating a set of strings
+        # differs from one process to the next, and so would the document.
+        nodes = [node for nid, node in self.nodes.items() if nid in keep]
         edges = [e for e in self.edges if e.source in keep and e.target in keep]
         return Graph(nodes, edges)
 

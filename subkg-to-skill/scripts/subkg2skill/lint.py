@@ -143,11 +143,36 @@ def _frontmatter(text: str) -> Tuple[Dict[str, str], List[LintIssue]]:
     return fields, issues
 
 
+#: Lines whose code spans are readings or source text, never commands.
+_NOT_COMMAND_LINES = ("根因定位", "采集内容", "适用条件", "执行条件", "适用步骤", "适用场景")
+
+
 def _commands_in(lines: Sequence[str]) -> List[str]:
-    """Inline code spans that look like a command rather than a field name."""
+    """Inline code spans that look like a command rather than a field name.
+
+    Criteria in 跳转信息, 根因定位 and 采集内容 are code spans too, and an
+    observation may read ``x <br> y``; only command lines and the repair /
+    recheck columns of the root-cause table carry commands.
+    """
     commands: List[str] = []
+    in_jump = False
     for line in lines:
         stripped = line.strip()
+        if "跳转信息" in stripped:
+            in_jump = True
+            continue
+        if in_jump and ("根因定位" in stripped or stripped.startswith("#")):
+            in_jump = False
+        if in_jump:
+            continue
+        if stripped.startswith("|"):
+            rows = _table_rows([line])
+            if rows and len(rows[0]) >= 4:
+                for column in rows[0][2:4]:
+                    commands += [span for span in CODE_RE.findall(column) if " " in span or "<" in span]
+            continue
+        if any(mark in stripped for mark in _NOT_COMMAND_LINES):
+            continue
         if not stripped.startswith(("-", "*", "1.", "2.", "3.", "4.")) and "CLI" not in stripped:
             continue
         if "CLI" not in stripped and "命令" not in stripped and not stripped.startswith(("-", "*")):
@@ -169,8 +194,7 @@ def _jump_lines(body: Sequence[str]) -> List[str]:
         if "根因定位" in line:
             inside = False
         if inside:
-            # A condition is source text; a "步骤 3" inside one is not a jump.
-            lines.append(CONDITION_RE.sub("", line))
+            lines.append(line)
     return lines
 
 
@@ -207,7 +231,9 @@ def _criterion_issues(step_bodies: Dict[int, List[str]], *, scenario: str = "") 
     for number in sorted(step_bodies):
         pairs = _criteria(step_bodies[number])
         for criterion, outcome in pairs:
-            seen.setdefault(criterion, []).append(number)
+            numbers = seen.setdefault(criterion, [])
+            if number not in numbers:
+                numbers.append(number)
         # A criterion and its negation that land in the same place decide nothing.
         for index, (criterion, outcome) in enumerate(pairs):
             for other, other_outcome in pairs[index + 1 :]:
@@ -242,6 +268,35 @@ def _is_negation(left: str, right: str) -> bool:
         if negative in right and positive in left and right.replace(negative, positive) == left:
             return True
     return False
+
+
+#: A root cause named in a jump line, ``“…”`` — its words are not instructions.
+QUOTED_RE = re.compile(r"“[^”]*”")
+#: ``场景B：<症状名>`` up to the closing bracket — a scenario's name is the symptom's.
+SCENARIO_REF_RE = re.compile(r"场景[A-Za-z0-9]+[：:][^）\n]*")
+#: ``**title**`` — titles are node names, i.e. source text.
+BOLD_RE = re.compile(r"\*\*[^*]+\*\*")
+
+
+def _instructions(line: str) -> str:
+    """*line* without the source text in it — what is left is the document's own wording.
+
+    A condition, a quoted root cause or a code span can say "步骤 3" or
+    ``<br>``; neither is a jump nor a parameter the document asks for.
+    """
+    line = CONDITION_RE.sub(" ", line)
+    line = QUOTED_RE.sub(" ", line)
+    line = BOLD_RE.sub(" ", line)  # a collection step's title is the check's own name
+    line = SCENARIO_REF_RE.sub(" ", line)  # 「（场景B：<症状名>）」 names a scenario by its source name
+    return CODE_RE.sub(" ", line)
+
+
+def _routing_target(cell: str) -> str:
+    """``→ **场景A：名称**`` → ``场景A：名称``; a ``*`` inside the name stays."""
+    text = cell.strip().lstrip("→").strip()
+    if text.startswith("**") and text.endswith("**") and len(text) >= 4:
+        text = text[2:-2]
+    return re.sub(r"\s", "", text)
 
 
 def _table_rows(lines: Sequence[str]) -> List[List[str]]:
@@ -433,7 +488,7 @@ def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintR
     )
     collection_lines = precheck_lines[:routing_start]
     if any(
-        JUMP_RE.search(line) and "顺序" not in line and not AUDIENCE_RE.search(line)
+        JUMP_RE.search(_instructions(line)) and "顺序" not in line and not AUDIENCE_RE.search(line)
         for line in collection_lines
     ):
         issues.append(LintIssue("error", "前置检查不允许跳转到其他步骤"))
@@ -529,7 +584,7 @@ def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintR
     # 场景自己的采集，和前置检查一样：参数得是现场能提供的必填项
     for scenario, lines_in_block in collection.items():
         where = f"{scenario} " if scenario else ""
-        if any(JUMP_RE.search(line) and "顺序" not in line for line in lines_in_block):
+        if any(JUMP_RE.search(_instructions(line)) and "顺序" not in line for line in lines_in_block):
             issues.append(LintIssue("error", f"{where}本场景采集不允许跳转到其他步骤"))
         for command in _commands_in(lines_in_block):
             for token in PARAM_RE.findall(command):
@@ -560,7 +615,7 @@ def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintR
                 if item not in joined:
                     where = f"{scenario} " if scenario else ""
                     issues.append(LintIssue("error", f"{where}步骤{number} 缺少「{item}」"))
-            for target in JUMP_RE.findall("\n".join(_jump_lines(body))):
+            for target in JUMP_RE.findall("\n".join(_instructions(line) for line in _jump_lines(body))):
                 if int(target) not in bodies:
                     where = f"{scenario} " if scenario else ""
                     issues.append(
@@ -605,7 +660,9 @@ def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintR
             if len(row) < 3:
                 issues.append(LintIssue("error", f"{STEP_ROUTING_HEADING}行格式不对（需要 3 列）：{row}"))
                 continue
-            targets = JUMP_RE.findall(row[2])
+            # "→ **步骤 N：检查<原因名>**": only the leading N is the target; the
+            # name after it is source text and may say anything.
+            targets = JUMP_RE.findall(row[2])[:1]
             if not targets:
                 issues.append(
                     LintIssue("error", f"{STEP_ROUTING_HEADING}的跳转目标必须写成「步骤 N」：{row[2]}")
@@ -635,9 +692,7 @@ def lint_text(text: str, *, declared: Optional[Dict[str, bool]] = None) -> LintR
             issues.append(
                 LintIssue("error", f"分场景时前置检查后必须有「{ROUTING_HEADING}」，说明每条判据进入哪个场景")
             )
-        routed = {
-            re.sub(r"[*→\s]", "", row[2]) for row in routing_rows if len(row) >= 3
-        }
+        routed = {_routing_target(row[2]) for row in routing_rows if len(row) >= 3}
         for scenario in scenarios:
             if re.sub(r"\s", "", scenario) not in routed:
                 issues.append(LintIssue("error", f"{scenario} 没有出现在{ROUTING_HEADING}里"))
