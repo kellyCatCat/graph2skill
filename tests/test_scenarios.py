@@ -12,11 +12,13 @@ import sys
 import pytest
 
 from subkg2skill.cli import main
+from subkg2skill.compose import build_doc
+from subkg2skill.doc import BuildPolicy
 from subkg2skill.graph import Graph
 from subkg2skill.loader import load
 from subkg2skill.playbook import build_playbook, entry_scenarios
 from subkg2skill.render import BuildOptions, build_package
-from subkg2skill.template import BuildPolicy, build_doc
+
 from tests.conftest import ROOT
 
 MESSY = ROOT / "tests" / "data" / "messy"

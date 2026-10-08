@@ -5,12 +5,15 @@ import json
 import pytest
 
 from subkg2skill.cli import main
+from subkg2skill.compose import build_multi_doc
+from subkg2skill.doc import scenario_label
 from subkg2skill.graph import Graph
 from subkg2skill.lint import lint_files, lint_path, lint_text
 from subkg2skill.loader import load
+from subkg2skill.markdown import render_doc, render_package
 from subkg2skill.playbook import build_merged_playbook, fault_groups
 from subkg2skill.render import BuildOptions, build_package
-from subkg2skill.template import build_multi_doc, render_doc, render_package, scenario_label
+
 from tests.conftest import ROOT
 
 MULTI = ROOT / "tests" / "data" / "multisource"
@@ -419,6 +422,7 @@ def test_selection_does_not_cross_a_fault_boundary():
     """refers_to / leads_to 指向另一个故障入口，不该把它的下游拉进来。"""
     from subkg2skill.graph import Graph
     from subkg2skill.loader import RawBundle
+
     from tests.conftest import make_edge, make_node
 
     nodes = [
@@ -450,6 +454,7 @@ def test_selection_does_not_cross_a_fault_boundary():
 def _two_scenario_graph():
     """两个场景：一条共用采集，一条只有场景B 用、且不产生分流判据。"""
     from subkg2skill.loader import RawBundle
+
     from tests.conftest import make_edge, make_node
 
     nodes = [
@@ -557,6 +562,7 @@ def test_routing_and_labels_are_off_for_a_single_fault_document(example_graph):
 def _wide_graph(scenario_count: int = 10, *, shared_readers: int = 8, narrow_readers: int = 2):
     """一份很宽的文档：一条采集被多数场景读，另一条只被少数几个读。"""
     from subkg2skill.loader import RawBundle
+
     from tests.conftest import make_edge, make_node
 
     nodes = [
@@ -597,8 +603,8 @@ def _wide_graph(scenario_count: int = 10, *, shared_readers: int = 8, narrow_rea
 
 
 def _wide_doc(**kwargs):
+    from subkg2skill.doc import BuildPolicy
     from subkg2skill.playbook import build_playbook
-    from subkg2skill.template import BuildPolicy
 
     count = kwargs.pop("scenario_count", 10)
     policy = BuildPolicy(**kwargs) if kwargs else None

@@ -2,20 +2,14 @@
 
 import pytest
 
+from subkg2skill.commands import normalise_command, param_display, param_key, parameters_in
+from subkg2skill.compose import build_doc
+from subkg2skill.doc import NO_FIX, NOT_FOUND, BuildPolicy
 from subkg2skill.graph import Graph
 from subkg2skill.loader import RawBundle
+from subkg2skill.markdown import render_doc
 from subkg2skill.playbook import build_playbook
-from subkg2skill.template import (
-    NOT_FOUND,
-    NO_FIX,
-    BuildPolicy,
-    build_doc,
-    normalise_command,
-    param_display,
-    param_key,
-    parameters_in,
-    render_doc,
-)
+
 from tests.conftest import make_edge, make_node
 
 ISIS = "symptom_7f1c02aa93be4d61b0c5e210"

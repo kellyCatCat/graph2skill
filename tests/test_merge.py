@@ -6,9 +6,11 @@ two of them as separate nodes.
 """
 
 import re
+
 import pytest
 
 from subkg2skill.cli import main
+from subkg2skill.compose import build_doc
 from subkg2skill.graph import Graph
 from subkg2skill.loader import load
 from subkg2skill.playbook import (
@@ -19,7 +21,7 @@ from subkg2skill.playbook import (
     suggest_merges,
 )
 from subkg2skill.render import BuildOptions, build_package, default_description
-from subkg2skill.template import build_doc
+
 from tests.conftest import ROOT
 
 MULTI = ROOT / "tests" / "data" / "multisource"

@@ -8,11 +8,12 @@ step count means most steps decide on a single reading.
 from __future__ import annotations
 
 from subkg2skill.cli import main
+from subkg2skill.compose import build_multi_doc
 from subkg2skill.graph import Graph
 from subkg2skill.loader import load
 from subkg2skill.plan import metrics, render_metrics
 from subkg2skill.playbook import build_merged_playbook, fault_groups
-from subkg2skill.template import build_multi_doc
+
 from tests.conftest import ROOT
 
 MULTI = ROOT / "tests" / "data" / "multisource"

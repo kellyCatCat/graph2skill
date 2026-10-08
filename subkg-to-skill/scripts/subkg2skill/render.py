@@ -8,9 +8,10 @@ costs every reader the ones that are not theirs.
     out/bgp-troubleshooting/SKILL.md           多场景：入参 + 前置检查 + 场景跳转表
     out/bgp-troubleshooting/reference/*.md     每个场景的排查步骤与根因对照表
 
-The knowledge graph never ships with a skill.  The documents are written by
-:mod:`subkg2skill.template`; this module supplies the frontmatter and the
-on-disk layout.
+The knowledge graph never ships with a skill.  The document is built by
+:mod:`subkg2skill.compose` and written out by :mod:`subkg2skill.markdown`;
+this module supplies the names, the frontmatter description and the on-disk
+layout.
 """
 
 from __future__ import annotations
@@ -20,15 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple, Union
 
+from subkg2skill.compose import build_multi_doc
+from subkg2skill.doc import SHARED_COVERAGE, BuildPolicy, SkillDoc
 from subkg2skill.graph import Graph, Node, _text
+from subkg2skill.markdown import render_package
 from subkg2skill.playbook import Playbook
-from subkg2skill.template import (
-    SHARED_COVERAGE,
-    BuildPolicy,
-    SkillDoc,
-    build_multi_doc,
-    render_package,
-)
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 MAX_DESCRIPTION = 1024

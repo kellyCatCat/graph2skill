@@ -14,16 +14,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import hygiene
+from subkg2skill.commands import PARAM_RE, case_literals, command_signature, param_key
+from subkg2skill.doc import HANDOFF_LABELS, NO_SKILL, NOT_FOUND
 from subkg2skill.playbook import fault_key
-from subkg2skill.template import (
-    HANDOFF_LABELS,
-    NO_SKILL,
-    NOT_FOUND,
-    PARAM_RE,
-    case_literals,
-    command_signature,
-    param_key,
-)
 
 CAUSE_TABLE = "根因对照表"
 SECTIONS = ("入参列表", "前置检查", "排查步骤", CAUSE_TABLE)

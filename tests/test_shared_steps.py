@@ -10,11 +10,14 @@ import re
 
 import pytest
 
+from subkg2skill.compose import build_doc
+from subkg2skill.doc import BuildPolicy
 from subkg2skill.graph import Graph
 from subkg2skill.lint import lint_text
 from subkg2skill.loader import RawBundle
+from subkg2skill.markdown import render_doc
 from subkg2skill.playbook import build_playbook
-from subkg2skill.template import BuildPolicy, build_doc, render_doc
+
 from tests.conftest import make_edge, make_node
 
 SHARED = "display current-configuration configuration isis"

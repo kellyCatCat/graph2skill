@@ -7,22 +7,16 @@ screen output, table rows or prose into a document as something to type.
 from __future__ import annotations
 
 import pytest
+from conftest import make_edge, make_node
 
 from subkg2skill import hygiene
+from subkg2skill.commands import command_templates, command_variants, param_key, same_command_set
+from subkg2skill.compose import build_doc
 from subkg2skill.graph import Graph
-from subkg2skill.loader import RawBundle
 from subkg2skill.lint import lint_text
+from subkg2skill.loader import RawBundle
+from subkg2skill.markdown import render_doc
 from subkg2skill.playbook import build_merged_playbook, build_playbook
-from subkg2skill.template import (
-    build_doc,
-    command_templates,
-    command_variants,
-    param_key,
-    render_doc,
-    same_command_set,
-)
-
-from conftest import make_edge, make_node
 
 
 # ---------------------------------------------------------------- identity

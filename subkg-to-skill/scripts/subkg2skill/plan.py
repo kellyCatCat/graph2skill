@@ -13,8 +13,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from subkg2skill.doc import NOT_FOUND, DocScenario, SkillDoc
 from subkg2skill.playbook import fault_key
-from subkg2skill.template import NOT_FOUND, DocScenario, SkillDoc
 
 COMMAND_RE = re.compile(r"`([^`]+)`")
 REUSE_NUMBER_RE = re.compile(r"复用前置检查步骤 (\d+)")

@@ -22,9 +22,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from subkg2skill import __version__, schema
+from subkg2skill.compose import build_multi_doc
+from subkg2skill.doc import SHARED_COVERAGE, scenario_label
 from subkg2skill.graph import Graph, Node, ValidationReport
 from subkg2skill.lint import lint_files, lint_path
 from subkg2skill.loader import SubgraphLoadError, load
+from subkg2skill.markdown import render_package
+from subkg2skill.plan import metrics, plan_document, render_metrics, render_plan
 from subkg2skill.playbook import (
     build_merged_playbook,
     build_playbook,
@@ -35,8 +39,6 @@ from subkg2skill.playbook import (
     fault_key,
     suggest_merges,
 )
-from subkg2skill.template import SHARED_COVERAGE, render_package
-from subkg2skill.verify import VerifyResult, verify_files, verify_path
 from subkg2skill.render import (
     BuildOptions,
     RenderError,
@@ -45,8 +47,7 @@ from subkg2skill.render import (
     normalise_name,
     suggested_slug,
 )
-from subkg2skill.plan import metrics, plan_document, render_metrics, render_plan
-from subkg2skill.template import build_multi_doc, scenario_label
+from subkg2skill.verify import VerifyResult, verify_files, verify_path
 
 
 def _add_input_arguments(parser: argparse.ArgumentParser) -> None:

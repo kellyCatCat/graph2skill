@@ -37,7 +37,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Set, Tuple
 
+from subkg2skill.commands import (
+    command_templates,
+    command_variants,
+    normalise_command,
+    param_key,
+    parameters_in,
+)
 from subkg2skill.condition import observation_expression
+from subkg2skill.doc import HANDOFF_EDGES, HANDOFF_LABELS, NOT_FOUND
 from subkg2skill.graph import Graph, Node
 from subkg2skill.lint import (
     CAUSE_TABLE,
@@ -50,16 +58,6 @@ from subkg2skill.lint import (
 )
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.playbook import fault_key
-from subkg2skill.template import (
-    HANDOFF_EDGES,
-    HANDOFF_LABELS,
-    NOT_FOUND,
-    command_templates,
-    command_variants,
-    normalise_command,
-    param_key,
-    parameters_in,
-)
 
 #: Nodes whose ``command_templates`` may be quoted as a CLI command.
 COMMAND_NODES = ("check", "repair", "escalation")

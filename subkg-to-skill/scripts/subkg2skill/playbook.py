@@ -4,7 +4,7 @@ One playbook per ``symptom`` node: entry checks, candidate causes, the checks
 that discriminate between them, what each check can observe, which observation
 confirms / supports / excludes which cause, and the repairs or escalations the
 source allows.  This module only walks the graph — the wording lives in
-:mod:`subkg2skill.render`.
+:mod:`subkg2skill.compose`.
 """
 
 from __future__ import annotations

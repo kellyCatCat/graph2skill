@@ -6,12 +6,14 @@ graph.  Output: one skill per subgraph — a template-conformant ``SKILL.md``
 when it covers several faults, and nothing else; the graph never ships.
 """
 
+from subkg2skill.compose import build_doc
+from subkg2skill.doc import SkillDoc
 from subkg2skill.graph import Edge, Graph, Node, ValidationReport
 from subkg2skill.lint import LintResult, lint_path, lint_text
 from subkg2skill.loader import RawBundle, SubgraphLoadError, load
+from subkg2skill.markdown import render_doc
 from subkg2skill.playbook import Playbook, build_playbook, build_playbooks
 from subkg2skill.render import BuildOptions, RenderError, SkillPackage, build_package
-from subkg2skill.template import SkillDoc, build_doc, render_doc
 from subkg2skill.verify import Finding, Ground, VerifyResult, verify_path, verify_text
 
 __version__ = "0.3.0"

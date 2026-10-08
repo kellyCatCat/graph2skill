@@ -8,10 +8,10 @@
 import json
 
 from subkg2skill.cli import main
+from subkg2skill.doc import NO_SKILL
 from subkg2skill.lint import lint_text
 from subkg2skill.playbook import build_playbook
 from subkg2skill.render import BuildOptions, build_package
-from subkg2skill.template import NO_SKILL
 from subkg2skill.verify import verify_text
 
 from tests.conftest import make_edge, make_node
