@@ -18,6 +18,8 @@ NO_FIX = "无直接修复CLI（来源未给出修复命令，只能定位）"
 
 
 NOT_FOUND = "未找到根因"
+#: A cause the source gives no way to check — said, not papered over with a pointer.
+NO_CHECK = "本子图未给出该原因的检查动作，只能依据现象判断"
 
 #: A relation the source only asserts under a condition says so where it is
 #: used, and says the condition has not been evaluated.  Dropping it would

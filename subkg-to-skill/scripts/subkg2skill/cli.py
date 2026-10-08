@@ -32,7 +32,6 @@ from subkg2skill.plan import metrics, plan_document, render_metrics, render_plan
 from subkg2skill.playbook import (
     build_merged_playbook,
     build_playbook,
-    build_playbooks,
     entry_scenarios,
     entry_symptoms,
     fault_groups,
@@ -208,9 +207,10 @@ def _install_hint(out_dir: Path, name: str) -> None:
 
 # ------------------------------------------------------------- commands
 def cmd_list(args) -> int:
-    graph, _report, sources = _load_graph(args)
+    graph, report, sources = _load_graph(args)
     graph = _select(graph, args)
     print(f"输入：{'、'.join(sources)}")
+    _print_load_issues(report)
     if args.all_units:
         symptoms = entry_symptoms(graph)
         print(f"故障入口（symptom）共 {len(symptoms)} 个（未按诊断单元拆分）：\n")
@@ -356,6 +356,27 @@ def cmd_list(args) -> int:
     return 0
 
 
+def _unreachable(graph: Graph) -> List:
+    """Connected nodes no symptom leads to — they cannot end up in any skill."""
+    symptoms = [node.node_id for node in graph.of_type("symptom")]
+    reached = graph.reachable(symptoms, edge_types=schema.FORWARD_EDGES)
+    connected = {edge.source for edge in graph.edges} | {edge.target for edge in graph.edges}
+    return [
+        node
+        for node in graph.iter_nodes()
+        if node.node_id in connected and node.node_id not in reached
+    ]
+
+
+def _print_load_issues(report: ValidationReport) -> None:
+    """Records dropped at load time are absent from everything below; say so."""
+    if report.issues:
+        print(
+            f"提示：载入时有 {len(report.issues)} 条告警/丢弃，"
+            "这些记录不参与下面的结果（inspect 看明细）"
+        )
+
+
 def cmd_inspect(args) -> int:
     """Phase 1: what the export holds, and whether it loads cleanly."""
     graph, report, sources = _load_graph(args)
@@ -371,11 +392,13 @@ def cmd_inspect(args) -> int:
     print("\n适用范围（厂商）：")
     for vendor, count in graph.vendors().items():
         print(f"  {vendor}: {count}")
-    sections = graph.sections()
-    if sections:
-        print("\n诊断单元（前 10）：")
-        for section, count in list(sections.items())[:10]:
-            print(f"  {section}: {count}")
+    # Faults are split by the unit on each relation, not on each node: a node is
+    # reused across units, so counting nodes would not match what list shows.
+    units = graph.edge_units()
+    if units:
+        print(f"\n诊断单元（按关系计；共 {len(units)} 个，前 10）：")
+        for unit, count in list(units.items())[:10]:
+            print(f"  {unit}: {count}")
     flags = graph.quality_flag_counts()
     if flags:
         print("\n质量标记：")
@@ -386,8 +409,20 @@ def cmd_inspect(args) -> int:
         print(f"\n孤立节点：{len(orphans)}（前 5）")
         for node in orphans[:5]:
             print(f"  {node.name} ({node.node_id})")
-    playbooks = build_playbooks(graph)
-    print(f"\n可生成 skill：{len(playbooks)} 份（一个故障入口一份，用 list 看清单）")
+    unreachable = _unreachable(graph)
+    if unreachable:
+        print(f"\n症状走不到的节点：{len(unreachable)} 个（从任何症状出发都到不了，不会进入任何 skill；前 5）")
+        for node in unreachable[:5]:
+            print(f"  {node.name} ({node.node_id}，{node.node_type})")
+    groups = fault_groups(graph)
+    scenarios_used = len(entry_scenarios(graph, min_causes=1))
+    short = len(entry_scenarios(graph, min_causes=0)) - scenarios_used
+    print(
+        f"\n故障：{len(groups)} 个（跨来源合并后，来自 {scenarios_used} 个“症状 × 诊断单元”场景）。"
+        "默认一个子图生成一份 skill，它们是其中的场景；用 list 看清单"
+    )
+    if short:
+        print(f"另有 {short} 个场景没有候选原因，默认不进入 skill")
     print()
     _print_report(report, limit=args.limit)
     if report.errors:
@@ -566,6 +601,7 @@ def cmd_build(args) -> int:
         _print_report(report)
         print("\n--strict 模式下存在校验错误，已中止。", file=sys.stderr)
         return 1
+    _print_load_issues(report)
     graph = _select(graph, args)
     if args.each:
         if args.entry or args.scenarios or args.name:

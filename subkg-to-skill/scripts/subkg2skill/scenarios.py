@@ -315,6 +315,19 @@ def from_groups(
     """
     notes: List[str] = []
     groups = fault_groups(graph, min_causes=min_causes, merge=merge)
+    if groups and min_causes:
+        # A fault left out for having too few causes is still a fault in this
+        # subgraph; the skill does not cover it, and the reader has to know.
+        short = [s for s in entry_scenarios(graph, min_causes=0) if s.causes < min_causes]
+        if short:
+            named = "、".join(
+                f"{s.symptom.name}" + (f"@{s.unit}" if s.unit else "") for s in short[:5]
+            )
+            more = f" 等 {len(short)} 个" if len(short) > 5 else ""
+            notes.append(
+                f"另有 {len(short)} 个场景候选原因少于 {min_causes} 个，没有进入这份 skill："
+                f"{named}{more}（--min-causes 0 可包含）"
+            )
     if not groups and min_causes and entry_symptoms(graph):
         # 这张图的故障全都候选原因不足。门槛是用来挑"值不值得单独成一份 skill"的，
         # 而调用方已经指名要这个子图的 skill——空着手回去不如照实做出来，

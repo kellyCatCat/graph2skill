@@ -274,8 +274,12 @@ def test_strict_build_stops_on_errors(tmp_path, write_bundle):
 def test_inspect_summarises_the_input(example_dir, capsys):
     assert main(["inspect", str(example_dir)]) == 0
     output = capsys.readouterr().out
-    assert "可生成 skill：2 份" in output
+    # 和 list 同一个口径：示例图 1 个故障；另一个症状没有原因，不进 skill
+    assert "故障：1 个" in output
+    assert "另有 1 个场景没有候选原因" in output
     assert "symptom (故障症状): 2" in output
+    # 诊断单元按关系计，和 list 切故障的依据一致
+    assert "诊断单元（按关系计" in output
 
 
 def test_missing_input_is_a_usage_error():

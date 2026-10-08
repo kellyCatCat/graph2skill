@@ -8,7 +8,6 @@
 import math
 import re
 
-import pytest
 
 from subkg2skill.compose import build_doc
 from subkg2skill.doc import BuildPolicy

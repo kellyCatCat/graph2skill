@@ -47,6 +47,7 @@ from subkg2skill.commands import (
 from subkg2skill.condition import edge_condition, observation_expression
 from subkg2skill.doc import (
     MISSING_PREFIX,
+    NO_CHECK,
     NO_FIX,
     NOT_FOUND,
     HANDOFF_NOTES,
@@ -120,13 +121,17 @@ def build_multi_doc(
             referenced.update(REUSE_RE.findall(step.reuse_note))
         for row in scenario.routing:
             referenced.update(REUSE_RE.findall(row.precheck))
-    shared.prechecks = [
-        precheck
-        for precheck in shared.prechecks
-        if precheck.verdicts
-        or not any_steps
-        or any(node_id in referenced for node_id in precheck.node_ids)
-    ]
+    kept: List[Precheck] = []
+    for precheck in shared.prechecks:
+        if (
+            precheck.verdicts
+            or not any_steps
+            or any(node_id in referenced for node_id in precheck.node_ids)
+        ):
+            kept.append(precheck)
+        else:
+            omitted.append((precheck.title, "前置检查的观测不判定任何原因，也没有排查步骤读它的回显"))
+    shared.prechecks = kept
     if len(built) > 1:
         shared.prechecks = split_collection(
             shared.prechecks, built, coverage=policy.shared_coverage
@@ -292,7 +297,7 @@ def _build_scenario(
             continue
 
         commands, reuse_note = _step_commands(
-            branch, decisive, shared.producing_check, shared.of_check, shared.prechecks
+            graph, branch, decisive, shared.producing_check, shared.of_check, shared.prechecks
         )
         issued_by = ""
         for own in branch.checks if commands else ():
@@ -323,7 +328,7 @@ def _build_scenario(
             branches.append(
                 Branch(
                     "本子图未给出该原因的判定观测",
-                    "结合前置检查回显人工判断；无法判定则{next}",
+                    f"{_judge_from(commands, reuse_note)}；无法判定则{{next}}",
                 )
             )
             causes.append(branch.cause.name)
@@ -524,7 +529,17 @@ def _branch_decisive(branch: CauseBranch) -> List[Tuple[Node, "Verdict"]]:
     return decisive
 
 
+def _judge_from(commands: Sequence[str], reuse_note: str) -> str:
+    """Where a reader without a criterion has to look — the reading this step actually has."""
+    if commands:
+        return "结合本步骤回显人工判断"
+    if "复用" in reuse_note:
+        return "结合前置检查回显人工判断"
+    return "结合现象人工判断"
+
+
 def _step_commands(
+    graph: Graph,
     branch: CauseBranch,
     decisive: Sequence[Tuple[Node, "Verdict"]],
     producing_check: Dict[str, str],
@@ -565,7 +580,16 @@ def _step_commands(
         if commands:
             return commands, ""
         return [], f"{step.check.name}：来源未给出命令模板，按来源步骤说明人工执行"
-    return [], "复用前置检查回显" if prechecks else "本子图未给出可用的检查动作，只能依据现象判断"
+
+    # No check of its own: the reading that decides it comes from a check the
+    # collection phase does not run, so this step runs it.
+    for observation, _verdict in decisive:
+        check = graph.get(producing_check.get(observation.node_id, ""))
+        commands = command_templates(check) if check is not None else []
+        if commands:
+            same = equivalent_precheck(prechecks, commands)
+            return cite(same) if same else (commands, "")
+    return [], NO_CHECK
 
 
 def _repair_fix(

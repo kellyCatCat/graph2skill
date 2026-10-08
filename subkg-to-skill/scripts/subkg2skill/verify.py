@@ -45,7 +45,14 @@ from subkg2skill.commands import (
     parameters_in,
 )
 from subkg2skill.condition import edge_condition, format_condition, observation_expression
-from subkg2skill.doc import CONDITION_RE, HANDOFF_EDGES, HANDOFF_LABELS, MISSING_PREFIX, NOT_FOUND
+from subkg2skill.doc import (
+    CONDITION_RE,
+    HANDOFF_EDGES,
+    HANDOFF_LABELS,
+    MISSING_PREFIX,
+    NO_CHECK,
+    NOT_FOUND,
+)
 from subkg2skill.graph import Graph, Node
 from subkg2skill.lint import (
     CAUSE_TABLE,
@@ -85,6 +92,8 @@ SCAFFOLDING = (
     "需人工确认",
     "关注字段",
     "结合前置检查回显人工判断",
+    "结合本步骤回显人工判断",
+    "结合现象人工判断",
     "顺序执行步骤",
     "以上判据均不命中",
     "结束排查",
@@ -105,6 +114,7 @@ SCAFFOLDING = (
     "读数用于分流判断",
     "全部场景",
     MISSING_PREFIX,
+    NO_CHECK,
 )
 
 #: Prefixes the renderer puts in front of a sourced fragment.
