@@ -19,12 +19,12 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence
 
-from subkg2skill import __version__, schema
+from subkg2skill import __version__, scenarios, schema
 from subkg2skill.compose import build_multi_doc
 from subkg2skill.doc import SHARED_COVERAGE, scenario_label
-from subkg2skill.graph import Graph, Node, ValidationReport
+from subkg2skill.graph import Graph, ValidationReport
 from subkg2skill.lint import lint_files, lint_path
 from subkg2skill.loader import SubgraphLoadError, load
 from subkg2skill.markdown import render_package
@@ -36,7 +36,6 @@ from subkg2skill.playbook import (
     entry_scenarios,
     entry_symptoms,
     fault_groups,
-    fault_key,
     suggest_merges,
 )
 from subkg2skill.render import (
@@ -47,6 +46,7 @@ from subkg2skill.render import (
     normalise_name,
     suggested_slug,
 )
+from subkg2skill.scenarios import ScenarioSet
 from subkg2skill.verify import VerifyResult, verify_files, verify_path
 
 
@@ -118,112 +118,16 @@ def _load_graph(args):
     return graph, report, sources
 
 
-def _resolve_roots(graph: Graph, roots: Sequence[str]) -> Set[str]:
-    resolved: Set[str] = set()
-    for root in roots:
-        if root in graph:
-            resolved.add(root)
-            continue
-        prefixed = [nid for nid in graph.nodes if nid.startswith(root)]
-        if prefixed:
-            resolved.update(prefixed)
-            continue
-        hits = graph.search(root)
-        if not hits:
-            raise RenderError(f"起点 {root!r} 既不是 node_id，也没有匹配到任何节点")
-        resolved.update(node.node_id for node in hits)
-    return resolved
-
-
 def _select(graph: Graph, args) -> Graph:
-    seeds: Set[str] = set()
-    if getattr(args, "root", None):
-        seeds |= _resolve_roots(graph, args.root)
-    if args.node_type or args.section or args.vendor or args.query:
-        filtered = graph.filter_nodes(
-            node_types=args.node_type,
-            sections=args.section,
-            vendors=args.vendor,
-            query=args.query,
-        )
-        seeds = (seeds & filtered) if args.root else filtered
-    if not seeds:
-        if args.root or args.node_type or args.section or args.vendor or args.query:
-            raise RenderError("筛选条件没有选中任何节点")
-        return graph
-    depth = args.depth if args.depth > 0 else None
-    return graph.subgraph(graph.reachable(seeds, depth=depth))
-
-
-def _units_of(graph: Graph, symptom: Node) -> Dict[str, int]:
-    return graph.edge_units(symptom.node_id, "has_cause", "diagnosed_by", "next_step")
-
-
-def _resolve_units(
-    graph: Graph, symptoms: Sequence[Node], units: Sequence[str], all_units: bool
-) -> List[str]:
-    """Pick the diagnostic units this skill covers, or explain why one is needed."""
-    if all_units:
-        return []
-    available: Dict[str, int] = {}
-    for symptom in symptoms:
-        for name, count in _units_of(graph, symptom).items():
-            if name != "(未标注)":
-                available[name] = available.get(name, 0) + count
-    if units:
-        resolved: List[str] = []
-        for unit in units:
-            if not any(Graph.unit_matches(name, unit) for name in available):
-                listed = "、".join(list(available)[:8]) or "（无）"
-                raise RenderError(f"诊断单元 {unit!r} 在这些症状下没有关系；现有单元：{listed}")
-            resolved.append(unit)
-        return resolved
-    if len(available) <= 1:
-        return [next(iter(available))] if available else []
-    if len(symptoms) > 1:
-        # Merging sources is the point of this build; their units all belong.
-        return list(available)
-    listed = "\n".join(f"    {name}（{count} 条关系）" for name, count in list(available.items())[:10])
-    raise RenderError(
-        f"“{symptoms[0].name}”的关系分布在 {len(available)} 个诊断单元里，合成一份 skill 会把多个"
-        f"故障场景混在一起。请用 --unit 指定其中一个（可重复；或 --all-units 明确要合并）：\n{listed}"
+    return scenarios.select(
+        graph,
+        roots=args.root,
+        node_types=args.node_type,
+        sections=args.section,
+        vendors=args.vendor,
+        query=args.query,
+        depth=args.depth,
     )
-
-
-def _same_fault_symptoms(graph: Graph, symptom: Node) -> List[Node]:
-    """Symptom nodes from other sources describing the same fault."""
-    key = fault_key(symptom.name)
-    same = [
-        node
-        for node in graph.of_type("symptom")
-        if node.node_id != symptom.node_id and fault_key(node.name) == key
-    ]
-    return [symptom] + sorted(same, key=lambda node: node.node_id)
-
-
-def _resolve_entry(graph: Graph, entry: str) -> Node:
-    """Find the one symptom a skill will document."""
-    symptoms = entry_symptoms(graph)
-    if not symptoms:
-        raise RenderError("子图里没有 symptom 节点，无法生成 skill")
-    if not entry:
-        if len(symptoms) == 1:
-            return symptoms[0]
-        raise RenderError(
-            f"子图里有 {len(symptoms)} 个故障入口，请用 --entry 指定一个"
-            "（先跑 `list` 看清单），或用 build --each 批量生成"
-        )
-    if entry in graph and graph.nodes[entry].node_type == "symptom":
-        return graph.nodes[entry]
-    candidates = [node for node in symptoms if node.node_id.startswith(entry)]
-    if not candidates:
-        candidates = [node for node in graph.search(entry, node_types=["symptom"])]
-    if not candidates:
-        raise RenderError(f"入口 {entry!r} 没有匹配到任何 symptom 节点")
-    if len(candidates) > 1:
-        listed = "、".join(f"{node.name}({node.node_id})" for node in candidates[:5])
-        raise RenderError(f"入口 {entry!r} 匹配到多个症状：{listed}…；请给出确切的 node_id")
-    return candidates[0]
 
 
 def _print_report(report: ValidationReport, *, limit: int = 20) -> None:
@@ -318,7 +222,7 @@ def cmd_list(args) -> int:
                 f"    规模    : 原因 {len(playbook.causes)}、检查 {playbook.check_count}、"
                 f"修复 {playbook.repair_count}"
             )
-            print(f"    诊断单元: {len(_units_of(graph, symptom))} 个（不拆分会把多个场景混在一起）")
+            print(f"    诊断单元: {len(scenarios.units_of(graph, symptom))} 个（不拆分会把多个场景混在一起）")
             print()
         if len(symptoms) > args.limit:
             print(f"  …另有 {len(symptoms) - args.limit} 个（--limit 调整）")
@@ -492,101 +396,23 @@ def cmd_inspect(args) -> int:
     return 0
 
 
-def _build_one(
-    graph: Graph,
-    symptoms: Sequence[Node],
-    name: str,
-    out_dir: Path,
-    args,
-    sources,
-    units: Sequence[str] = (),
-    cache: Optional[Dict[str, Graph]] = None,
-    skill_index: Optional[Dict[str, str]] = None,
-) -> int:
-    symptoms = list(symptoms)
-    units = [unit for unit in units if unit]
-    excluded: List[Tuple[str, str]] = []
-    excluded_ids: Set[str] = set()
-    unit_key = "|".join(sorted(units))
-    if cache is None or unit_key not in cache:
-        scoped = graph.scope_to_units(units) if units else graph
-        if cache is not None:
-            cache[unit_key] = scoped
+def _scenario_set(graph: Graph, args) -> ScenarioSet:
+    """This subgraph's scenarios: from the manifest if there is one, else as grouped."""
+    if args.scenarios:
+        found = scenarios.from_manifest(graph, Path(args.scenarios), args.exclude)
     else:
-        scoped = cache[unit_key]
-    # Exclusions are an editorial decision about what to document, not about
-    # what the graph contains — so the grounding check reads the graph as it
-    # stood before them, or a scenario's own material would look invented.
-    reference = scoped
-    scoped = _apply_exclusions(scoped, getattr(args, "exclude", []), excluded, excluded_ids)
-    playbook = build_merged_playbook(scoped, symptoms, units)
-    symptom = playbook.symptom
-    options = BuildOptions(
-        name=name,
-        description=args.description,
-        include_example_specific=args.include_example_specific,
-        keep_undecidable=args.keep_undecidable,
-        max_steps=args.max_steps,
-        shared_coverage=args.shared_coverage,
-        excluded=excluded,
-        skill_index=dict(skill_index or {}),
-    )
-    package = build_package(scoped, playbook, options)
-    result = lint_files(package.files)
-    # Post-verification: every command, root cause, criterion and parameter in
-    # the finished document has to be findable in the subgraph it came from.
-    grounding = verify_files(package.files, reference.subgraph(playbook.covered))
-
-    if args.dry_run:
-        print(
-            f"技能名：{normalise_name(name)}｜入口：{symptom.name}（{symptom.node_id}）"
-            + (f"｜合并来源 {len(symptoms)} 个" if len(symptoms) > 1 else "")
-            + (f"｜诊断单元：{'、'.join(units)}" if units else "")
+        names_file = getattr(args, "names", "")
+        found = scenarios.from_groups(
+            graph,
+            min_causes=args.min_causes,
+            merge=not args.no_merge,
+            limit=args.limit,
+            exclude=args.exclude,
+            names=scenarios.load_slug_map(Path(names_file), "命名映射") if names_file else None,
         )
-        print("将写出：")
-        for relative in sorted(package.files):
-            print(f"  {relative}  ({len(package.files[relative])} 字符)")
-        for note in package.notes:
-            print(f"提示：{note}")
-        _print_omitted(package.omitted, prefix="")
-        _print_lint(result, prefix="")
-        _print_verify(grounding, prefix="")
-        return 0 if (result.ok and grounding.ok) else 1
-
-    package.write(out_dir, force=args.force)
-    print(f"技能已生成：{out_dir}")
-    print(f"  技能名：{normalise_name(name)}")
-    print(
-        f"  入口症状：{symptom.name}（{symptom.node_id}）"
-        + (f"｜诊断单元：{'、'.join(units)}" if units else "")
-    )
-    if len(symptoms) > 1:
-        print("  合并来源：" + "；".join(f"{node.name}（{node.node_id}）" for node in symptoms))
-    stats = package.stats
-    print(
-        f"  前置检查 {stats.get('prechecks', 0)} 条；排查步骤 {stats.get('steps', 0)} 步；"
-        f"根因 {stats.get('root_causes', 0)} 个；交付文件 {len(package.files)} 个"
-    )
-    for note in package.notes:
-        print(f"  提示：{note}")
-    _print_omitted(package.omitted)
-    _print_lint(result)
-    _print_verify(grounding)
-    _print_metrics(package.doc, files=package.files)
-    return 0 if (result.ok and grounding.ok) else 1
-
-
-def _load_slug_map(path: Path, what: str) -> Dict[str, str]:
-    """Read a ``{node_id: slug}`` JSON file (``--names`` / ``--skill-index``)."""
-    if not path.exists():
-        raise RenderError(f"{path}: {what}文件不存在")
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
-    if not isinstance(payload, dict):
-        raise RenderError(f"{path}: 应为 {{node_id: slug}} 的对象")
-    return {str(key): str(value) for key, value in payload.items()}
+    for note in found.notes:
+        print(f"提示：{note}")
+    return found
 
 
 def _skill_index(args) -> Dict[str, str]:
@@ -596,145 +422,15 @@ def _skill_index(args) -> Dict[str, str]:
     ``build --each`` already knows every slug it is about to write.
     """
     path = getattr(args, "skill_index", "")
-    return _load_slug_map(Path(path), "skill 索引") if path else {}
-
-
-def _load_manifest(path: Path) -> Dict:
-    if not path.exists():
-        raise RenderError(f"{path}: 场景清单文件不存在")
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RenderError(f"{path}: 不是合法 JSON（{exc}）") from exc
-    if not isinstance(manifest, dict) or not isinstance(manifest.get("scenarios"), list):
-        raise RenderError(f"{path}: 应为 {{name, description, scenarios: [...]}} 的对象")
-    if not manifest["scenarios"]:
-        raise RenderError(f"{path}: scenarios 是空的")
-    return manifest
-
-
-def _apply_exclusions(
-    graph: Graph,
-    specs: Sequence[str],
-    removed: List[Tuple[str, str]],
-    removed_ids: Set[str],
-) -> Graph:
-    """Drop nodes a person judged unrelated, recording what went.
-
-    An exclusion that matches nothing is an error, not a no-op: a typo would
-    otherwise silently leave the unrelated material in the document.
-    """
-    specs = [spec for spec in specs if spec]
-    if not specs:
-        return graph
-    ids, matched = graph.resolve_exclusions(specs)
-    unmatched = set(specs) - {spec for spec, _node in matched}
-    if unmatched:
-        raise RenderError(
-            "以下 --exclude / exclude 没有匹配到任何节点（写错了会静默漏掉内容）："
-            + "、".join(sorted(unmatched))
-        )
-    for spec, node in matched:
-        if node.node_id not in removed_ids:
-            removed_ids.add(node.node_id)
-            removed.append((spec, node.name))
-    return graph.without(ids)
-
-
-def _scenarios_from_manifest(
-    graph: Graph, path: Path, extra_exclude: Sequence[str] = (), removed_ids: Optional[Set[str]] = None
-) -> Tuple[str, str, List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
-    """Read a scenario manifest into (技能名, 描述, [(场景名, playbook)], 单元, 剔除记录, 场景 slug)."""
-    manifest = _load_manifest(path)
-    units: List[str] = []
-    for entry in manifest["scenarios"]:
-        units += [unit for unit in entry.get("units") or [] if unit]
-    units = list(dict.fromkeys(units))
-    scoped = graph.scope_to_units(units) if units else graph
-
-    removed: List[Tuple[str, str]] = []
-    removed_ids = removed_ids if removed_ids is not None else set()
-    named: List[Tuple[str, object]] = []
-    slugs: List[str] = []
-    for index, entry in enumerate(manifest["scenarios"]):
-        ids = entry.get("entries") or []
-        if not ids:
-            raise RenderError(f"第 {index + 1} 个场景没有 entries")
-        symptoms = [_resolve_entry(scoped, node_id) for node_id in ids]
-        unit_scope = [unit for unit in entry.get("units") or [] if unit]
-        base = scoped.scope_to_units(unit_scope) if unit_scope else scoped
-        # 全局 --exclude 对所有场景生效，清单里的 exclude 只作用于本场景
-        base = _apply_exclusions(
-            base, list(extra_exclude) + list(entry.get("exclude") or []), removed, removed_ids
-        )
-        playbook = build_merged_playbook(base, symptoms, unit_scope)
-        named.append((entry.get("name") or symptoms[0].name, playbook))
-        slugs.append(str(entry.get("slug") or "").strip())
-    return (
-        manifest.get("name", ""),
-        manifest.get("description", ""),
-        named,
-        units,
-        removed,
-        slugs,
-    )
-
-
-def _scenarios_from_groups(
-    graph: Graph, args, removed_ids: Optional[Set[str]] = None
-) -> Tuple[List[Tuple[str, object]], List[str], List[Tuple[str, str]]]:
-    """Group this subgraph's faults into the scenarios of one skill."""
-    groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
-    if not groups and args.min_causes and entry_symptoms(graph):
-        # 这张图的故障全都候选原因不足。门槛是用来挑"值不值得单独成一份 skill"的，
-        # 而调用方已经指名要这个子图的 skill——空着手回去不如照实做出来，
-        # 排查步骤会是空的，交付统计和提示都会说。
-        groups = fault_groups(graph, min_causes=0, merge=not args.no_merge)
-        if groups:
-            print(
-                f"提示：{len(groups)} 个故障的候选原因都少于 {args.min_causes} 个，"
-                "仍按本子图生成一份（排查步骤会是空的）"
-            )
-    if args.limit:
-        groups = groups[: args.limit]
-    if not groups:
-        raise RenderError("子图里没有可生成的故障场景")
-    units = list(dict.fromkeys(unit for group in groups for unit in group.units))
-    scoped = graph.scope_to_units(units) if units else graph
-    removed: List[Tuple[str, str]] = []
-    removed_ids = removed_ids if removed_ids is not None else set()
-    scoped = _apply_exclusions(scoped, getattr(args, "exclude", []), removed, removed_ids)
-    named = [
-        (
-            group.name,
-            build_merged_playbook(
-                scoped.scope_to_units(group.units) if group.units else scoped,
-                group.symptoms,
-                group.units,
-            ),
-        )
-        for group in groups
-    ]
-    return named, units, removed
+    return scenarios.load_slug_map(Path(path), "skill 索引") if path else {}
 
 
 def cmd_plan(args) -> int:
     """Phase 3: what would actually be written, and what could still be folded."""
     graph, report, sources = _load_graph(args)
     graph = _select(graph, args)
-    removed_ids: Set[str] = set()
-    if args.scenarios:
-        name, _description, named, units, removed, scenario_slugs = _scenarios_from_manifest(
-            graph, Path(args.scenarios), args.exclude, removed_ids
-        )
-        source = f"场景清单 {args.scenarios}"
-    else:
-        named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
-        name = ""
-        scenario_slugs = []
-        source = "自动分组（未用场景清单）"
-    scoped = graph.scope_to_units(units) if units else graph
-    scoped = scoped.without(removed_ids)
+    found = _scenario_set(graph, args)
+    source = f"场景清单 {args.scenarios}" if args.scenarios else "自动分组（未用场景清单）"
 
     policy = BuildOptions(
         include_example_specific=args.include_example_specific,
@@ -742,15 +438,16 @@ def cmd_plan(args) -> int:
         max_steps=args.max_steps,
         shared_coverage=args.shared_coverage,
     ).policy()
-    doc = build_multi_doc(scoped, named, policy)
-    for spec, node_name in removed:
+    doc = build_multi_doc(found.graph, found.named, policy)
+    for spec, node_name in found.removed:
         doc.omitted.append((node_name, f"按 exclude 剔除（匹配 {spec!r}）"))
     plan = plan_document(doc)
-    unnamed = _assign_scenario_slugs(doc, scenario_slugs)
+    unnamed = _assign_scenario_slugs(doc, found.slugs)
     # 文档规模要看渲染后的正文，而且要按交付时的拆分来看——多场景时读者读的是
     # 入口 + 他那一个场景，不是全部场景之和。技能名此时可能还是占位符，不影响行数。
     preview = render_package(doc, name="preview", description="预览")
 
+    name = found.name
     print(f"输入：{'、'.join(sources)}")
     print(f"编排来源：{source}" + (f"；技能名 {name}" if name and not name.startswith("<") else ""))
     print()
@@ -774,93 +471,93 @@ def cmd_plan(args) -> int:
     return 0
 
 
-def cmd_build_scenarios(args, graph: Graph, sources) -> int:
-    """One skill for this whole subgraph: shared collection, then one file per fault.
-
-    The scenarios come from a manifest when there is one, and otherwise from the
-    same automatic grouping ``list`` and ``plan`` show — feeding a subgraph in
-    and getting the skill for it out is the ordinary case, not one that should
-    require exporting a manifest first.
-    """
-    removed_ids: Set[str] = set()
-    if args.scenarios:
-        (
-            manifest_name,
-            manifest_description,
-            named,
-            units,
-            removed,
-            scenario_slugs,
-        ) = _scenarios_from_manifest(graph, Path(args.scenarios), args.exclude, removed_ids)
-    else:
-        named, units, removed = _scenarios_from_groups(graph, args, removed_ids)
-        manifest_name, manifest_description = "", ""
-        # 自动分组时场景名从 --names 的 {node_id: slug} 取，和 --each 同一份映射
-        names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
-        scenario_slugs = [
-            names.get(book.symptom.node_id) or names.get(fault_key(book.symptom.name)) or ""
-            for _label, book in named
-        ]
-    name = args.name or manifest_name or ""
-    if not name or name.startswith("<"):
-        raise RenderError(
-            "场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单"
-            if args.scenarios
-            else "模板要求英文技能名，请用 --name 指定这份 skill 的名字"
-        )
-    reference = graph.scope_to_units(units) if units else graph
-    scoped = reference.without(removed_ids)
-
+def _deliver(
+    found: ScenarioSet,
+    name: str,
+    out_dir: Path,
+    args,
+    *,
+    skill_index: Dict[str, str],
+    install_hint: bool = True,
+) -> int:
+    """Build one skill, run both checks on it, then write it (or say what would be written)."""
     options = BuildOptions(
         name=name,
-        description=args.description or manifest_description,
+        description=args.description or found.description,
         include_example_specific=args.include_example_specific,
         keep_undecidable=args.keep_undecidable,
         max_steps=args.max_steps,
         shared_coverage=args.shared_coverage,
-        excluded=removed,
-        skill_index=_skill_index(args),
-        scenario_slugs=scenario_slugs,
+        excluded=found.removed,
+        skill_index=dict(skill_index),
+        scenario_slugs=found.slugs,
     )
-    package = build_package(scoped, named, options)
+    package = build_package(found.graph, found.named, options)
     result = lint_files(package.files)
-    covered: Set[str] = set()
-    for _label, book in named:
-        covered |= book.covered
-    grounding = verify_files(package.files, reference.subgraph(covered))
-    out_dir = Path(args.out)
+    # Post-verification: every command, root cause, criterion and parameter in
+    # the finished document has to be findable in the subgraph it came from.
+    grounding = verify_files(package.files, found.reference.subgraph(found.covered))
+    ok = result.ok and grounding.ok
+    slug = normalise_name(name)
+    stats = package.stats
+    units = f"｜诊断单元：{'、'.join(found.units)}" if found.units else ""
+
+    if len(found.named) == 1:
+        playbook = found.named[0][1]
+        symptom, merged = playbook.symptom, playbook.symptoms
+        entry = f"{symptom.name}（{symptom.node_id}）"
+        brief = f"入口：{entry}" + (f"｜合并来源 {len(merged)} 个" if len(merged) > 1 else "") + units
+        summary = [f"入口症状：{entry}{units}"]
+        if len(merged) > 1:
+            summary.append("合并来源：" + "；".join(f"{node.name}（{node.node_id}）" for node in merged))
+        summary.append(
+            f"前置检查 {stats.get('prechecks', 0)} 条；排查步骤 {stats.get('steps', 0)} 步；"
+            f"根因 {stats.get('root_causes', 0)} 个；交付文件 {len(package.files)} 个"
+        )
+        listing: List[str] = []
+    else:
+        brief = f"场景 {len(found.named)} 个"
+        summary = [
+            f"场景 {len(found.named)} 个；公共前置检查 {stats.get('prechecks', 0)} 条；"
+            f"排查步骤 {stats.get('steps', 0)} 步；根因 {stats.get('root_causes', 0)} 个；"
+            f"交付文件 {len(package.files)} 个"
+        ]
+        # 实际规模（剔除、折叠之后）看 plan；这里只列场景
+        listing = [
+            f"场景{scenario_label(index)}：{scenario_name}"
+            for index, (scenario_name, _book) in enumerate(found.named)
+        ]
 
     if args.dry_run:
-        print(f"技能名：{normalise_name(name)}｜场景 {len(named)} 个")
-        for index, (scenario_name, playbook) in enumerate(named):
-            print(f"  场景{scenario_label(index)}：{scenario_name}（{len(playbook.causes)} 个原因）")
+        print(f"技能名：{slug}｜{brief}")
+        for line in listing:
+            print(f"  {line}")
         print("将写出：")
         for relative in sorted(package.files):
             print(f"  {relative}  ({len(package.files[relative])} 字符)")
+        for note in package.notes:
+            print(f"提示：{note}")
         _print_omitted(package.omitted, prefix="")
         _print_lint(result, prefix="")
         _print_verify(grounding, prefix="")
-        return 0 if (result.ok and grounding.ok) else 1
+        return 0 if ok else 1
 
     package.write(out_dir, force=args.force)
     print(f"技能已生成：{out_dir}")
-    print(f"  技能名：{normalise_name(name)}")
-    stats = package.stats
-    print(
-        f"  场景 {len(named)} 个；公共前置检查 {stats.get('prechecks', 0)} 条；"
-        f"排查步骤 {stats.get('steps', 0)} 步；根因 {stats.get('root_causes', 0)} 个；"
-        f"交付文件 {len(package.files)} 个"
-    )
-    for index, (scenario_name, playbook) in enumerate(named):
-        print(f"    场景{scenario_label(index)}：{scenario_name}")
+    print(f"  技能名：{slug}")
+    for line in summary:
+        print(f"  {line}")
+    for line in listing:
+        print(f"    {line}")
     for note in package.notes:
         print(f"  提示：{note}")
     _print_omitted(package.omitted)
     _print_lint(result)
     _print_verify(grounding)
     _print_metrics(package.doc, files=package.files)
-    _install_hint(out_dir, normalise_name(name))
-    return 0 if (result.ok and grounding.ok) else 1
+    if install_hint:
+        _install_hint(out_dir, slug)
+    return 0 if ok else 1
 
 
 def cmd_build(args) -> int:
@@ -873,108 +570,78 @@ def cmd_build(args) -> int:
     if args.each:
         if args.entry or args.scenarios or args.name:
             raise RenderError("--each 按故障逐个命名输出，不能与 --entry / --scenarios / --name 同用")
-        return cmd_build_each(args, graph, sources)
+        return cmd_build_each(args, graph)
     # 默认粒度是**一个子图一份 skill**：不指定入口时，把这张图里的每个故障编成
     # 一个场景，公共前置共用，步骤各进各的 reference/ 文件。指定了 --entry 才是
     # 只做那一个故障（--each 则是每个故障各自独立成一份）。
     if args.scenarios or not (args.entry or args.unit or args.all_units):
-        return cmd_build_scenarios(args, graph, sources)
-    entries = args.entry or [""]
-    symptoms = [_resolve_entry(graph, entry) for entry in entries]
-    if args.merge_same_name and len(symptoms) == 1:
-        symptoms = _same_fault_symptoms(graph, symptoms[0])
-    elif len(symptoms) == 1:
-        others = _same_fault_symptoms(graph, symptoms[0])[1:]
-        if others:
+        found = _scenario_set(graph, args)
+        name = args.name or found.name
+        if not name or name.startswith("<"):
+            raise RenderError(
+                "场景清单里的 name 还是占位符；模板要求英文技能名，用 --name 指定或改清单"
+                if args.scenarios
+                else "模板要求英文技能名，请用 --name 指定这份 skill 的名字"
+            )
+        return _deliver(found, name, Path(args.out), args, skill_index=_skill_index(args))
+
+    symptoms = [scenarios.resolve_entry(graph, entry) for entry in args.entry or [""]]
+    if len(symptoms) == 1:
+        same = scenarios.same_fault_symptoms(graph, symptoms[0])
+        if args.merge_same_name:
+            symptoms = same
+        elif len(same) > 1:
             print(
-                f"提示：另有 {len(others)} 个同名症状（其他来源）描述同一故障，"
+                f"提示：另有 {len(same) - 1} 个同名症状（其他来源）描述同一故障，"
                 "加 --merge-same-name 可合并成一份更完整的 skill："
             )
-            for node in others[:5]:
+            for node in same[1:6]:
                 print(f"  {node.name}（{node.node_id}）")
-    units = _resolve_units(graph, symptoms, args.unit, args.all_units)
+    units = scenarios.resolve_units(graph, symptoms, args.unit, args.all_units)
     if not args.name:
         raise RenderError(
             "模板要求英文技能名，请用 --name 指定（`list` 会给出建议 slug，但请按语义改写）"
         )
-    out_dir = Path(args.out)
-    code = _build_one(
-        graph, symptoms, args.name, out_dir, args, sources, units, None, _skill_index(args)
-    )
-    if not args.dry_run:
-        _install_hint(out_dir, normalise_name(args.name))
-    return code
+    found = scenarios.from_entries(graph, symptoms, units, args.exclude)
+    return _deliver(found, args.name, Path(args.out), args, skill_index=_skill_index(args))
 
 
-def cmd_build_each(args, graph: Graph, sources) -> int:
+def cmd_build_each(args, graph: Graph) -> int:
     """Every fault in the subgraph as a skill of its own."""
-    names = _load_slug_map(Path(args.names), "命名映射") if args.names else {}
-
-    skipped = 0
-    if args.all_units:
-        scenarios = [([symptom], []) for symptom in entry_symptoms(graph)]
-    else:
-        groups = fault_groups(graph, min_causes=args.min_causes, merge=not args.no_merge)
-        skipped = len(entry_scenarios(graph, min_causes=0)) - sum(
-            len(group.symptoms) for group in groups
-        )
-        scenarios = [(group.symptoms, group.units) for group in groups]
-    if args.limit:
-        scenarios = scenarios[: args.limit]
-    if not scenarios:
-        raise RenderError("子图里没有可生成的故障场景（symptom × 诊断单元）")
-
+    plan = scenarios.plan_each(
+        graph,
+        names=scenarios.load_slug_map(Path(args.names), "命名映射") if args.names else None,
+        all_units=args.all_units,
+        min_causes=args.min_causes,
+        merge=not args.no_merge,
+        limit=args.limit,
+    )
+    index = plan.index(_skill_index(args))
     root = Path(args.out)
-    failures = 0
-    unnamed: List[str] = []
     cache: Dict[str, Graph] = {}
-
-    # Name everything first.  A skill can only point at another one by its
-    # slug, and the batch does not know the slug of a skill it has not reached
-    # yet — so nothing is written until every name is settled.
-    planned: List[Tuple[Sequence[Node], Sequence[str], str]] = []
-    index: Dict[str, str] = _skill_index(args)
-    for symptoms, units in scenarios:
-        symptom = symptoms[0]
-        unit = units[0] if units else ""
-        key = f"{symptom.node_id}@{unit}" if unit else symptom.node_id
-        name = (
-            names.get(fault_key(symptom.name))
-            or names.get(key)
-            or names.get(symptom.node_id)
-            or names.get(symptom.name)
-            or ""
-        )
-        if not name:
-            name = suggested_slug(symptom, unit)
-            unnamed.append(f"{key}  {symptom.name}  →  {name}")
-        planned.append((symptoms, units, name))
-        # Every merged source of this fault answers to the same skill: a
-        # cross-fault edge may point at any one of their symptom nodes.
-        for node in symptoms:
-            index.setdefault(node.node_id, normalise_name(name))
-
-    for symptoms, units, name in planned:
-        code = _build_one(
-            graph, symptoms, name, root / normalise_name(name), args, sources, units, cache, index
+    failures = 0
+    for symptoms, units, name in plan.skills:
+        found = scenarios.from_entries(graph, symptoms, units, args.exclude, cache)
+        code = _deliver(
+            found, name, root / normalise_name(name), args, skill_index=index, install_hint=False
         )
         failures += 1 if code else 0
         print()
-    print(f"共生成 {len(scenarios)} 份 skill，{failures} 份未通过模板检查。")
-    if skipped:
+    print(f"共生成 {len(plan.skills)} 份 skill，{failures} 份未通过模板检查。")
+    if plan.skipped:
         print(
-            f"另有 {skipped} 个场景候选原因少于 {args.min_causes} 个未生成"
+            f"另有 {plan.skipped} 个场景候选原因少于 {args.min_causes} 个未生成"
             "（排查步骤会是空的；--min-causes 0 可强制生成）"
         )
-    if unnamed:
+    if plan.unnamed:
         print(
-            f"\n以下 {len(unnamed)} 份用了机械生成的 slug（模板要求英文名，请按语义改写后重跑，"
+            f"\n以下 {len(plan.unnamed)} 份用了机械生成的 slug（模板要求英文名，请按语义改写后重跑，"
             "或用 --names 提供 {node_id: slug} 映射）："
         )
-        for line in unnamed[:20]:
+        for line in plan.unnamed[:20]:
             print(f"  {line}")
-        if len(unnamed) > 20:
-            print(f"  …另有 {len(unnamed) - 20} 条")
+        if len(plan.unnamed) > 20:
+            print(f"  …另有 {len(plan.unnamed) - 20} 条")
     return 1 if failures else 0
 
 
